@@ -341,8 +341,9 @@ namespace csah::ibl
                 radianceView,
                 radianceDescription) ||
             radianceView.ViewDimension != D3D11_SRV_DIMENSION_TEXTURE2D ||
-            radianceView.Format != DXGI_FORMAT_R11G11B10_FLOAT ||
-            radianceDescription.Format != DXGI_FORMAT_R11G11B10_FLOAT ||
+            (radianceView.Format != DXGI_FORMAT_R11G11B10_FLOAT &&
+                radianceView.Format != DXGI_FORMAT_R16G16B16A16_FLOAT) ||
+            radianceDescription.Format != radianceView.Format ||
             radianceDescription.ArraySize != 1 ||
             radianceDescription.SampleDesc.Count != 1 ||
             radianceDescription.Width < 2 || radianceDescription.Height == 0 ||

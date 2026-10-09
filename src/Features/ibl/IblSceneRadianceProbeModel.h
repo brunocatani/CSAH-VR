@@ -116,6 +116,16 @@ namespace csah::ibl
         };
     }
 
+    [[nodiscard]] inline SceneProbeRgb decodeR16G16B16A16Float(
+        const std::array<std::uint16_t, 4>& packed) noexcept
+    {
+        const auto component = [](std::uint16_t bits) {
+            const auto value = decodeUnsignedFloat(bits & 0x7FFFu, 10);
+            return (bits & 0x8000u) != 0 ? -value : value;
+        };
+        return { component(packed[0]), component(packed[1]), component(packed[2]) };
+    }
+
     [[nodiscard]] inline SceneProbeSummary summarizeSceneProbe(
         const std::array<SceneProbeRgb, kSceneProbeSampleCount>& samples)
         noexcept
@@ -190,7 +200,9 @@ namespace csah::ibl
             const auto& rhs = right[index];
             if (!std::isfinite(lhs.red) || !std::isfinite(lhs.green) ||
                 !std::isfinite(lhs.blue) || !std::isfinite(rhs.red) ||
-                !std::isfinite(rhs.green) || !std::isfinite(rhs.blue)) {
+                !std::isfinite(rhs.green) || !std::isfinite(rhs.blue) ||
+                lhs.red < 0 || lhs.green < 0 || lhs.blue < 0 ||
+                rhs.red < 0 || rhs.green < 0 || rhs.blue < 0) {
                 continue;
             }
             sum += std::abs(lhs.red - rhs.red);

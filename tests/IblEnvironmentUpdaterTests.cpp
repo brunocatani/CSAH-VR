@@ -1,6 +1,7 @@
 #include "Features/ibl/IblEnvironmentProvider.h"
 #include "Features/ibl/IblEnvironmentUpdater.h"
 #include "Features/ibl/IblSceneRadianceProbeModel.h"
+#include "Features/ibl/IblReflectionFreeCapture.h"
 
 #include <Windows.h>
 #include <d3d11.h>
@@ -85,7 +86,7 @@ namespace
         ComPtr<ID3D11DeviceContext> context;
     };
 
-    [[nodiscard]] Device createDevice()
+    [[nodiscard]] Device createDevice(D3D_DRIVER_TYPE driver = D3D_DRIVER_TYPE_WARP)
     {
         Device result;
         constexpr std::array levels{ D3D_FEATURE_LEVEL_11_0 };
@@ -93,7 +94,7 @@ namespace
         requireSucceeded(
             D3D11CreateDevice(
                 nullptr,
-                D3D_DRIVER_TYPE_WARP,
+                driver,
                 nullptr,
                 0,
                 levels.data(),
@@ -344,7 +345,7 @@ namespace
         require(provider.publishUpdate({{}, true}), "could not publish seed");
     }
 
-    void run(const std::filesystem::path& root)
+    void run(const std::filesystem::path& root, D3D_DRIVER_TYPE driver)
     {
         const auto bytecode = readFile(
             root / "package" / "Shaders" / "Community" / "IBL" /
@@ -361,7 +362,14 @@ namespace
                 std::memcmp(filterBytecode.data(), "DXBC", 4) == 0,
             "environment filter asset is not DXBC");
 
-        auto d3d = createDevice();
+        auto d3d = createDevice(driver);
+        ComPtr<IDXGIDevice> graphics;
+        ComPtr<IDXGIAdapter> adapter;
+        if (SUCCEEDED(d3d.device.As(&graphics)) && SUCCEEDED(graphics->GetAdapter(&adapter))) {
+            DXGI_ADAPTER_DESC description{};
+            if (SUCCEEDED(adapter->GetDesc(&description)))
+                std::wcout << L"GPU regression adapter: " << description.Description << L'\n';
+        }
         EnvironmentProvider provider;
         require(
             provider.initialize(d3d.device.Get(), 16),
@@ -634,6 +642,55 @@ namespace
         require(updater.dispatchUpdate(d3d.context.Get(), provider, emptyRadiance.Get(), skyDepth.Get(), emptyLocation.Get(), true), "empty teleport dispatch failed");
         finish(d3d, updater, provider);
         require(updater.snapshot().coveredSamples == 0, "empty new location retained old coverage");
+
+        // Exercise the actual production scratch allocation and ClearRenderTargetView,
+        // not a hand-encoded infinity fixture. Packed HDR clear conversion caused
+        // the observed ~65000-radiance exterior whiteout.
+        csah::ibl::ReflectionFreeCaptureResources capture;
+        require(capture.initialize(d3d.device.Get()), "capture resources unavailable");
+        D3D11_TEXTURE2D_DESC nativeDescription{};
+        nativeDescription.Width = 32;
+        nativeDescription.Height = 16;
+        nativeDescription.MipLevels = nativeDescription.ArraySize = nativeDescription.SampleDesc.Count = 1;
+        nativeDescription.Format = DXGI_FORMAT_R11G11B10_FLOAT;
+        nativeDescription.BindFlags = D3D11_BIND_RENDER_TARGET;
+        ComPtr<ID3D11Texture2D> nativeTarget;
+        ComPtr<ID3D11RenderTargetView> nativeView;
+        requireSucceeded(d3d.device->CreateTexture2D(&nativeDescription, nullptr, &nativeTarget), "native target allocation");
+        requireSucceeded(d3d.device->CreateRenderTargetView(nativeTarget.Get(), nullptr, &nativeView), "native view allocation");
+        require(capture.prepareScratch(nativeView.Get()), "signed scratch allocation failed");
+        require(capture.scratchDescription().Format == DXGI_FORMAT_R16G16B16A16_FLOAT,
+            "HDR capture used an unsigned scratch format");
+        require(capture.scratchMatches(nativeView.Get()), "signed scratch is not compatible with the native draw");
+        capture.clearScratch(d3d.context.Get());
+        require(updater.dispatchUpdate(d3d.context.Get(), provider, capture.scratchShaderResource(), depth.Get(), constants.Get(), false), "cleared capture dispatch failed");
+        finish(d3d, updater, provider);
+        require(updater.snapshot().coveredSamples == 0 && updater.snapshot().peak == 0,
+            "actual target clear was admitted as light");
+
+        std::array<std::array<std::uint16_t, 4>, 32 * 16> partial{};
+        for (UINT y = 0; y < 16; ++y) for (UINT x = 0; x < 32; ++x) {
+            // Alternate small observed islands with unobserved pixels. Edge
+            // interpolation must not turn a missing -1 pixel into valid light.
+            const std::uint16_t value = (x % 16 >= 5 && x % 16 <= 11 && y >= 4 && y <= 12) ? 0x3C00 : 0xBC00;
+            partial[y * 32 + x] = {value, value, value, 0};
+        }
+        d3d.context->UpdateSubresource(capture.scratchTexture(), 0, nullptr, partial.data(), 32 * 8, 0);
+        require(updater.dispatchUpdate(d3d.context.Get(), provider, capture.scratchShaderResource(), depth.Get(), constants.Get(), false), "partial capture dispatch failed");
+        finish(d3d, updater, provider);
+        const auto partialSummary = updater.snapshot();
+        require(partialSummary.coveredSamples > 0 && partialSummary.peak < 1.02F,
+            "partial capture failed or amplified radiance");
+        require(std::abs(partialSummary.average.x * partialSummary.sampleCount - partialSummary.coveredSamples) < 0.25F,
+            "unwritten texels leaked into valid bilinear samples");
+
+        constexpr std::array<float, 4> blackClear{};
+        d3d.context->ClearRenderTargetView(capture.scratchRenderTarget(), blackClear.data());
+        require(updater.dispatchUpdate(d3d.context.Get(), provider, capture.scratchShaderResource(), depth.Get(), constants.Get(), false), "real black clear dispatch failed");
+        finish(d3d, updater, provider);
+        require(updater.snapshot().coveredSamples > 0 && updater.snapshot().peak == 0,
+            "legitimate black surfaces were treated as missing");
+        std::cout << "signed render-target clear, partial coverage, bilinear validity and true black radiance passed\n";
         std::cout << "nearest-depth reprojection, owner ties, sky disocclusion, persistent unseen history and teleport reset passed\n";
 
     }
@@ -641,14 +698,15 @@ namespace
 
 int main(int argumentCount, char** arguments)
 {
-    if (argumentCount != 2) {
-        std::cerr << "Usage: IblEnvironmentUpdaterTests <repo-root>\n";
+    if (argumentCount != 2 && argumentCount != 3) {
+        std::cerr << "Usage: IblEnvironmentUpdaterTests <repo-root> [--hardware]\n";
         return EXIT_FAILURE;
     }
     try {
-        run(std::filesystem::absolute(arguments[1]));
+        const bool hardware = argumentCount == 3 && std::string(arguments[2]) == "--hardware";
+        run(std::filesystem::absolute(arguments[1]), hardware ? D3D_DRIVER_TYPE_HARDWARE : D3D_DRIVER_TYPE_WARP);
         std::cout <<
-            "FO4VR stereo environment updater verified on D3D11 WARP\n";
+            "FO4VR stereo environment updater verified on D3D11\n";
         return EXIT_SUCCESS;
     } catch (const std::exception& exception) {
         std::cerr << "IBL environment updater tests failed: " <<

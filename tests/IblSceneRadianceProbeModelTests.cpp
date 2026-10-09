@@ -25,6 +25,9 @@ namespace
 int main()
 {
     using namespace csah::ibl;
+    const auto signedHalf = decodeR16G16B16A16Float({0xBC00, 0x0000, 0x3C00, 0});
+    require(near(signedHalf.red, -1.0F) && near(signedHalf.green, 0.0F) && near(signedHalf.blue, 1.0F),
+        "signed HDR probe decoding must distinguish invalid markers from black");
 
     constexpr auto coordinates = sceneProbeCoordinates(5376, 2880);
     static_assert(kSceneProbeSampleCount == 64);

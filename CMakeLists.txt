@@ -3262,6 +3262,7 @@ if(BUILD_CSAH_TESTS)
 
   add_executable(CSAHIblEnvironmentUpdaterTests
     "${ROOT_DIR}/tests/IblEnvironmentUpdaterTests.cpp"
+    "${IBL_REFLECTION_FREE_CAPTURE_SOURCE}"
     "${IBL_PROVIDER_MODEL}"
     "${IBL_SCENE_RADIANCE_PROBE_MODEL}"
     "${IBL_ENVIRONMENT_PROVIDER_SOURCE}"

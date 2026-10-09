@@ -64,6 +64,15 @@ namespace csah::ibl
     class ReflectionFreeCaptureResources final
     {
     public:
+        // R11G11B10 has no negative values, and clears above its range can
+        // saturate to finite white. Use a signed scratch format for HDR capture.
+        [[nodiscard]] static constexpr DXGI_FORMAT captureFormat(DXGI_FORMAT source) noexcept
+        {
+            return source == DXGI_FORMAT_R11G11B10_FLOAT ?
+                DXGI_FORMAT_R16G16B16A16_FLOAT : source;
+        }
+        [[nodiscard]] DXGI_FORMAT sourceFormat() const noexcept { return sourceFormat_; }
+        void clearScratch(ID3D11DeviceContext* context) noexcept;
         [[nodiscard]] bool initialize(ID3D11Device* device) noexcept;
         void reset() noexcept;
 
@@ -126,6 +135,7 @@ namespace csah::ibl
         Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>
             scratchShaderResource_;
         D3D11_TEXTURE2D_DESC scratchDescription_{};
+        DXGI_FORMAT sourceFormat_{ DXGI_FORMAT_UNKNOWN };
     };
 
     // Render-thread-only transaction used around one duplicate qualified

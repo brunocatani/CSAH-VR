@@ -196,6 +196,36 @@ bool ProjectEye(float3 worldDirection, uint eye, out float2 localUv,
     return true;
 }
 
+bool SampleObservedRadiance(float2 uv, uint eye, out float3 radiance)
+{
+    const float2 pixel = uv * float2(SourceExtent) - 0.5f;
+    const int2 base = int2(floor(pixel));
+    const float2 fraction = frac(pixel);
+    const int eyeStart = (int)(eye * SourceExtent.x / 2u);
+    const int eyeEnd = (int)((eye + 1u) * SourceExtent.x / 2u) - 1;
+    radiance = 0.0f;
+    bool observed = true;
+    [unroll] for (int y = 0; y < 2; ++y)
+    {
+        [unroll] for (int x = 0; x < 2; ++x)
+        {
+            const float weight = (x != 0 ? fraction.x : 1.0f - fraction.x) *
+                (y != 0 ? fraction.y : 1.0f - fraction.y);
+            if (weight > 0.0f)
+            {
+                const int2 coordinate = clamp(base + int2(x, y),
+                    int2(eyeStart, 0), int2(eyeEnd, (int)SourceExtent.y - 1));
+                const float3 sample = ReflectionFreeRadiance.Load(int3(coordinate, 0));
+                if (!all(isfinite(sample)) || any(sample < 0.0f) || any(sample >= 65504.0f))
+                    observed = false;
+                else
+                    radiance += sample * weight;
+            }
+        }
+    }
+    return observed;
+}
+
 bool SampleEye(
     float3 worldDirection,
     uint eye,
@@ -226,10 +256,7 @@ bool SampleEye(
     const float depth = SceneDepth.SampleLevel(
         LinearClampSampler, packedUv, 0.0f);
     const bool validDepth = depth == depth && depth >= 0.0f && depth <= 1.0f;
-    radiance = ReflectionFreeRadiance.SampleLevel(
-        LinearClampSampler, packedUv, 0.0f);
-    const bool validRadiance = all(radiance == radiance) &&
-        all(radiance >= 0.0f) && all(radiance < 65504.0f);
+    const bool validRadiance = SampleObservedRadiance(packedUv, eye, radiance);
     if (!validDepth || !validRadiance)
     {
         radiance = 0.0f;

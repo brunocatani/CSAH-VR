@@ -63,7 +63,7 @@ namespace csah::ibl
                 return false;
             }
             description.MipLevels = 1;
-            description.Format = viewDescription.Format;
+            description.Format = ReflectionFreeCaptureResources::captureFormat(viewDescription.Format);
             description.Usage = D3D11_USAGE_DEFAULT;
             description.BindFlags =
                 D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
@@ -180,6 +180,7 @@ namespace csah::ibl
         scratchRenderTarget_.Reset();
         scratchTexture_.Reset();
         scratchDescription_ = {};
+        sourceFormat_ = DXGI_FORMAT_UNKNOWN;
         blackScreenReflectionSrv_.Reset();
         blackScreenReflectionTexture_.Reset();
         blackEnvironmentSrv_.Reset();
@@ -208,9 +209,12 @@ namespace csah::ibl
         if (!describeOutput(outputView, device_.Get(), required)) {
             return false;
         }
+        D3D11_RENDER_TARGET_VIEW_DESC sourceView{};
+        outputView->GetDesc(&sourceView);
         if (scratchTexture_ && scratchRenderTarget_ &&
             scratchShaderResource_ &&
             sameScratchDescription(required, scratchDescription_)) {
+            sourceFormat_ = sourceView.Format;
             return true;
         }
 
@@ -236,7 +240,16 @@ namespace csah::ibl
         scratchRenderTarget_ = std::move(renderTarget);
         scratchShaderResource_ = std::move(shaderResource);
         scratchDescription_ = required;
+        sourceFormat_ = sourceView.Format;
         return true;
+    }
+
+    void ReflectionFreeCaptureResources::clearScratch(ID3D11DeviceContext* context) noexcept
+    {
+        if (!context || !scratchRenderTarget_) return;
+        const float marker = scratchDescription_.Format == DXGI_FORMAT_R16G16B16A16_FLOAT ? -1.0F : 0.0F;
+        const std::array<float, 4> clear{ marker, marker, marker, 0.0F };
+        context->ClearRenderTargetView(scratchRenderTarget_.Get(), clear.data());
     }
 
     ScopedReflectionFreeCapture::ScopedReflectionFreeCapture(

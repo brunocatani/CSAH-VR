@@ -332,6 +332,8 @@ namespace csah::ibl
                 return "R11G11B10_FLOAT";
             case DXGI_FORMAT_R8G8B8A8_UNORM:
                 return "R8G8B8A8_UNORM";
+            case DXGI_FORMAT_R16G16B16A16_FLOAT:
+                return "R16G16B16A16_FLOAT";
             default:
                 return "unsupported";
             }
@@ -348,10 +350,9 @@ namespace csah::ibl
                 sourceDescription.MipLevels == 0 ||
                 sourceDescription.ArraySize != 1 ||
                 sourceDescription.SampleDesc.Count != 1 ||
-                std::ranges::find(
-                    kSceneRadianceProbeFormats,
-                    sourceDescription.Format) ==
-                    kSceneRadianceProbeFormats.end()) {
+                (sourceDescription.Format != DXGI_FORMAT_R16G16B16A16_FLOAT &&
+                    std::ranges::find(kSceneRadianceProbeFormats, sourceDescription.Format) ==
+                        kSceneRadianceProbeFormats.end())) {
                 return false;
             }
 
@@ -408,13 +409,21 @@ namespace csah::ibl
             if (result == DXGI_ERROR_WAS_STILL_DRAWING) {
                 return SceneProbeReadResult::pending;
             }
-            if (FAILED(result) || !mapped.pData ||
-                mapped.RowPitch < kSceneProbeSampleCount * sizeof(std::uint32_t)) {
+            const auto pixelBytes = format == DXGI_FORMAT_R16G16B16A16_FLOAT ? 8U : 4U;
+            if (FAILED(result)) return SceneProbeReadResult::failed;
+            if (!mapped.pData || mapped.RowPitch < kSceneProbeSampleCount * pixelBytes) {
+                context->Unmap(texture, 0);
                 return SceneProbeReadResult::failed;
             }
 
             const auto* source = static_cast<const std::byte*>(mapped.pData);
             for (std::size_t index = 0; index < samples.size(); ++index) {
+                if (format == DXGI_FORMAT_R16G16B16A16_FLOAT) {
+                    std::array<std::uint16_t, 4> half{};
+                    std::memcpy(half.data(), source + index * pixelBytes, sizeof(half));
+                    samples[index] = decodeR16G16B16A16Float(half);
+                    continue;
+                }
                 std::uint32_t packed{};
                 std::memcpy(
                     &packed,
@@ -1464,14 +1473,7 @@ namespace csah::ibl
             return {};
         }
 
-        // A masked/unwritten pixel is not a black-surface observation. The HDR
-        // sentinel exceeds the updater's finite-radiance range; real black
-        // pixels written by the duplicate draw remain valid observations.
-        const float unwritten = productionRequested ? 1.0e10F : 0.0F;
-        const std::array<float, 4> clearColor{ unwritten, unwritten, unwritten, 0.0F };
-        context->ClearRenderTargetView(
-            reflectionFreeCaptureResources_.scratchRenderTarget(),
-            clearColor.data());
+        reflectionFreeCaptureResources_.clearScratch(context);
         ScopedReflectionFreeCapture capture(
             context,
             reflectionFreeCaptureResources_,
@@ -1525,8 +1527,8 @@ namespace csah::ibl
             reflectionFreeCaptureResources_.scratchDescription();
         const auto readback = std::ranges::find_if(
             sceneRadianceReadbackSlots_,
-            [&scratchDescription](const auto& slot) {
-                return slot.format == scratchDescription.Format;
+            [this](const auto& slot) {
+                return slot.format == reflectionFreeCaptureResources_.sourceFormat();
             });
         if (!stateRestored) {
             if (diagnosticReserved &&
@@ -1573,7 +1575,8 @@ namespace csah::ibl
         }
 
         if (productionReserved && environmentAcquisitionEnabled() &&
-            scratchDescription.Format == DXGI_FORMAT_R11G11B10_FLOAT) {
+            reflectionFreeCaptureResources_.sourceFormat() == DXGI_FORMAT_R11G11B10_FLOAT &&
+            scratchDescription.Format == DXGI_FORMAT_R16G16B16A16_FLOAT) {
             ID3D11ShaderResourceView* depthRaw{};
             context->PSGetShaderResources(7, 1, &depthRaw);
             ComPtr<ID3D11ShaderResourceView> depth;
@@ -1940,10 +1943,10 @@ namespace csah::ibl
                     &slot.rollingCompositeTexture))) {
                 return false;
             }
+            auto reflectionDescription = description;
+            reflectionDescription.Format = ReflectionFreeCaptureResources::captureFormat(slot.format);
             if (FAILED(device_->CreateTexture2D(
-                    &description,
-                    nullptr,
-                    &slot.rollingReflectionFreeTexture))) {
+                    &reflectionDescription, nullptr, &slot.rollingReflectionFreeTexture))) {
                 return false;
             }
 
@@ -1963,8 +1966,10 @@ namespace csah::ibl
                     &slot.compositeTexture))) {
                 return false;
             }
+            reflectionDescription.Usage = D3D11_USAGE_STAGING;
+            reflectionDescription.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
             if (FAILED(device_->CreateTexture2D(
-                    &description,
+                    &reflectionDescription,
                     nullptr,
                     &slot.reflectionFreeTexture))) {
                 return false;
@@ -2010,7 +2015,7 @@ namespace csah::ibl
                 readSceneProbeSamples(
                     context_.Get(),
                     slot.reflectionFreeTexture.Get(),
-                    slot.format,
+                    ReflectionFreeCaptureResources::captureFormat(slot.format),
                     reflectionFree) :
                 SceneProbeReadResult::failed;
             if (std::ranges::find(
