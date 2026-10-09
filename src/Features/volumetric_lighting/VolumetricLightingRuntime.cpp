@@ -1,3 +1,4 @@
+#include "Features/volumetric_lighting/NativeFrameSnapshot.h"
 #include "VolumetricHeightFogPS.h"
 #include "Features/volumetric_lighting/VolumetricLightingRuntime.h"
 
@@ -157,6 +158,9 @@ namespace csah::volumetric_lighting
             Target receiverDepth;
             std::array<Target, 2> historyVolume;
             std::array<Target, 2> historyDepth;
+            std::array<ComPtr<ID3D11Buffer>,3> capturedConstants;
+            unsigned snapshotRetry{};
+            bool snapshotFailureLogged{};
             DirectionalFrame directionalFrame;
             StereoFrame previousCamera;
             WeatherFrame weather;
@@ -1476,6 +1480,14 @@ namespace csah::volumetric_lighting
             value.rejectedFrames.fetch_add(1, std::memory_order_relaxed);
             return;
         }
+        if(gpu.snapshotRetry && --gpu.snapshotRetry) {gpu.directionalFrame={};return;}
+        const std::array<ID3D11Buffer*,3> sources{frame.lightConstants.Get(),frame.stereoConstants.Get(),frame.cameraConstants.Get()};
+        for(std::size_t i=0;i<sources.size();i++) if(!snapshotConstantBuffer(gpu.device.Get(),context,sources[i],gpu.capturedConstants[i])) {
+            gpu.directionalFrame={};gpu.snapshotRetry=60;
+            if(!gpu.snapshotFailureLogged) {gpu.snapshotFailureLogged=true;logging::error("Fog frame constant snapshot failed; fog is skipped until allocation recovers.");}
+            return;
+        }
+        frame.lightConstants=gpu.capturedConstants[0];frame.stereoConstants=gpu.capturedConstants[1];frame.cameraConstants=gpu.capturedConstants[2];
         frame.generation = gpu.directionalFrame.generation + 1;
         frame.settingsRevision = value.settingsRevision.load(
             std::memory_order_acquire);

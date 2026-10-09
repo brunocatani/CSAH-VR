@@ -7,14 +7,11 @@ cbuffer HeightFogSettings : register(b4)
     float4 HeightFogControl;
 };
 cbuffer HeightFogCamera : register(b2) {float4 FogCamera[77];};
-#ifndef HEIGHT_FOG_ANALYTIC
-cbuffer HeightFogStereo : register(b3) {float4 FogStereo;};
-#else
-cbuffer HeightFogStereo : register(b1) {float4 FogStereo;};
-#endif
 float3 HeightFogViewPosition(float2 uv,float depth,uint eye)
 {
-    float clipX=(uv.x*2-1+(eye==0?.5:-.5)*FogStereo.x)*(FogStereo.x+1);
+    // This host is a packed stereo image, irrespective of the preceding
+    // geometry pass's b8 stereo flag. Each inverse projection takes local NDC.
+    float clipX=(uv.x-(eye==0?0:.5))*4-1;
     float4 clip=float4(clipX,1-uv.y*2,depth*1.01-.01,1);
     uint row=32+eye*4;
     float4 v=float4(dot(FogCamera[row],clip),dot(FogCamera[row+1],clip),dot(FogCamera[row+2],clip),dot(FogCamera[row+3],clip));
@@ -23,11 +20,14 @@ float3 HeightFogViewPosition(float2 uv,float depth,uint eye)
 float3 ApplyHeightFog(float3 scene,float2 uv,float depth,uint eye,float volumeVisibility)
 {
     if(HeightFogControl.x<.5 || depth<=.01) return scene;
-    float3 view=HeightFogViewPosition(uv,min(depth,.99999),eye);
+    // Cleared sky depth is a direction, not a finite receiver. Reconstruct the
+    // angular ray at a stable clip plane; never divide by its far-plane w.
+    float3 ray=HeightFogViewPosition(uv,.5,eye);
+    float3 view=depth>=1 ? normalize(ray)*200000 : HeightFogViewPosition(uv,depth,eye);
     float lengthToReceiver=length(view);
     if(!all(isfinite(view)) || !(lengthToReceiver>HeightFogMedium.w)) return scene;
     float distance=min(lengthToReceiver,200000);
-    float3 worldDirection=normalize(float3(dot(FogCamera[20].xyz,view),dot(FogCamera[21].xyz,view),dot(FogCamera[22].xyz,view)));
+    float3 worldDirection=normalize(float3(dot(FogCamera[20].xyz,ray),dot(FogCamera[21].xyz,ray),dot(FogCamera[22].xyz,ray)));
     float eyeHeight=FogCamera[59+eye].z;
     float weather=lerp(1,clamp(FogCamera[76].x*10000,.1,4),HeightFogControl.y);
     float alpha=HeightFogOpacity(eyeHeight+worldDirection.z*HeightFogMedium.w,eyeHeight+worldDirection.z*distance,

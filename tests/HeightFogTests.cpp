@@ -1,3 +1,4 @@
+#include "Features/volumetric_lighting/NativeFrameSnapshot.h"
 #include <Windows.h>
 #include <d3d11.h>
 #include <d3dcompiler.h>
@@ -49,6 +50,17 @@ namespace
         D3D11_RASTERIZER_DESC rd{};rd.FillMode=D3D11_FILL_SOLID;rd.CullMode=D3D11_CULL_NONE;rd.DepthClipEnable=TRUE;ComPtr<ID3D11RasterizerState> raster;check(device->CreateRasterizerState(&rd,&raster),"raster");context->RSSetState(raster.Get());
         std::array<F4,2> fog{{{.0001f,1024,0,0},{1,1,.9f,0}}};
         auto draw=[&](){context->UpdateSubresource(camera.Get(),0,nullptr,cameraData.data(),0,0);context->UpdateSubresource(parameters.Get(),0,nullptr,fog.data(),0,0);context->Draw(3,0);context->CopyResource(readback.Get(),target.Get());D3D11_MAPPED_SUBRESOURCE m{};check(context->Map(readback.Get(),0,D3D11_MAP_READ,0,&m),"readback map");std::array<F4,4> out;std::memcpy(out.data(),m.pData,sizeof(out));context->Unmap(readback.Get(),0);return out;};
+        const auto stereoExpected=draw();
+        const F4 geometryStereoFlag{0,0,0,0};context->UpdateSubresource(stereo.Get(),0,nullptr,&geometryStereoFlag,0,0);
+        auto independentStereo=draw();for(unsigned i=0;i<4;i++) require(std::abs(stereoExpected[i].x-independentStereo[i].x)<1e-7,"fog depended on geometry stereo flag");
+        context->UpdateSubresource(stereo.Get(),0,nullptr,&stereoData,0,0);
+        ComPtr<ID3D11Buffer> frozen;
+        require(csah::volumetric_lighting::snapshotConstantBuffer(device.Get(),context.Get(),camera.Get(),frozen),"snapshot capture");
+        auto overwritten=cameraData;overwritten[73]={9,9,9,0};context->UpdateSubresource(camera.Get(),0,nullptr,overwritten.data(),0,0);
+        D3D11_BUFFER_DESC snapshotRead{};snapshotRead.ByteWidth=sizeof(cameraData);snapshotRead.Usage=D3D11_USAGE_STAGING;snapshotRead.CPUAccessFlags=D3D11_CPU_ACCESS_READ;
+        ComPtr<ID3D11Buffer> snapshotStaging;check(device->CreateBuffer(&snapshotRead,nullptr,&snapshotStaging),"snapshot staging");context->CopyResource(snapshotStaging.Get(),frozen.Get());
+        D3D11_MAPPED_SUBRESOURCE snap{};check(context->Map(snapshotStaging.Get(),0,D3D11_MAP_READ,0,&snap),"snapshot read");
+        require(std::memcmp(snap.pData,cameraData.data(),sizeof(cameraData))==0,"retained camera data changed with native buffer reuse");context->Unmap(snapshotStaging.Get(),0);
         auto output=draw();require(output[0].x==1,"first-person depth fogged");require(output[1].x<.99f && output[2].x>.999f,"per-eye absolute altitude lost");
         // Independent midpoint quadrature of the exponential medium.
         double integral=0;for(unsigned i=0;i<10000;i++) integral+=std::exp(-(i+.5)*.1/1024)*.1;
@@ -58,6 +70,12 @@ namespace
         cameraData[20]={0,0,1,0};cameraData[22]={1,0,0,0};output=draw();require(std::abs(output[1].x-(1-(1-std::exp(-.1))*.8))<.0001,"horizontal limit or inverse-view rotation failed");
         fog[0].z=22000;fog[0].y=64;fog[1].z=.6f;output=draw();require(std::isfinite(output[1].x) && std::abs(output[1].x-.52f)<.0001,"deep medium overflow/opacity cap");
         fog[0].w=2000;output=draw();require(output[1].x==1,"clear distance ignored");
+        const auto savedCamera=cameraData;const auto savedFog=fog;
+        for(unsigned eye=0;eye<2;eye++) {auto row=32+eye*4;cameraData[row]={1,0,0,0};cameraData[row+1]={0,1,0,0};cameraData[row+2]={0,0,0,1};cameraData[row+3]={0,0,-1,1};}
+        cameraData[20]={1,0,0,0};cameraData[21]={0,0,-1,0};cameraData[22]={0,1,0,0};cameraData[59].z=cameraData[60].z=0;
+        fog={{{.0001f,1024,0,0},{1,0,.9f,0}}};depths.fill(1);context->UpdateSubresource(depth.Get(),0,nullptr,depths.data(),sizeof(depths),0);
+        output=draw();require(output[0].x<.5f && std::abs(output[0].x-output[2].x)<1e-6f && std::abs(output[1].x-output[3].x)<1e-6f,"sky horizon stereo seam or far-plane divide");
+        depths={.005f,.5f,.5f,1};context->UpdateSubresource(depth.Get(),0,nullptr,depths.data(),sizeof(depths),0);cameraData=savedCamera;fog=savedFog;
         // The real volumetric composite must use shadow visibility only when
         // opted in, and preserve the analytic result when the mix is zero.
         cameraData[20]={1,0,0,0};cameraData[22]={0,0,1,0};fog={{{.0001f,1024,0,0},{1,1,.9f,0}}};
