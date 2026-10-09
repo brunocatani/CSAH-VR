@@ -295,8 +295,6 @@ namespace csah::dlaa
         double cpuCommitMicroseconds_{};
         double cpuRestoreMicroseconds_{};
         std::uint32_t jitterPhase_{};
-        float jitterProjectionX_{};
-        float jitterProjectionY_{};
         bool resourceContractObserved_{};
         bool resetHistory_{ true };
         bool renderThreadRequested_{ true };

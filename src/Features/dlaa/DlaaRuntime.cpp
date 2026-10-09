@@ -216,19 +216,6 @@ namespace csah::dlaa
             return result;
         }
 
-        [[nodiscard]] float matrixDistance(
-            const Matrix4& left,
-            const Matrix4& right) noexcept
-        {
-            const auto* a = &left[0].x;
-            const auto* b = &right[0].x;
-            float maximum{};
-            for (std::size_t index = 0; index < 16; ++index) {
-                maximum = (std::max)(maximum, std::abs(a[index] - b[index]));
-            }
-            return maximum;
-        }
-
         [[nodiscard]] StreamlineMatrix transposeForStreamline(
             const Matrix4& source) noexcept
         {
@@ -490,8 +477,6 @@ namespace csah::dlaa
         lastValidCameraPostCall_.store(0, std::memory_order_relaxed);
         streamlineFrameIndex_ = 0;
         jitterPhase_ = 0;
-        jitterProjectionX_ = 0.0f;
-        jitterProjectionY_ = 0.0f;
         resetHistory_ = true;
         renderThreadSettingsRevision_ = 0;
         renderThreadRequested_ = requested_.load(std::memory_order_acquire);
@@ -753,10 +738,6 @@ namespace csah::dlaa
             evaluationGeometry_.inputHeight != 0 && jitterX && jitterY;
         if (!activeUpscaling) {
             restoreDynamicResolutionIfOwned();
-            if (jitterX && jitterY) {
-                jitterProjectionX_ = *jitterX;
-                jitterProjectionY_ = *jitterY;
-            }
             return;
         }
 
@@ -791,8 +772,6 @@ namespace csah::dlaa
         // the published periphery). DLSS changes render resolution and owns a
         // scale-dependent sample sequence instead.
         if (!isDlssMode(settings_.mode)) {
-            jitterProjectionX_ = *jitterX;
-            jitterProjectionY_ = *jitterY;
             return;
         }
         const auto phaseCount = computeJitterPhaseCount(
@@ -802,14 +781,12 @@ namespace csah::dlaa
         ++jitterPhase_;
         const auto sampleX = halton(sampleIndex, 2u) - 0.5f;
         const auto sampleY = halton(sampleIndex, 3u) - 0.5f;
-        jitterProjectionX_ = -2.0f * sampleX /
-            (static_cast<float>(qualifiedResources_.packedWidth) *
-                evaluationGeometry_.widthScale);
-        jitterProjectionY_ = 2.0f * sampleY /
-            (static_cast<float>(qualifiedResources_.height) *
-                evaluationGeometry_.heightScale);
-        *jitterX = jitterProjectionX_;
-        *jitterY = jitterProjectionY_;
+        // 141DAA370 (141DAA534..141DAA605) applies display/floor(render)
+        // to these offsets when it builds each eye's jittered camera. Supply
+        // display-eye units here: pre-scaling repeats the native conversion,
+        // and using the packed width halves the horizontal sample pattern.
+        *jitterX = -2.0f * sampleX / static_cast<float>(qualifiedResources_.eyeWidth);
+        *jitterY = 2.0f * sampleY / static_cast<float>(qualifiedResources_.height);
     }
 
     void Runtime::onPostImageSpace() noexcept
@@ -2694,46 +2671,11 @@ namespace csah::dlaa
             inverseView.values[9],
             inverseView.values[10],
         };
-        const auto jitterPixelsX = -jitterProjectionX_ *
-            static_cast<float>(qualifiedResources_.packedWidth) *
-            evaluationGeometry_.widthScale * 0.5f;
-        const auto jitterPixelsY = jitterProjectionY_ *
-            static_cast<float>(qualifiedResources_.height) *
-            evaluationGeometry_.heightScale * 0.5f;
         for (std::uint32_t eye = 0; eye < 2; ++eye) {
-            const auto inverseViewTimesViewProjection = multiply(
-                cameraFrame_.inverseView,
-                cameraFrame_.viewProjectionUnjittered[eye]);
-            const auto viewProjectionTimesInverseView = multiply(
-                cameraFrame_.viewProjectionUnjittered[eye],
-                cameraFrame_.inverseView);
-            const auto firstDistance = matrixDistance(
-                inverseViewTimesViewProjection,
-                cameraFrame_.projection[eye]);
-            const auto secondDistance = matrixDistance(
-                viewProjectionTimesInverseView,
-                cameraFrame_.projection[eye]);
-            const auto& unjitteredProjection =
-                firstDistance <= secondDistance ?
-                    inverseViewTimesViewProjection :
-                    viewProjectionTimesInverseView;
-            if ((std::min)(firstDistance, secondDistance) > 0.25f) {
-                operational_.store(false, std::memory_order_release);
-                resetHistory_ = true;
-                stereoEvaluationFailures_.fetch_add(
-                    1,
-                    std::memory_order_relaxed);
-                if (!firstEvaluationFailureLogged_.exchange(
-                        true,
-                        std::memory_order_relaxed)) {
-                    logging::warn(
-                        "DLAA rejected the FO4VR unjittered projection reconstruction for eye {} (inverseView*VP distance={}, VP*inverseView distance={}); vanilla TAA remains active.",
-                        eye,
-                        firstDistance,
-                        secondDistance);
-                }
-                return false;
-            }
+            // b12 uses column-vector matrices. The native camera upload and
+            // captured stereo fixture establish P = VP * inverse(V).
+            const auto unjitteredProjection = multiply(
+                cameraFrame_.viewProjectionUnjittered[eye], cameraFrame_.inverseView);
             const auto crop = [&](const Matrix4& matrix) {
                 if (settings_.mode != Mode::centerDlaa) return matrix;
                 return render::cropClipMatrix(matrix,
@@ -2742,7 +2684,17 @@ namespace csah::dlaa
                     static_cast<float>(evaluationGeometry_.inputWidth) / qualifiedResources_.eyeWidth,
                     static_cast<float>(evaluationGeometry_.inputHeight) / qualifiedResources_.height);
             };
-            const auto projection = transposeForStreamline(crop(unjitteredProjection));
+            const auto unjitteredEyeProjection = crop(unjitteredProjection);
+            const auto jitteredEyeProjection = crop(cameraFrame_.projection[eye]);
+            // Report the jitter actually present in this eye's world camera,
+            // in input pixels. This also handles native DLAA and center crops
+            // without guessing the engine's scale or stereo packing factor.
+            // StreamlineBackend negates these values to screen-space offsets.
+            const auto jitterPixelsX = -(jitteredEyeProjection[0].z - unjitteredEyeProjection[0].z) *
+                static_cast<float>(evaluationGeometry_.inputWidth) * 0.5f;
+            const auto jitterPixelsY = (jitteredEyeProjection[1].z - unjitteredEyeProjection[1].z) *
+                static_cast<float>(evaluationGeometry_.inputHeight) * 0.5f;
+            const auto projection = transposeForStreamline(unjitteredEyeProjection);
             const auto verticalScale = std::abs(projection.values[5]);
             if (!std::isfinite(verticalScale) || verticalScale < 0.001f) {
                 operational_.store(false, std::memory_order_release);
@@ -2989,6 +2941,10 @@ namespace csah::dlaa
                     evaluationGeometry_.inputHeight,
                     evaluationGeometry_.outputWidth,
                     evaluationGeometry_.outputHeight);
+                logging::info("Upscaling stereo camera jitter for {} in input pixels: left=({},{}), right=({},{}); derived from the confirmed per-eye projection, scale={}x{}.",
+                    modeName(settings_.mode), frame.constants[0].jitterPixelsX, frame.constants[0].jitterPixelsY,
+                    frame.constants[1].jitterPixelsX, frame.constants[1].jitterPixelsY,
+                    evaluationGeometry_.widthScale, evaluationGeometry_.heightScale);
             }
         }
         return true;
