@@ -25,6 +25,7 @@
 #include "settings/DiagnosticsSettings.h"
 
 #include "Features/terrain_shadows/TerrainShadowSettings.h"
+#include "Features/inverse_square/InverseSquareSettings.h"
 #include <cstddef>
 
 namespace csah::shared_settings
@@ -49,6 +50,7 @@ namespace csah::shared_settings
         screen_space_gi::Settings screenSpaceGI{};
         water_effects::Settings waterEffects{};
         terrain_shadows::Settings terrainShadows{};
+        inverse_square::Settings inverseSquare{};
         cloud_shadows::Settings cloudShadows{};
         volumetric_lighting::Settings volumetricLighting{};
         vanilla_fixes::Settings vanillaFixes{};
@@ -80,6 +82,7 @@ namespace csah::shared_settings
         bool screenSpaceGI{};
         bool waterEffects{};
         bool terrainShadows{};
+        bool inverseSquare{};
         bool cloudShadows{};
         bool volumetricLighting{};
         bool vanillaFixesGate{};
@@ -114,6 +117,7 @@ namespace csah::shared_settings
                 static_cast<std::size_t>(screenSpaceGI) +
                 static_cast<std::size_t>(waterEffects) +
                 static_cast<std::size_t>(terrainShadows) +
+                static_cast<std::size_t>(inverseSquare) +
                 static_cast<std::size_t>(cloudShadows) +
                 static_cast<std::size_t>(volumetricLighting) +
                 static_cast<std::size_t>(vanillaFixes) +
@@ -151,6 +155,7 @@ namespace csah::shared_settings
             .screenSpaceGI = previous.screenSpaceGI != next.screenSpaceGI,
             .waterEffects = previous.waterEffects != next.waterEffects,
             .terrainShadows = previous.terrainShadows != next.terrainShadows,
+            .inverseSquare = previous.inverseSquare != next.inverseSquare,
             .cloudShadows = previous.cloudShadows != next.cloudShadows,
             .volumetricLighting = previous.volumetricLighting !=
                 next.volumetricLighting,

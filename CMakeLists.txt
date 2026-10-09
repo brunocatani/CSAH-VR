@@ -2297,6 +2297,15 @@ add_custom_command(OUTPUT "${WATER_CAUSTICS_HEADER}"
   VERBATIM)
 add_custom_target(WaterEffectsAssets DEPENDS "${WATER_CAUSTICS_HEADER}")
 
+set(INVERSE_SQUARE_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated/InverseSquare")
+set(INVERSE_SQUARE_HEADER "${INVERSE_SQUARE_GENERATED_DIR}/InverseSquareShaders.h")
+add_custom_command(OUTPUT "${INVERSE_SQUARE_HEADER}"
+  COMMAND "${Python3_EXECUTABLE}" "${ROOT_DIR}/tools/generate_inverse_square_shaders.py"
+    --root "${ROOT_DIR}" --fxc "${CSAH_FXC_EXECUTABLE}" --output "${INVERSE_SQUARE_HEADER}"
+  DEPENDS "${ROOT_DIR}/tools/generate_inverse_square_shaders.py" "${ROOT_DIR}/tools/dxbc_transform.py"
+    "${ROOT_DIR}/tools/water_parallax_transform.py" "${ROOT_DIR}/Shaders012_VR.fxp"
+    "${ROOT_DIR}/package/Shaders/Community/InverseSquareLighting/Attenuation.hlsl" VERBATIM)
+add_custom_target(InverseSquareShaders DEPENDS "${INVERSE_SQUARE_HEADER}")
 set(TERRAIN_SHADOW_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated/TerrainShadows")
 set(TERRAIN_SHADOW_HEADER "${TERRAIN_SHADOW_GENERATED_DIR}/TerrainShadowUpdate.h")
 add_custom_command(OUTPUT "${TERRAIN_SHADOW_HEADER}"
@@ -2320,6 +2329,8 @@ add_custom_target(ScreenSpaceGIShaders DEPENDS "${SSGI_GENERATED_HEADER}")
 add_library(${PROJECT_NAME} SHARED
   "${SOURCE_DIR}/Features/water_effects/WaterEffectsRuntime.cpp"
   "${SOURCE_DIR}/Features/terrain_shadows/TerrainShadowRuntime.cpp"
+  "${SOURCE_DIR}/Features/inverse_square/InverseSquareRuntime.cpp"
+  "${SOURCE_DIR}/Features/inverse_square/InverseSquareSettings.cpp"
   "${SOURCE_DIR}/Features/terrain_shadows/TerrainShadowSettings.cpp"
   "${SOURCE_DIR}/Features/water_effects/WaterWorldData.cpp"
   "${SOURCE_DIR}/Features/water_effects/WaterWorldData.h"
@@ -2603,6 +2614,7 @@ add_dependencies(${PROJECT_NAME}
   WaterEffectsAssets
   ScreenSpaceGIShaders
   TerrainShadowShaders
+  InverseSquareShaders
   VanillaFixesShaders
   UpscalingShaders
   VanillaReflectionPatchTool
@@ -2665,6 +2677,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
   "${SKYLIGHTING_GENERATED_DIR}"
   "${SSGI_GENERATED_DIR}"
   "${TERRAIN_SHADOW_GENERATED_DIR}"
+  "${INVERSE_SQUARE_GENERATED_DIR}"
   "${WATER_EFFECTS_GENERATED_DIR}"
   "${FILMIC_TONEMAPPING_GENERATED_DIR}"
   "${BLOOM_GLARE_GENERATED_DIR}"
@@ -3443,6 +3456,15 @@ if(BUILD_CSAH_TESTS)
   add_test(NAME CSAH.IblEnvironmentUpdater
     COMMAND CSAHIblEnvironmentUpdaterTests "${ROOT_DIR}")
 
+  add_executable(CSAHInverseSquareTests "${ROOT_DIR}/tests/InverseSquareTests.cpp"
+    "${SOURCE_DIR}/Features/inverse_square/InverseSquareRuntime.cpp")
+  add_dependencies(CSAHInverseSquareTests InverseSquareShaders)
+  target_compile_features(CSAHInverseSquareTests PRIVATE cxx_std_23)
+  target_compile_definitions(CSAHInverseSquareTests PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_include_directories(CSAHInverseSquareTests PRIVATE "${SOURCE_DIR}" "${INVERSE_SQUARE_GENERATED_DIR}")
+  target_precompile_headers(CSAHInverseSquareTests PRIVATE "${SOURCE_DIR}/PCH.h")
+  target_link_libraries(CSAHInverseSquareTests PRIVATE CommonLibF4::CommonLibF4 d3d11 d3dcompiler spdlog::spdlog)
+  add_test(NAME CSAH.InverseSquare COMMAND CSAHInverseSquareTests "${INVERSE_SQUARE_GENERATED_DIR}")
   add_executable(CSAHHeightFogTests "${ROOT_DIR}/tests/HeightFogTests.cpp")
   target_compile_features(CSAHHeightFogTests PRIVATE cxx_std_23)
   target_compile_definitions(CSAHHeightFogTests PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)

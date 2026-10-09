@@ -36,6 +36,8 @@ namespace
             UINT,
             ID3D11UnorderedAccessView* const*,
             const UINT*);
+    using DispatchFunction=void(STDMETHODCALLTYPE*)(ID3D11DeviceContext*,UINT,UINT,UINT);
+    using DispatchIndirectFunction=void(STDMETHODCALLTYPE*)(ID3D11DeviceContext*,ID3D11Buffer*,UINT);
     using DrawIndexedFunction = void(STDMETHODCALLTYPE*)(
         ID3D11DeviceContext*, UINT, UINT, INT);
     using DrawFunction = void(STDMETHODCALLTYPE*)(
@@ -60,6 +62,9 @@ namespace
     OMSetRenderTargetsFunction originalOMSetRenderTargets{};
     OMSetRenderTargetsAndUnorderedAccessViewsFunction
         originalOMSetRenderTargetsAndUnorderedAccessViews{};
+    DispatchFunction originalDispatch{};
+    DispatchIndirectFunction originalDispatchIndirect{};
+    std::atomic_uint64_t dispatchCalls{},dispatchIndirectCalls{};
     DrawIndexedFunction originalDrawIndexed{};
     DrawFunction originalDraw{};
     DrawIndexedInstancedFunction originalDrawIndexedInstanced{};
@@ -198,6 +203,11 @@ namespace
             startInstanceLocation);
     }
 
+    void STDMETHODCALLTYPE hookDispatch(ID3D11DeviceContext* context,UINT x,UINT y,UINT z) noexcept
+    {++dispatchCalls;originalDispatch(context,x,y,z);}
+    void STDMETHODCALLTYPE hookDispatchIndirect(ID3D11DeviceContext* context,ID3D11Buffer* args,UINT offset) noexcept
+    {++dispatchIndirectCalls;originalDispatchIndirect(context,args,offset);}
+
     [[nodiscard]] bool belongsToD3D11(const void* address) noexcept
     {
         HMODULE owner{};
@@ -215,14 +225,15 @@ namespace
     }
 }
 
-int main()
+int run(D3D_DRIVER_TYPE driver)
 {
+    createCalls=bindCalls=renderTargetCalls=renderTargetAndUnorderedAccessCalls=drawIndexedCalls=drawCalls=drawIndexedInstancedCalls=drawInstancedCalls=dispatchCalls=dispatchIndirectCalls=0;
     ID3D11Device* device{};
     ID3D11DeviceContext* context{};
     D3D_FEATURE_LEVEL featureLevel{};
     const auto createDeviceResult = D3D11CreateDevice(
         nullptr,
-        D3D_DRIVER_TYPE_WARP,
+        driver,
         nullptr,
         0,
         nullptr,
@@ -249,7 +260,7 @@ int main()
     auto* drawIndexedInstancedTarget =
         contextVtable[kDrawIndexedInstancedVtableIndex];
     auto* drawInstancedTarget = contextVtable[kDrawInstancedVtableIndex];
-    const std::array<void*, 8> targets{
+    const std::array<void*, 10> targets{
         createTarget,
         bindTarget,
         renderTargetTarget,
@@ -258,6 +269,7 @@ int main()
         drawTarget,
         drawIndexedInstancedTarget,
         drawInstancedTarget,
+        contextVtable[41],contextVtable[42],
     };
     for (const auto target : targets) {
         if (belongsToD3D11(target)) {
@@ -277,7 +289,7 @@ int main()
         return EXIT_FAILURE;
     }
 
-    const std::array<void*, 8> detours{
+    const std::array<void*, 10> detours{
         reinterpret_cast<void*>(&hookCreatePixelShader),
         reinterpret_cast<void*>(&hookPSSetShader),
         reinterpret_cast<void*>(&hookOMSetRenderTargets),
@@ -287,8 +299,9 @@ int main()
         reinterpret_cast<void*>(&hookDraw),
         reinterpret_cast<void*>(&hookDrawIndexedInstanced),
         reinterpret_cast<void*>(&hookDrawInstanced),
+        reinterpret_cast<void*>(&hookDispatch),reinterpret_cast<void*>(&hookDispatchIndirect),
     };
-    std::array<void*, 8> trampolines{};
+    std::array<void*, 10> trampolines{};
     for (std::size_t index = 0; index < targets.size(); ++index) {
         if (MH_CreateHook(
                 targets[index],
@@ -317,6 +330,8 @@ int main()
     originalDrawInstanced =
         reinterpret_cast<DrawInstancedFunction>(trampolines[7]);
 
+    originalDispatch=reinterpret_cast<DispatchFunction>(trampolines[8]);
+    originalDispatchIndirect=reinterpret_cast<DispatchIndirectFunction>(trampolines[9]);
     bool queueSucceeded = true;
     for (const auto target : targets) {
         queueSucceeded = MH_QueueEnableHook(target) == MH_OK &&
@@ -347,7 +362,11 @@ int main()
     context->Draw(0, 0);
     context->DrawIndexedInstanced(0, 0, 0, 0, 0);
     context->DrawInstanced(0, 0, 0, 0);
-    const auto callsObserved =
+    D3D11_BUFFER_DESC indirectDesc{};indirectDesc.ByteWidth=12;indirectDesc.MiscFlags=D3D11_RESOURCE_MISC_DRAWINDIRECT_ARGS;
+    const std::array<UINT,3> zeroGroups{};D3D11_SUBRESOURCE_DATA initial{zeroGroups.data(),0,0};ID3D11Buffer* indirect{};
+    const auto indirectResult=device->CreateBuffer(&indirectDesc,&initial,&indirect);
+    context->Dispatch(0,0,0);if(indirect) {context->DispatchIndirect(indirect,0);indirect->Release();}
+    const auto callsObserved = SUCCEEDED(indirectResult) && dispatchCalls==1 && dispatchIndirectCalls==1 &&
         createCalls.load(std::memory_order_relaxed) == 1 &&
         bindCalls.load(std::memory_order_relaxed) == 1 &&
         renderTargetCalls.load(std::memory_order_relaxed) == 1 &&
@@ -368,7 +387,7 @@ int main()
     device->Release();
 
     if (!callsObserved) {
-        reportFailure("detoured D3D11 calls did not reach all eight hooks");
+        reportFailure("detoured D3D11 calls did not reach all ten hooks");
         return EXIT_FAILURE;
     }
     if (disableStatus != MH_OK || !removeSucceeded ||
@@ -377,4 +396,10 @@ int main()
         return EXIT_FAILURE;
     }
     return EXIT_SUCCESS;
+}
+
+int main()
+{
+    if(run(D3D_DRIVER_TYPE_WARP)!=EXIT_SUCCESS) return EXIT_FAILURE;
+    return run(D3D_DRIVER_TYPE_HARDWARE);
 }

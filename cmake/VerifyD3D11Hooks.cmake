@@ -20,6 +20,12 @@ foreach(required IN ITEMS
     "validateD3D11ShaderHooks"
     "hookCreateVertexShader"
     "kCreateVertexShaderVtableIndex = 12"
+    "hookInverseDispatch"
+    "hookInverseDispatchIndirect"
+    "inverseDispatchTargets={table[41],table[42]}"
+    "detourPatchOwned(inverseDispatchTargets[0],inverseDispatchPatches[0])"
+    "detourPatchOwned(inverseDispatchTargets[1],inverseDispatchPatches[1])"
+    "inverse_square::Runtime::get().scope(context,false,activeInverseSquarePixel)"
     "hookCreateComputeShader"
     "kCreateComputeShaderVtableIndex = 18"
     "selectComputeShader"
@@ -114,9 +120,9 @@ endif()
 
 string(REGEX MATCHALL "MH_CreateHook\\(" createHookCalls "${source}")
 list(LENGTH createHookCalls createHookCallCount)
-if(NOT createHookCallCount EQUAL 8)
+if(NOT createHookCallCount EQUAL 9)
   message(FATAL_ERROR
-    "D3D11 detour regression: expected seven core calls and one bounded draw helper")
+    "D3D11 detour regression: expected seven core calls, one bounded draw helper, and one bounded Dispatch helper")
 endif()
 
 string(FIND "${source}" "Runtime::get().onDeviceCreated" deviceReady)

@@ -1,3 +1,4 @@
+#include "Features/inverse_square/InverseSquareRuntime.h"
 #include "Features/terrain_shadows/TerrainShadowRuntime.h"
 #include "Features/water_effects/WaterEffectsRuntime.h"
 #include "Features/screen_space_gi/ScreenSpaceGIRuntime.h"
@@ -427,6 +428,7 @@ extern "C" __declspec(dllexport) bool F4SEAPI F4SEPlugin_Load(
         const auto screenSpaceGISettings=csah::screen_space_gi::loadSettings();
         csah::terrain_shadows::Runtime::get().loadMaps("Data/F4SE/Plugins/CSAH/HeightMaps");
         csah::terrain_shadows::Runtime::get().applySettings(csah::terrain_shadows::loadSettings());
+        csah::inverse_square::Runtime::get().applySettings(csah::inverse_square::loadSettings());
         const auto waterEffectsSettings=csah::water_effects::loadSettings();
         const auto lodBlendingSettings = csah::lod_blending::loadSettings();
         const auto basicWetnessSettings =

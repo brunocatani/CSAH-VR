@@ -1,3 +1,4 @@
+#include "Features/inverse_square/InverseSquareRuntime.h"
 #include "Features/terrain_shadows/TerrainShadowRuntime.h"
 #include "Features/water_effects/WaterEffectsRuntime.h"
 #include "Features/screen_space_gi/ScreenSpaceGIRuntime.h"
@@ -110,6 +111,8 @@ namespace csah::render
                 UINT,
                 ID3D11UnorderedAccessView* const*,
                 const UINT*);
+        using DispatchFunction=void(STDMETHODCALLTYPE*)(ID3D11DeviceContext*,UINT,UINT,UINT);
+        using DispatchIndirectFunction=void(STDMETHODCALLTYPE*)(ID3D11DeviceContext*,ID3D11Buffer*,UINT);
         using DrawIndexedFunction = void(STDMETHODCALLTYPE*)(
             ID3D11DeviceContext*, UINT, UINT, INT);
         using DrawFunction = void(STDMETHODCALLTYPE*)(
@@ -205,6 +208,14 @@ namespace csah::render
         void* pixelShaderBindTarget{};
         void* renderTargetBindTarget{};
         void* renderTargetAndUnorderedAccessBindTarget{};
+        DispatchFunction originalInverseDispatch{};
+        DispatchIndirectFunction originalInverseDispatchIndirect{};
+        std::array<void*,2> inverseDispatchTargets{};
+        std::array<DetourPatchIdentity,2> inverseDispatchPatches{};
+        // Published after both method identities; validation may run on a
+        // different engine thread after device bootstrap.
+        std::atomic_bool inverseDispatchInstalled{};
+        thread_local bool activeInverseSquarePixel{};
         void* drawIndexedTarget{};
         void* drawTarget{};
         void* drawIndexedInstancedTarget{};
@@ -2078,7 +2089,7 @@ namespace csah::render
 
         [[nodiscard]] bool activeDrawInterceptionRequired() noexcept
         {
-            return activeReplacementBinding.family !=
+            return activeInverseSquarePixel || activeReplacementBinding.family !=
                     linear_lighting::ReplacementShaderFamily::none ||
                 activeCorrectedSslrRaytracePixel ||
                 activeDirectionalLightDiagnosticPixel ||
@@ -2704,14 +2715,21 @@ namespace csah::render
                 bytecode,
                 bytecodeLength,
                 patchStorage);
+            const auto inverseSelection=inverse_square::selectShader(bytecode,bytecodeLength,false);
+            const bool inverseActive=inverseSelection.replaced && !selection.replaced() && !volumetricSelection.replaced();
             auto result = original(
                 device,
                 volumetricSelection.replaced() ?
-                    volumetricSelection.bytecode : selection.data,
+                    volumetricSelection.bytecode : (inverseActive?inverseSelection.data:selection.data),
                 volumetricSelection.replaced() ?
-                    volumetricSelection.bytecodeLength : selection.size,
+                    volumetricSelection.bytecodeLength : (inverseActive?inverseSelection.size:selection.size),
                 classLinkage,
                 shader);
+            if(inverseActive && (FAILED(result) || !shader || !*shader || !inverse_square::tagShader(*shader))) {
+                if(shader && *shader) {(*shader)->Release();*shader=nullptr;}
+                result=original(device,bytecode,bytecodeLength,classLinkage,shader);
+                logging::error("Inverse-square pixel shader creation/tagging failed; native local light retained.");
+            }
             const auto volumetricResult = result;
             const auto volumetricAccepted =
                 volumetricSelection.replaced() && SUCCEEDED(result) &&
@@ -2908,12 +2926,19 @@ namespace csah::render
             const auto selection = vanilla_fixes::selectComputeShader(
                 bytecode,
                 bytecodeLength);
+            const auto inverseSelection=inverse_square::selectShader(bytecode,bytecodeLength,true);
+            const bool inverseActive=inverseSelection.replaced && !selection.replaced();
             auto result = original(
                 device,
-                selection.data,
-                selection.size,
+                inverseActive?inverseSelection.data:selection.data,
+                inverseActive?inverseSelection.size:selection.size,
                 classLinkage,
                 shader);
+            if(inverseActive && (FAILED(result) || !shader || !*shader || !inverse_square::tagShader(*shader))) {
+                if(shader && *shader) {(*shader)->Release();*shader=nullptr;}
+                result=original(device,bytecode,bytecodeLength,classLinkage,shader);
+                logging::error("Inverse-square compute shader creation/tagging failed; native local light retained.");
+            }
             auto replacementAccepted =
                 selection.replaced() && SUCCEEDED(result) && shader && *shader;
             if (selection.replaced() && !replacementAccepted) {
@@ -3085,6 +3110,7 @@ namespace csah::render
                 return;
             }
             activeEnginePixelShader = shader;
+            activeInverseSquarePixel=classInstanceCount==0 && inverse_square::taggedShader(shader);
             diagnostics::hdr_output_probe::onPixelShaderBound(
                 context,
                 shader);
@@ -3639,6 +3665,7 @@ namespace csah::render
                 }
                 return;
             }
+            const auto inverseSquare=inverse_square::Runtime::get().scope(context,false,activeInverseSquarePixel);
             const auto constants =
                 scopeActiveReplacementPixelConstants(context);
             const vanilla_fixes::ScopedSslrEnvironmentBinding
@@ -3743,6 +3770,7 @@ namespace csah::render
                 }
                 return;
             }
+            const auto inverseSquare=inverse_square::Runtime::get().scope(context,false,activeInverseSquarePixel);
             const auto constants =
                 scopeActiveReplacementPixelConstants(context);
             const vanilla_fixes::ScopedSslrEnvironmentBinding
@@ -3859,6 +3887,7 @@ namespace csah::render
                 }
                 return;
             }
+            const auto inverseSquare=inverse_square::Runtime::get().scope(context,false,activeInverseSquarePixel);
             const auto constants =
                 scopeActiveReplacementPixelConstants(context);
             const vanilla_fixes::ScopedSslrEnvironmentBinding
@@ -3977,6 +4006,7 @@ namespace csah::render
                 }
                 return;
             }
+            const auto inverseSquare=inverse_square::Runtime::get().scope(context,false,activeInverseSquarePixel);
             const auto constants =
                 scopeActiveReplacementPixelConstants(context);
             const vanilla_fixes::ScopedSslrEnvironmentBinding
@@ -4067,6 +4097,53 @@ namespace csah::render
                 static_cast<int>(status),
                 trampoline);
             return false;
+        }
+
+        void STDMETHODCALLTYPE hookInverseDispatch(ID3D11DeviceContext* context,UINT x,UINT y,UINT z) noexcept
+        {
+            Microsoft::WRL::ComPtr<ID3D11ComputeShader> shader;
+            context->CSGetShader(&shader,nullptr,nullptr);
+            const auto scope=inverse_square::Runtime::get().scope(context,true,inverse_square::taggedShader(shader.Get()));
+            if(originalInverseDispatch) originalInverseDispatch(context,x,y,z);
+        }
+        void STDMETHODCALLTYPE hookInverseDispatchIndirect(ID3D11DeviceContext* context,ID3D11Buffer* arguments,UINT offset) noexcept
+        {
+            Microsoft::WRL::ComPtr<ID3D11ComputeShader> shader;
+            context->CSGetShader(&shader,nullptr,nullptr);
+            const auto scope=inverse_square::Runtime::get().scope(context,true,inverse_square::taggedShader(shader.Get()));
+            if(originalInverseDispatchIndirect) originalInverseDispatchIndirect(context,arguments,offset);
+        }
+        void installInverseDispatchDetours(ID3D11DeviceContext* context) noexcept
+        {
+            if(inverseDispatchInstalled.load(std::memory_order_acquire)) return;
+            auto** table=*reinterpret_cast<void***>(context);
+            // ID3D11DeviceContext SDK methods 41/42, not private engine slots.
+            if(!isReadableRange(table,43*sizeof(void*))) {logging::error("Inverse-square Dispatch table is unreadable; native attenuation retained.");return;}
+            inverseDispatchTargets={table[41],table[42]};
+            const auto module=GetModuleHandleW(L"d3d11.dll");
+            for(auto* target:inverseDispatchTargets) if(!isExecutableAddress(target) || !addressBelongsToModule(target,module)) {
+                logging::error("Inverse-square Dispatch methods failed D3D11 ownership validation.");return;
+            }
+            const std::array<void*,2> hooks{reinterpret_cast<void*>(&hookInverseDispatch),reinterpret_cast<void*>(&hookInverseDispatchIndirect)};
+            unsigned created=0;bool valid=true;
+            for(unsigned i=0;i<2;i++) {
+                void* trampoline{};
+                const auto status=MH_CreateHook(inverseDispatchTargets[i],hooks[i],&trampoline);
+                if(status!=MH_OK) {valid=false;break;}
+                ++created;if(!isExecutableAddress(trampoline)) {valid=false;break;}
+                if(i==0) originalInverseDispatch=reinterpret_cast<DispatchFunction>(trampoline);
+                else originalInverseDispatchIndirect=reinterpret_cast<DispatchIndirectFunction>(trampoline);
+            }
+            if(valid) for(auto* target:inverseDispatchTargets) if(MH_QueueEnableHook(target)!=MH_OK) valid=false;
+            if(valid) valid=MH_ApplyQueued()==MH_OK;
+            if(valid) for(unsigned i=0;i<2;i++) valid=captureMinHookPatchIdentity(inverseDispatchTargets[i],inverseDispatchPatches[i]) && valid;
+            if(!valid) {
+                for(unsigned i=0;i<created;i++) {(void)MH_DisableHook(inverseDispatchTargets[i]);(void)MH_RemoveHook(inverseDispatchTargets[i]);}
+                originalInverseDispatch=nullptr;originalInverseDispatchIndirect=nullptr;
+                logging::error("Inverse-square Dispatch hooks could not be installed; native attenuation remains active.");return;
+            }
+            inverseDispatchInstalled.store(true,std::memory_order_release);inverse_square::Runtime::get().setDispatchReady(true);
+            logging::info("Inverse-square local lighting owns validated Dispatch and DispatchIndirect scopes.");
         }
 
         [[nodiscard]] bool installQualificationDrawDetours(
@@ -4210,6 +4287,7 @@ namespace csah::render
                 true,
                 std::memory_order_release);
             qualificationDrawDetoursOwned.store(true, std::memory_order_release);
+            installInverseDispatchDetours(context);
             logging::info(
                 "Installed validated D3D11 qualification draw detours (DrawIndexed={}, Draw={}, DrawIndexedInstanced={}, DrawInstanced={}).",
                 drawIndexedTarget,
@@ -4747,6 +4825,7 @@ namespace csah::render
             lod_blending::Runtime::get().onDeviceCreated(*device, *immediateContext);
             terrain_variation::Runtime::get().onDeviceCreated(*device, *immediateContext);
             water_effects::Runtime::get().onDeviceCreated(*device, *immediateContext);
+            inverse_square::Runtime::get().onDeviceCreated(*device,*immediateContext);
             terrain_shadows::Runtime::get().onDeviceCreated(*device,*immediateContext);
             screen_space_gi::Runtime::get().onDeviceCreated(*device, *immediateContext);
             basic_wetness::Runtime::get().onDeviceCreated(
@@ -4994,6 +5073,11 @@ namespace csah::render
                     drawIndexedInstancedTarget,
                     drawIndexedInstancedPatch) &&
                 detourPatchOwned(drawInstancedTarget, drawInstancedPatch);
+            inverse_square::Runtime::get().setDispatchReady(inverseDispatchInstalled.load(std::memory_order_acquire) &&
+                createVertexOwned && createOwned && createComputeOwned && vertexBindOwned && bindOwned &&
+                renderTargetOwned && renderTargetAndUnorderedAccessOwned && drawOwned &&
+                detourPatchOwned(inverseDispatchTargets[0],inverseDispatchPatches[0]) &&
+                detourPatchOwned(inverseDispatchTargets[1],inverseDispatchPatches[1]));
             qualificationDrawDetoursOwned.store(
                 drawOwned,
                 std::memory_order_release);

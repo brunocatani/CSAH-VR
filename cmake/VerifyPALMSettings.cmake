@@ -74,12 +74,13 @@ foreach(tabIndex RANGE 0 ${lastTab})
   endforeach()
 endforeach()
 
-if(NOT controlCount EQUAL 175)
+if(NOT controlCount EQUAL 178)
   message(FATAL_ERROR
-    "CSAH PALM settings coverage changed: expected 175 controls, found ${controlCount}")
+    "CSAH PALM settings coverage changed: expected 178 controls, found ${controlCount}")
 endif()
 
 foreach(required IN ITEMS
+    inverse-square-bEnabled inverse-square-fSourceSize inverse-square-fIntensity
     height-fog-bHeightFogEnabled height-fog-fHeightFogDensity height-fog-fHeightFogHeight height-fog-fHeightFogFalloff
     height-fog-fHeightFogStart height-fog-fHeightFogOpacity height-fog-fHeightFogWeather height-fog-fHeightFogVolume
     terrain-shadows-bEnabled terrain-shadows-fStrength
@@ -140,6 +141,7 @@ foreach(required IN ITEMS
     "screen_space_gi::Runtime::get().applySettings"
     "water_effects::Runtime::get().applySettings"
     "terrain_shadows::Runtime::get().applySettings"
+    "inverse_square::Runtime::get().applySettings"
     "pbr::Runtime::get().applySettings"
     "volumetric_lighting::Runtime::get().start"
     "bloom_glare::Runtime::get().applySettings"
@@ -169,6 +171,7 @@ foreach(required IN ITEMS
     "screen_space_gi::Runtime::get().applySettings"
     "water_effects::Runtime::get().applySettings"
     "terrain_shadows::Runtime::get().applySettings"
+    "inverse_square::Runtime::get().applySettings"
     "pbr::Runtime::get().applySettings"
     "cloud_shadows::Runtime::get().applySettings"
     "volumetric_lighting::Runtime::get().applySettings"
