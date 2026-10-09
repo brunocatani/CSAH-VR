@@ -3488,6 +3488,15 @@ if(BUILD_CSAH_TESTS)
   target_link_libraries(CSAHWaterCausticsTests PRIVATE CommonLibF4::CommonLibF4 d3d11 d3dcompiler spdlog::spdlog)
   add_test(NAME CSAH.WaterCaustics COMMAND CSAHWaterCausticsTests "${ROOT_DIR}")
 
+  add_executable(CSAHWaterScreenReflectionTests "${ROOT_DIR}/tests/WaterScreenReflectionTests.cpp"
+    "${SOURCE_DIR}/Features/water_effects/WaterEffectsRuntime.cpp" "${SOURCE_DIR}/Features/water_effects/WaterWorldData.cpp")
+  add_dependencies(CSAHWaterScreenReflectionTests WaterEffectsAssets)
+  target_compile_features(CSAHWaterScreenReflectionTests PRIVATE cxx_std_23)
+  target_compile_definitions(CSAHWaterScreenReflectionTests PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_include_directories(CSAHWaterScreenReflectionTests PRIVATE "${SOURCE_DIR}" "${WATER_EFFECTS_GENERATED_DIR}")
+  target_precompile_headers(CSAHWaterScreenReflectionTests PRIVATE "${SOURCE_DIR}/PCH.h")
+  target_link_libraries(CSAHWaterScreenReflectionTests PRIVATE CommonLibF4::CommonLibF4 d3d11 d3dcompiler spdlog::spdlog)
+  add_test(NAME CSAH.WaterScreenReflections COMMAND CSAHWaterScreenReflectionTests "${ROOT_DIR}")
   add_executable(CSAHWaterParallaxTests "${ROOT_DIR}/tests/WaterParallaxTests.cpp"
     "${SOURCE_DIR}/Features/water_effects/WaterEffectsRuntime.cpp" "${SOURCE_DIR}/Features/water_effects/WaterWorldData.cpp")
   add_dependencies(CSAHWaterParallaxTests WaterEffectsAssets)

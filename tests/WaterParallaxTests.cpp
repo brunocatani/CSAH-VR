@@ -112,6 +112,20 @@ Out main(uint vertex:SV_VertexID,uint eye:SV_InstanceID){Out o;float2 uv=float2(
         for(UINT i=0;i<transition.size();i++) require(std::abs(transition[i].y-(oldReflection[i].y+reflected[i].y)*.5f)<1e-4f && std::abs(transition[i].z-(oldReflection[i].z+reflected[i].z)*.5f)<1e-4f,"water environment transition is not coherent");
         settings.reflectionDistance=64;runtime.applySettings(settings);compare(render(patched.Get()),heightBaseline,"distant reflection did not preserve native water");
         settings.reflectionDistance=4096;settings.reflections=false;runtime.applySettings(settings);compare(render(patched.Get()),heightBaseline,"disabled reflection did not preserve native water");
+        settings.reflections=true;settings.screenReflections=true;environment.previousAvailable=false;environment.transitionWeight=1;runtime.applySettings(settings);
+        const auto fxCubeFallback=render(patched.Get());
+        float fxDifference=0;for(UINT i=0;i<fxCubeFallback.size();i++) {require(std::isfinite(fxCubeFallback[i].x) && fxCubeFallback[i].w==heightBaseline[i].w,"FX fallback changed native alpha");fxDifference+=std::abs(fxCubeFallback[i].x-heightBaseline[i].x);}
+        require(fxDifference>.1f,"FX miss lost the world cubemap fallback");
+        settings.reflections=false;runtime.applySettings(settings);compare(render(patched.Get()),heightBaseline,"FX miss without cube did not preserve native base water");
+        settings.reflections=true;settings.reflectionDistance=64;runtime.applySettings(settings);compare(render(patched.Get()),fxCubeFallback,"FX distant water lost its world fallback");settings.reflectionDistance=4096;runtime.applySettings(settings);
+        auto legacyColour=views[0].Get();auto* legacySampler=sampler.Get();
+        context->PSSetShaderResources(9,1,&legacyColour);context->PSSetShaderResources(10,1,&legacyColour);
+        context->PSSetSamplers(9,1,&legacySampler);context->PSSetSamplers(10,1,&legacySampler);
+        for(const auto& names:std::array<std::array<const char*,2>,3>{{{"WaterColor_0000001C.dxbc","WaterColor_0000021C.dxbc"},{"WaterColor_0000009F.dxbc","WaterColor_0000029F.dxbc"},{"WaterColor_000000BF.dxbc","WaterColor_000002BF.dxbc"}}}) {
+            auto plainCode=bytes(root/"package/Shaders/Community/WaterLinearLighting"/names[0]);auto legacyCode=bytes(root/"package/Shaders/Community/WaterLinearLighting"/names[1]);
+            ComPtr<ID3D11PixelShader> plain,legacy;check(device->CreatePixelShader(plainCode.data(),plainCode.size(),nullptr,&plain),"FX plain variant");check(device->CreatePixelShader(legacyCode.data(),legacyCode.size(),nullptr,&legacy),"FX legacy variant");
+            compare(render(plain.Get()),render(legacy.Get()),"opaque-receiver SSR leaked into FX water reflection");
+        }
         runtime.onDeviceCreated(nullptr,nullptr);context->ClearState();
         std::cout<<(driver==D3D_DRIVER_TYPE_WARP?"WARP":"Hardware")<<": native water variants, parallax, stereo, outgoing reflections, missing coverage, history transition, distance fade and disable passed\n";
     }

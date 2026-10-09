@@ -9,10 +9,14 @@ TextureCube<float4> WaterPreviousPosition : register(t74);
 Buffer<float4> WaterReflectionParameters : register(t75);
 SamplerState WaterEnvironmentSampler : register(s14);
 cbuffer NativeCamera : register(b12) {float4 Camera[61];};
+cbuffer NativeWaterGeometry : register(b0) {float4 WaterGeometry[1];};
+// Scene inputs are aliased into private slots only for this water draw.
+#include "WaterScreenReflections.hlsli"
 struct Input
 {
     float4 eyeVector:TEXCOORD0;
     nointerpolation uint eye:EYEPOS;
+    float3 screen:TEXCOORD7;
     float3 normal:TEXCOORD8;
     float3 nativeColour:TEXCOORD9;
 };
@@ -30,36 +34,71 @@ float3 CorrectWaterDirection(TextureCube<float4> positions,float3 direction,floa
     float travel=-projection+sqrt(discriminant);
     return normalize(lerp(direction,normalize(fromProbe+direction*travel),saturate(hit.w)));
 }
-float3 PSMain(Input input):SV_Target0
+struct ReflectionOutput {float3 colour:SV_Target0;float fxActive:SV_Target1;};
+ReflectionOutput PSMain(Input input)
 {
+    ReflectionOutput output;output.colour=input.nativeColour;output.fxActive=0;
     float3 result=input.nativeColour;
     uint rows;WaterReflectionParameters.GetDimensions(rows);
-    [branch] if(rows>=4)
+    [branch] if(rows>=5)
     {
         float4 control=WaterReflectionParameters[0];
+        const float4 fx=WaterReflectionParameters[4];
+        output.fxActive=fx.x>.5 && control.w>0 && (input.screen.z>.5 || control.z>.5) ? 1:0;
+        float3 normal=normalize(input.normal);
+        if(fx.x>.5) normal=normalize(lerp(normal,float3(0,0,1),saturate(fx.y)));
         float maximumDistance=WaterReflectionParameters[3].x;
-        float fade=1-saturate(input.eyeVector.w/max(maximumDistance,1));
+        float fade=fx.x>.5 ? 1 : 1-saturate(input.eyeVector.w/max(maximumDistance,1));
         [branch] if(control.z>.5 && control.w>0 && fade>0 && input.eye<2 &&
             dot(input.eyeVector.xyz,input.eyeVector.xyz)>1e-6 && dot(input.normal,input.normal)>1e-6)
         {
             // Unlike the vanilla material cubemap coordinate, this is already
             // the outgoing world ray. Negating it would reflect the ground skyward.
-            float3 direction=reflect(normalize(input.eyeVector.xyz),normalize(input.normal));
+            float3 direction=reflect(normalize(input.eyeVector.xyz),normal);
             float3 receiver=Camera[59+input.eye].xyz+input.eyeVector.xyz;
+            if(fx.x>.5 && input.screen.z>.5) {
+                WaterRaytraceInput ray;
+                ray.waterNormal=input.normal;ray.packedUv=input.screen.xy*WaterGeometry[0].xy;
+                ray.eyeIndex=input.eye;ray.eyeRelativeReceiver=input.eyeVector.xyz;
+                float3 projectedDirection=normalize(transformRows(20u,reflectedWaterView(ray,input.eye!=0)));
+                float3 projectedReceiver=Camera[59+input.eye].xyz+transformRows(20u,receiverViewFromScreen(ray,input.eye!=0));
+                if(all(isfinite(projectedDirection)) && all(isfinite(projectedReceiver))) {direction=projectedDirection;receiver=projectedReceiver;}
+            }
             float3 currentDirection=CorrectWaterDirection(WaterPosition,direction,receiver,WaterReflectionParameters[1]);
-            float3 colour=WaterEnvironment.SampleLevel(WaterEnvironmentSampler,currentDirection,0);
+            float3 colour=WaterEnvironment.SampleLevel(WaterEnvironmentSampler,currentDirection,fx.z);
             float confidence=saturate(WaterValidity.SampleLevel(WaterEnvironmentSampler,currentDirection,0));
             if(control.y>.5 && control.x<1)
             {
                 float3 previousDirection=CorrectWaterDirection(WaterPreviousPosition,direction,receiver,WaterReflectionParameters[2]);
-                float3 previous=WaterPreviousEnvironment.SampleLevel(WaterEnvironmentSampler,previousDirection,0);
+                float3 previous=WaterPreviousEnvironment.SampleLevel(WaterEnvironmentSampler,previousDirection,fx.z);
                 float previousConfidence=saturate(WaterPreviousValidity.SampleLevel(WaterEnvironmentSampler,previousDirection,0));
                 colour=lerp(previous,colour,saturate(control.x));confidence=lerp(previousConfidence,confidence,saturate(control.x));
             }
             if(Response.z>.5) colour*=SkylightingReflectionVisibility(receiver,normalize(input.normal),-normalize(input.eyeVector.xyz),0);
             if(all(isfinite(colour))) result=lerp(result,max(colour,0),saturate(confidence*control.w*fade));
         }
+        [branch] if(output.fxActive>.5 && input.screen.z>.5 && fx.w>.5 && input.eye<2) {
+            uint width,height;WaterSceneDepth.GetDimensions(width,height);
+            if(width>0 && height>0) {
+                WaterRaytraceInput ray;
+                ray.waterNormal=input.normal;ray.packedUv=input.screen.xy*WaterGeometry[0].xy;
+                ray.eyeIndex=input.eye;ray.eyeRelativeReceiver=input.eyeVector.xyz;
+                float4 screen=TraceScreenWaterReflection(ray);
+                if(all(isfinite(screen))) result=lerp(result,max(screen.xyz,0),saturate(screen.w*control.w));
+            }
+        }
     }
-    return result;
+    output.colour=result;return output;
 }
 
+
+float FXWaterMode():SV_Target0
+{
+    uint rows;WaterReflectionParameters.GetDimensions(rows);
+    return rows>=5 && WaterReflectionParameters[4].x>.5 && WaterReflectionParameters[0].w>0 ? 1:0;
+}
+
+float FXWaterModeFar():SV_Target0
+{
+    return FXWaterMode() * (WaterReflectionParameters[0].z>.5 ? 1:0);
+}

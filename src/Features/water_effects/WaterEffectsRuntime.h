@@ -11,14 +11,14 @@ namespace csah::water_effects
     class ScopedReflectionBindings final
     {
     public:
-        ScopedReflectionBindings(ID3D11DeviceContext* context,const std::array<ID3D11ShaderResourceView*,7>& views,
+        ScopedReflectionBindings(ID3D11DeviceContext* context,const std::array<ID3D11ShaderResourceView*,9>& views,
             ID3D11SamplerState* sampler) noexcept;
         ~ScopedReflectionBindings();
         ScopedReflectionBindings(const ScopedReflectionBindings&)=delete;
         ScopedReflectionBindings& operator=(const ScopedReflectionBindings&)=delete;
     private:
         ID3D11DeviceContext* context_{};
-        std::array<Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>,7> previous_;
+        std::array<Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>,9> previous_;
         Microsoft::WRL::ComPtr<ID3D11SamplerState> sampler_;
     };
     class ScopedCausticBindings final
@@ -54,7 +54,7 @@ namespace csah::water_effects
         [[nodiscard]] bool causticsRequested() const noexcept
         {return requested() && caustics_.load(std::memory_order_relaxed);}
         [[nodiscard]] bool reflectionsRequested() const noexcept
-        {return requested() && reflections_.load(std::memory_order_relaxed) && reflectionStrength_.load(std::memory_order_relaxed)>0;}
+        {return requested() && (reflections_.load(std::memory_order_relaxed) || screenReflections_.load(std::memory_order_relaxed)) && reflectionStrength_.load(std::memory_order_relaxed)>0;}
         void onSkyUpdated(bool worldReady,float seconds) noexcept {world_.capture(causticsRequested(),worldReady,seconds);}
         void resetWorld() noexcept {world_.invalidate();}
         void onDeviceCreated(ID3D11Device* device,ID3D11DeviceContext* context) noexcept;
@@ -78,10 +78,11 @@ namespace csah::water_effects
         Ptr<ID3D11Buffer> reflectionParameters_;
         Ptr<ID3D11ShaderResourceView> reflectionParameterView_;
         Ptr<ID3D11SamplerState> reflectionSampler_;
-        std::array<float,16> uploadedReflection_{};
+        std::array<float,20> uploadedReflection_{};
         WorldData world_;
         std::atomic_bool enabled_{};
-        std::atomic_bool parallax_{true},caustics_{true},reflections_{true};
+        std::atomic_bool parallax_{true},caustics_{true},reflections_{true},screenReflections_{};
+        std::atomic<float> reflectionFlatness_{},reflectionRoughness_{};
         std::atomic<float> scale_{1};
         std::atomic<float> causticStrength_{1};
         std::atomic<float> reflectionStrength_{1},reflectionDistance_{1024};

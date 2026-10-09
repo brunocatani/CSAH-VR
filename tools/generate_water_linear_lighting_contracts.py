@@ -1423,9 +1423,9 @@ def validate_candidate(
     candidate_samplers=set(candidate_declarations.samplers)
     candidate_textures=set(candidate_declarations.textures)
     if 14 in candidate_samplers:
-        if candidate_textures-set(original_declarations.textures)!={50,51,*range(69,75)}:
+        if candidate_textures-set(original_declarations.textures)!={50,51,*range(69,75),79,80}:
             raise ContractError(f"{name} water reflection texture footprint changed")
-        candidate_samplers.remove(14);candidate_textures-={50,51,*range(69,75)}
+        candidate_samplers.remove(14);candidate_textures-={50,51,*range(69,75),79,80}
     if candidate_samplers!=set(original_declarations.samplers) or candidate_textures!=set(original_declarations.textures):
         raise ContractError(f"{name} changed native texture/sampler bindings")
 
@@ -1528,6 +1528,13 @@ def main() -> int:
             run_fxc([str(fxc), "/nologo", "/T", "ps_5_0", "/E", "PSMain", "/O3", "/Ges", "/WX", "/Fo", str(reflection_path),
                 str(root / "package/Shaders/Community/WaterEffects/WaterReflections.hlsl")], "water environment reflection")
             reflection=reflection_path.read_bytes()
+            flag_path=temporary_path / "WaterFXMode.dxbc"
+            run_fxc([str(fxc), "/nologo", "/T", "ps_5_0", "/E", "FXWaterMode", "/O3", "/Ges", "/WX", "/Fo", str(flag_path),
+                str(root / "package/Shaders/Community/WaterEffects/WaterReflections.hlsl")], "water reflection mode")
+            reflection_flag=flag_path.read_bytes()
+            run_fxc([str(fxc), "/nologo", "/T", "ps_5_0", "/E", "FXWaterModeFar", "/O3", "/Ges", "/WX", "/Fo", str(flag_path),
+                str(root / "package/Shaders/Community/WaterEffects/WaterReflections.hlsl")], "far water reflection mode")
+            reflection_far_flag=flag_path.read_bytes()
             candidates: dict[int, bytes] = {}
             for entry in manifest:
                 descriptor = int(entry["descriptor"])
@@ -1543,7 +1550,7 @@ def main() -> int:
                 candidate=water_parallax_transform.apply(candidate,parallax)
                 if candidate!=before_parallax:
                     water_parallax_transform.verify_vertex_pair(inventory,[descriptor,*entry["aliases"]])
-                candidate=water_reflection_transform.apply(candidate,reflection)
+                candidate=water_reflection_transform.apply(candidate,reflection,reflection_flag,reflection_far_flag)
                 validate_candidate(
                     fxc,
                     name,
