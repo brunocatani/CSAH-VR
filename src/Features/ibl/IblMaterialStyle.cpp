@@ -48,13 +48,19 @@ namespace csah::ibl
             const auto verifiedEntry = [&](std::uint64_t id, std::uintptr_t rva, const auto& prefix) {
                 REL::Relocation<std::uintptr_t> entry{ REL::ID(id) };
                 const auto expected = image + rva;
-                return entry.address() == expected &&
-                    readable(reinterpret_cast<void*>(expected), sizeof(prefix)) &&
+                const bool accessible = readable(reinterpret_cast<void*>(expected), sizeof(prefix));
+                const bool prefixMatches = accessible &&
                     std::memcmp(reinterpret_cast<void*>(expected), prefix, sizeof(prefix)) == 0;
+                const bool accepted = entry.address() == expected && prefixMatches;
+                if (!accepted) {
+                    logging::warn("Cubemap reference native entry {} rejected: resolvedRVA=0x{:X}, expectedRVA=0x{:X}, readable={}, prefixMatches={}.",
+                        id, entry.address() - image, rva, accessible, prefixMatches);
+                }
+                return accepted;
             };
             constexpr unsigned char openPrefix[]{ 0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x6C, 0x24, 0x10 };
-            constexpr unsigned char closePrefix[]{ 0x53, 0x48, 0x83, 0xEC, 0x20, 0x48, 0x8B, 0x51, 0x18 };
-            constexpr unsigned char createPrefix[]{ 0x53, 0x55, 0x57, 0x41, 0x54, 0x41, 0x55, 0x48, 0x83, 0xEC, 0x20 };
+            constexpr unsigned char closePrefix[]{ 0x40, 0x53, 0x48, 0x83, 0xEC, 0x20, 0x48, 0x8B, 0x51, 0x18 };
+            constexpr unsigned char createPrefix[]{ 0x40, 0x53, 0x55, 0x57, 0x41, 0x54, 0x41, 0x55, 0x48, 0x83, 0xEC, 0x20 };
             if (!verifiedEntry(1198116, 0x01C12B50, openPrefix) ||
                 !verifiedEntry(1516202, 0x01C12E10, closePrefix) ||
                 !verifiedEntry(685580, 0x01C24500, createPrefix)) {
@@ -63,7 +69,17 @@ namespace csah::ibl
             }
             constexpr auto path = "textures\\shared\\cubemaps\\mipblur_DefaultOutside1.dds";
             logging::info("Cubemap style reference: opening '{}' before stream-backed texture creation.", path);
-            RE::BSResourceNiBinaryStream opened(path);
+            using NativeStream = RE::BSResourceNiBinaryStream;
+            using ConstructStream = NativeStream* (*)(void*, const char*, bool, RE::BSResource::Location*, bool);
+            using DestroyStream = void (*)(NativeStream*);
+            // 141C12EE5..141C12F15 releases +0x10 itself, without nulling it.
+            // Avoid the SDK wrapper's additional automatic member destruction.
+            NativeStreamOwner<NativeStream> owner(
+                [&](void* storage) {
+                    reinterpret_cast<ConstructStream>(image + 0x01C12B50)(storage, path, false, nullptr, false);
+                },
+                reinterpret_cast<DestroyStream>(image + 0x01C12E10));
+            auto& opened = owner.get();
             if (!opened.stream || opened.lastError != RE::BSResource::ErrorCode::kNone) {
                 logging::warn("Cubemap style reference: resource open failed (stream={}, error={}); texture creation skipped.",
                     static_cast<bool>(opened.stream), static_cast<unsigned>(opened.lastError));

@@ -18,6 +18,11 @@ namespace
     {
         std::shared_ptr<Resource> stream;
     };
+    struct NativeProbe
+    {
+        int* destructions;
+        ~NativeProbe() { ++*destructions; }
+    };
     void require(bool value, const char* message)
     {
         if (!value) throw std::runtime_error(message);
@@ -60,6 +65,14 @@ int main()
         require(!lifetime.expired(), "resource died before its texture consumer");
         texture.reset();
         require(lifetime.expired(), "resource ownership leaked after texture release");
+        int nativeDestructions{};
+        {
+            csah::ibl::NativeStreamOwner<NativeProbe> nativeOwner(
+                [&](void* storage) { std::construct_at(static_cast<NativeProbe*>(storage), &nativeDestructions); },
+                [](NativeProbe* object) { std::destroy_at(object); });
+            require(nativeOwner.get().destructions == &nativeDestructions, "native stream storage changed");
+        }
+        require(nativeDestructions == 1, "native stream members were destroyed more than once");
         std::cout << "Cubemap reference: unopened/failed resources rejected, stream overload arguments and ownership preserved\n";
         return 0;
     } catch (const std::exception& error) {
