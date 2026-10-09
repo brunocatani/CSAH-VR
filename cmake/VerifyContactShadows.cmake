@@ -270,11 +270,10 @@ foreach(forbidden IN ITEMS "PixelNoise" "discard")
 endforeach()
 
 foreach(required IN ITEMS
-    "EXPECTED_IDENTITY = (26152, \"12280787d2a5110c820f433751c84648\")"
+    "EXPECTED_COMPATIBLE_SHADER_COUNT = 22"
     "EXPECTED_ALIAS_KEYS = {0x01200202, 0x01200282, 0x11200202}"
-    "EXPECTED_COMPATIBLE_IDENTITIES = {"
     "directional_pixel_shaders"
-    "structurally compatible directional DFLight inventory changed"
+    "structurally compatible directional coverage changed"
     "write_shader_family_header"
     "CONTACT_MASK_SLOT = 46"
     "contact-shadow template contains an early return"

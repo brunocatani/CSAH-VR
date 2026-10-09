@@ -25,6 +25,7 @@
 
 #include "Features/skylighting/SkylightingNativeHooks.h"
 #include "UpdateProbesCS.h"
+#include "UpdateSunProbesCS.h"
 #include "render/ComputeStateScope.h"
 #include "render/DebugResourceName.h"
 #include "support/Logger.h"
@@ -282,21 +283,22 @@ namespace csah::skylighting
 
     ScopedVisibilityBindings::ScopedVisibilityBindings(ID3D11DeviceContext* context,
         ID3D11ShaderResourceView* nearProbe, ID3D11ShaderResourceView* farProbe,
-        ID3D11ShaderResourceView* parameters) noexcept : context_(context)
+        ID3D11ShaderResourceView* parameters, ID3D11ShaderResourceView* nearSun,
+        ID3D11ShaderResourceView* farSun) noexcept : context_(context)
     {
         if (!context_) return;
-        std::array<ID3D11ShaderResourceView*, 3> previous{};
-        context_->PSGetShaderResources(50, 3, previous.data());
+        std::array<ID3D11ShaderResourceView*, 5> previous{};
+        context_->PSGetShaderResources(50, 5, previous.data());
         for (std::size_t index = 0; index < previous.size(); ++index) previous_[index].Attach(previous[index]);
-        const std::array<ID3D11ShaderResourceView*, 3> views{nearProbe, farProbe, parameters};
-        context_->PSSetShaderResources(50, 3, views.data());
+        const std::array<ID3D11ShaderResourceView*, 5> views{nearProbe, farProbe, parameters, nearSun, farSun};
+        context_->PSSetShaderResources(50, 5, views.data());
     }
 
     ScopedVisibilityBindings::~ScopedVisibilityBindings()
     {
         if (!context_) return;
-        const std::array<ID3D11ShaderResourceView*, 3> previous{previous_[0].Get(), previous_[1].Get(), previous_[2].Get()};
-        context_->PSSetShaderResources(50, 3, previous.data());
+        const std::array<ID3D11ShaderResourceView*, 5> previous{previous_[0].Get(), previous_[1].Get(), previous_[2].Get(), previous_[3].Get(), previous_[4].Get()};
+        context_->PSSetShaderResources(50, 5, previous.data());
     }
 
     ScopedAmbientBindings::ScopedAmbientBindings(
@@ -519,7 +521,9 @@ namespace csah::skylighting
         ambientDiagnosticOutput_.Reset();
         ambientDiagnosticStaging_.Reset();
         ambientDiagnosticCompletion_.Reset();
-        updateShader_.Reset();
+        updateShader_.Reset(); updateSunShader_.Reset(); sunConstants_.Reset();
+        sunGpuTiming_.reset(); sunTimingAttempted_ = false; sunCaptures_ = 0;
+        lastSunCaptureFrame_ = ~std::uint64_t{};
         comparisonSampler_.Reset();
         constantsBuffer_.Reset();
         visibilityParametersView_.Reset();
@@ -715,6 +719,27 @@ namespace csah::skylighting
             return false;
         }
 
+        ComPtr<ID3D11Texture3D> sunTexture;
+        ComPtr<ID3D11ShaderResourceView> sunResource;
+        ComPtr<ID3D11UnorderedAccessView> sunOutput;
+        // Soft sun lobes are low-frequency. Keep their independent world grid
+        // bounded instead of dispatching over up to eight million ambient cells.
+        auto sunDescription = probeDescription;
+        sunDescription.Width = (std::min)(dimensions.width, 64u);
+        sunDescription.Height = (std::min)(dimensions.height, 64u);
+        sunDescription.Depth = (std::min)(dimensions.depth, 32u);
+        auto sunOutputDescription = probeOutputDescription;
+        sunOutputDescription.Texture3D.WSize = sunDescription.Depth;
+        level.sunGrid.dimensions = {sunDescription.Width, sunDescription.Height, sunDescription.Depth};
+        if (FAILED(device_->CreateTexture3D(&sunDescription, nullptr, &sunTexture)) ||
+            FAILED(device_->CreateShaderResourceView(sunTexture.Get(), &probeResourceDescription, &sunResource)) ||
+            FAILED(device_->CreateUnorderedAccessView(sunTexture.Get(), &sunOutputDescription, &sunOutput))) return false;
+        render::nameResource(sunTexture.Get(), "CSAH / Skylighting / Sun visibility history");
+        level.sunTexture = std::move(sunTexture);
+        level.sunResource = std::move(sunResource);
+        level.sunOutput = std::move(sunOutput);
+        level.sunGrid.previousCellValid = false;
+
         level.dimensions = dimensions;
         level.probeTexture = std::move(probeTexture);
         level.probeResource = std::move(probeResource);
@@ -896,6 +921,13 @@ namespace csah::skylighting
         }
         updateShader_ = std::move(updateShader);
         comparisonSampler_ = std::move(comparisonSampler);
+        D3D11_BUFFER_DESC sunBuffer{};
+        sunBuffer.ByteWidth = sizeof(Constants); sunBuffer.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+        ComPtr<ID3D11ComputeShader> updateSun;
+        ComPtr<ID3D11Buffer> sunConstants;
+        if (FAILED(device_->CreateComputeShader(csah_skylighting_update_sun, sizeof(csah_skylighting_update_sun), nullptr, &updateSun)) ||
+            FAILED(device_->CreateBuffer(&sunBuffer, nullptr, &sunConstants))) return false;
+        updateSunShader_ = std::move(updateSun); sunConstants_ = std::move(sunConstants);
         constantsBuffer_ = std::move(constantsBuffer);
         return true;
     }
@@ -921,6 +953,11 @@ namespace csah::skylighting
             context_->ClearUnorderedAccessViewUint(
                 level.accumulationOutput.Get(),
                 noAccumulation.data());
+            if (level.sunOutput) {
+                constexpr std::array<float, 4> unseen{0, 0, 0, -1};
+                context_->ClearUnorderedAccessViewFloat(level.sunOutput.Get(), unseen.data());
+            }
+            level.sunGrid.previousCellValid = false;
             level.previousCell = {};
             level.previousCellValid = false;
             level.dataValid = false;
@@ -929,6 +966,7 @@ namespace csah::skylighting
         };
         clearLevel(nearProbes_);
         clearLevel(farProbes_);
+        lastSunCaptureFrame_ = ~std::uint64_t{};
         probeDataValid_.store(false, std::memory_order_release);
         resetRequested_.store(false, std::memory_order_release);
     }
@@ -1093,7 +1131,7 @@ namespace csah::skylighting
     }
 
     bool Runtime::updateRollingVolume(
-        ProbeResources& level,
+        RollingVolumeState& level,
         ProbeLevelConstants& levelConstants,
         float captureDistance,
         float captureHeight,
@@ -1824,7 +1862,66 @@ namespace csah::skylighting
         if (settingsRevision_.load(std::memory_order_acquire) != publishedSettingsRevision_ ||
             captureRevision_ != publishedCaptureRevision_ || active != publishedFeatureActive_) publishConstants(active);
         return ScopedVisibilityBindings(context, active ? nearProbes_.probeResource.Get() : nullptr,
-            active ? farProbes_.probeResource.Get() : nullptr, active ? visibilityParametersView_.Get() : nullptr);
+            active ? farProbes_.probeResource.Get() : nullptr, active ? visibilityParametersView_.Get() : nullptr,
+            active ? nearProbes_.sunResource.Get() : nullptr, active ? farProbes_.sunResource.Get() : nullptr);
+    }
+
+    void Runtime::captureDirectionalFrame(ID3D11DeviceContext* context, std::uint32_t shadowLayout) noexcept
+    {
+        if (!context || context != context_.Get() || !visibilityReady() || shadowLayout < 1 || shadowLayout > 2 ||
+            !updateSunShader_ || !sunConstants_) return;
+        const auto frame = frameIndex_.load(std::memory_order_relaxed);
+        if (frame == lastSunCaptureFrame_) return;
+        if (settingsRevision_.load(std::memory_order_acquire) != publishedSettingsRevision_ ||
+            captureRevision_ != publishedCaptureRevision_ || !publishedFeatureActive_) publishConstants(true);
+        ComPtr<ID3D11ShaderResourceView> shadow;
+        ComPtr<ID3D11SamplerState> sampler;
+        ComPtr<ID3D11Buffer> light, camera;
+        context->PSGetShaderResources(5, 1, &shadow);
+        context->PSGetSamplers(5, 1, &sampler);
+        context->PSGetConstantBuffers(2, 1, &light);
+        context->PSGetConstantBuffers(12, 1, &camera);
+        if (!shadow || !sampler || !light || !camera) return;
+        D3D11_SHADER_RESOURCE_VIEW_DESC view{}; shadow->GetDesc(&view);
+        if (view.ViewDimension != D3D11_SRV_DIMENSION_TEXTURE2DARRAY ||
+            view.Texture2DArray.ArraySize < shadowLayout || view.Texture2DArray.MostDetailedMip != 0) return;
+        D3D11_SAMPLER_DESC sample{}; sampler->GetDesc(&sample);
+        if (!D3D11_DECODE_IS_COMPARISON_FILTER(sample.Filter)) return;
+        D3D11_BUFFER_DESC buffer{}; light->GetDesc(&buffer);
+        if (buffer.ByteWidth < 46 * 16) return;
+        camera->GetDesc(&buffer); if (buffer.ByteWidth < 61 * 16) return;
+        render::ScopedComputeState restore(context, {0, 1, 0, 1, 0, 1, 0, 14});
+        if (!restore.captured()) return;
+        if (!sunTimingAttempted_) {
+            sunTimingAttempted_ = true;
+            if (!sunGpuTiming_.initialize(device_.Get(), context, "Skylighting sun visibility",
+                {"native shadow history", nullptr, nullptr, nullptr}, 1, 120, 30,
+                render::GpuTimingProfiler::Group::Skylighting)) logging::warn("Skylighting sun timing unavailable.");
+        }
+        sunGpuTiming_.poll();
+        auto timing = sunGpuTiming_.begin();
+        context->CSSetShader(updateSunShader_.Get(), nullptr, 0);
+        auto* source = shadow.Get(); auto* comparison = sampler.Get(); auto* nativeLight = light.Get(); auto* nativeCamera = camera.Get();
+        auto* constants = sunConstants_.Get();
+        context->CSSetShaderResources(0, 1, &source); context->CSSetSamplers(0, 1, &comparison);
+        context->CSSetConstantBuffers(0, 1, &nativeLight); context->CSSetConstantBuffers(12, 1, &nativeCamera);
+        context->CSSetConstantBuffers(13, 1, &constants);
+        for (UINT index = 0; index < 2; ++index) {
+            auto& level = index == 0 ? nearProbes_ : farProbes_;
+            if (!level.dataValid || !level.sunOutput) continue;
+            auto& settings = index == 0 ? constants_.nearSunLevel : constants_.farSunLevel;
+            const auto& ambient = index == 0 ? constants_.nearLevel : constants_.farLevel;
+            (void)updateRollingVolume(level.sunGrid, settings, ambient.arraySize.x, ambient.arraySize.z,
+                constants_.probeWorldOrigin.x, constants_.probeWorldOrigin.y, constants_.probeWorldOrigin.z);
+            auto data = constants_;
+            data.updateControl = {index, 0, 0, shadowLayout};
+            context->UpdateSubresource(constants, 0, nullptr, &data, 0, 0);
+            auto* output = level.sunOutput.Get(); context->CSSetUnorderedAccessViews(0, 1, &output, nullptr);
+            const auto dimensions = level.sunGrid.dimensions;
+            context->Dispatch((dimensions.width + 7) / 8, (dimensions.height + 7) / 8, (dimensions.depth + 3) / 4);
+        }
+        lastSunCaptureFrame_ = frame;
+        if (++sunCaptures_ == 1) logging::info("Skylighting captured native directional shadow visibility into its shared world-space probe history.");
     }
 
     ScopedAmbientBindings Runtime::scopeAmbientDraw(

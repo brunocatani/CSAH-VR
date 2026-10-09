@@ -551,6 +551,18 @@ namespace csah::contact_shadows
         return { requested, {} };
     }
 
+    std::uint32_t Runtime::sunShadowLayout(ID3D11PixelShader* shader) const noexcept
+    {
+        if (!shader) return 0;
+        for (const auto& original : originals_) {
+            if (original.shader.Get() == shader &&
+                original.contractIndex < csah_contact_shadow_dflight_contracts.size()) {
+                return csah_contact_shadow_dflight_contracts[original.contractIndex].sunShadowLayout;
+            }
+        }
+        return 0;
+    }
+
     bool Runtime::tracksOriginal(ID3D11PixelShader* shader) const noexcept
     {
         if (!shader) {

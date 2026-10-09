@@ -52,13 +52,26 @@ RWBuffer<float4> Result : register(u0);
         normalize(Eye[id.x].xyz-WorldPosition.xyz),0.5);
     Result[id.x]=float4(value,value,0,1);
 })";
-        std::array<ComPtr<ID3D11ComputeShader>,2> shaders;
-        for (UINT index=0; index<2; ++index) {
-            const auto code=compile(index ? reflection : ambient, shaderDirectory/"SamplingTest.hlsl");
+        const std::string sunlight = R"(
+#include "SkylightingDirectionalTransform.hlsl"
+cbuffer TestWorld : register(b0) { float4 WorldPosition; float4 WorldNormal; float4 Eye[2]; };
+RWBuffer<float4> Result : register(u0);
+[numthreads(2,1,1)] void main(uint3 id : SV_DispatchThreadID) {
+    PixelInput p; p.Position=float4(id.x+0.5,0.5,0,1); p.Eye=id.x;
+    p.NormalCarrier=float4(dot(float3(Camera[20].x,Camera[21].x,Camera[22].x),WorldNormal.xyz),
+        dot(float3(Camera[20].y,Camera[21].y,Camera[22].y),WorldNormal.xyz),
+        dot(float3(Camera[20].z,Camera[21].z,Camera[22].z),WorldNormal.xyz),0);
+    p.RimDiffuse=float4(0.2,0.3,0.4,0); p.TransmissionDiffuse=float4(0.3,0.2,0.1,0);
+    p.PbrDiffuseScale=float4(0.5,0.6,0.7,1);p.NativeVisibility=0.8;p.ContactVisibility=0.6;
+    Result[id.x]=PSMain(p);
+})";
+        std::array<ComPtr<ID3D11ComputeShader>,3> shaders;
+        for (UINT index=0; index<3; ++index) {
+            const auto code=compile(index==2 ? sunlight : (index ? reflection : ambient), shaderDirectory/"SamplingTest.hlsl");
             check(device->CreateComputeShader(code->GetBufferPointer(),code->GetBufferSize(),nullptr,&shaders[index]),"sampling shader");
         }
         std::array<ComPtr<ID3D11Buffer>,4> constants;
-        const std::array<UINT,4> sizes{4*16,16,61*16,20*16};
+        const std::array<UINT,4> sizes{4*16,16,61*16,32*16};
         const std::array<UINT,4> slots{0,8,12,13};
         for (UINT index=0; index<4; ++index) {
             D3D11_BUFFER_DESC description{};description.ByteWidth=sizes[index];description.BindFlags=D3D11_BIND_CONSTANT_BUFFER;
@@ -66,9 +79,9 @@ RWBuffer<float4> Result : register(u0);
             auto* buffer=constants[index].Get();context->CSSetConstantBuffers(slots[index],1,&buffer);
         }
         V stereo{1,0,0,0};context->UpdateSubresource(constants[1].Get(),0,nullptr,&stereo,0,0);
-        D3D11_BUFFER_DESC bd{};bd.ByteWidth=20*16;bd.BindFlags=D3D11_BIND_SHADER_RESOURCE;
+        D3D11_BUFFER_DESC bd{};bd.ByteWidth=32*16;bd.BindFlags=D3D11_BIND_SHADER_RESOURCE;
         ComPtr<ID3D11Buffer> parameterBuffer;check(device->CreateBuffer(&bd,nullptr,&parameterBuffer),"parameter buffer");
-        D3D11_SHADER_RESOURCE_VIEW_DESC sv{};sv.Format=DXGI_FORMAT_R32G32B32A32_FLOAT;sv.ViewDimension=D3D11_SRV_DIMENSION_BUFFER;sv.Buffer.NumElements=20;
+        D3D11_SHADER_RESOURCE_VIEW_DESC sv{};sv.Format=DXGI_FORMAT_R32G32B32A32_FLOAT;sv.ViewDimension=D3D11_SRV_DIMENSION_BUFFER;sv.Buffer.NumElements=32;
         ComPtr<ID3D11ShaderResourceView> parameterView;check(device->CreateShaderResourceView(parameterBuffer.Get(),&sv,&parameterView),"parameter SRV");
         auto* parameter=parameterView.Get();context->CSSetShaderResources(52,1,&parameter);
         bd.ByteWidth=2*16;bd.BindFlags=D3D11_BIND_UNORDERED_ACCESS;
@@ -87,6 +100,13 @@ RWBuffer<float4> Result : register(u0);
         ComPtr<ID3D11Texture3D> volume;ComPtr<ID3D11ShaderResourceView> probeView;
         check(device->CreateTexture3D(&pd,&initial,&volume),"probe volume");check(device->CreateShaderResourceView(volume.Get(),nullptr,&probeView),"probe SRV");
         const std::array<ID3D11ShaderResourceView*,2> probeViews{probeView.Get(),probeView.Get()};context->CSSetShaderResources(50,2,probeViews.data());
+        std::array<V,64> sunCells{};sunCells.fill({0,0,1,0.25F});
+        D3D11_SUBRESOURCE_DATA sunInitial{sunCells.data(),4*16,16*16};
+        ComPtr<ID3D11Texture3D> sunVolume;ComPtr<ID3D11ShaderResourceView> sunView;
+        check(device->CreateTexture3D(&pd,&sunInitial,&sunVolume),"sun volume");
+        check(device->CreateShaderResourceView(sunVolume.Get(),nullptr,&sunView),"sun SRV");
+        const std::array<ID3D11ShaderResourceView*,2> sunViews{sunView.Get(),sunView.Get()};
+        context->CSSetShaderResources(53,2,sunViews.data());
         std::array<ComPtr<ID3D11Texture2D>,3> inputs;
         for (UINT index=0;index<3;++index) {
             D3D11_TEXTURE2D_DESC td{};td.Width=2;td.Height=td.ArraySize=td.MipLevels=td.SampleDesc.Count=1;
@@ -97,18 +117,19 @@ RWBuffer<float4> Result : register(u0);
             const std::array<V,2> pixels{V{0.5F,0.5F,0.5F,0.5F},V{0.5F,0.5F,0.5F,0.5F}};
             context->UpdateSubresource(inputs[index].Get(),0,nullptr,pixels.data(),32,0);
         }
-        std::array<V,20> settings{};
-        for(UINT base:{5u,11u}) {
+        std::array<V,32> settings{};
+        for(UINT base:{5u,11u,20u,26u}) {
             settings[base]={2000,2000,2000,0};settings[base+1]={500,500,500,0};
             const auto four=std::bit_cast<float>(4u);settings[base+3]={four,four,four,0};
         }
         settings[18]={0.1F,0.1F,1,0};settings[19]={1000,2000,3000,0};
         const V target{1100,2030,3050,1},normalWorld{0.6F,0,-0.8F,0};
         std::array<V,2> baseline{};
-        for (UINT scenario=0;scenario<4;++scenario) {
+        for (UINT scenario=0;scenario<5;++scenario) {
             const bool rotated=scenario==1;
+            if(scenario==4) {sunCells.fill({0,0,0,-1});context->UpdateSubresource(sunVolume.Get(),0,nullptr,sunCells.data(),4*16,16*16); }
             const V origin{1000+float(scenario==2?100:0),2000,3000,0};
-            settings[19]=origin;settings[7]={1000-origin.x,0,0,0};settings[13]=settings[7];
+            settings[19]=origin;settings[7]={1000-origin.x,0,0,0};settings[13]=settings[7];settings[22]=settings[7];settings[28]=settings[7];
             settings[18].z=scenario==3?0.0F:1.0F;
             context->UpdateSubresource(constants[3].Get(),0,nullptr,settings.data(),0,0);
             context->UpdateSubresource(parameterBuffer.Get(),0,nullptr,settings.data(),0,0);
@@ -128,11 +149,19 @@ RWBuffer<float4> Result : register(u0);
             const V packedNormal{0.5F+n.x/divisor,0.5F+n.y/divisor,0,0};
             const std::array<V,2> normals{packedNormal,packedNormal};context->UpdateSubresource(inputs[0].Get(),0,nullptr,normals.data(),32,0);
             std::array<V,2> ambientResult{};
-            for(UINT shader=0;shader<2;++shader) {
+            for(UINT shader=0;shader<3;++shader) {
                 context->CSSetShader(shaders[shader].Get(),nullptr,0);context->Dispatch(1,1,1);context->CopyResource(staging.Get(),output.Get());
                 D3D11_MAPPED_SUBRESOURCE mapped{};check(context->Map(staging.Get(),0,D3D11_MAP_READ,0,&mapped),"sampling readback");
                 std::array<V,2> result{};std::memcpy(result.data(),mapped.pData,sizeof(result));context->Unmap(staging.Get(),0);
                 for(UINT eye=0;eye<2;++eye) {
+                    if(shader==2) {
+                        const float delta=(scenario==3||scenario==4)?0.0F:(0.25F-0.8F)*0.6F*0.5F;
+                        require(std::abs(result[eye].x-delta*0.5F)<1e-5F &&
+                            std::abs(result[eye].y-delta*0.6F)<1e-5F &&
+                            std::abs(result[eye].z-delta*0.7F)<1e-5F && result[eye].w==0,
+                            "sun lobe delta, PBR scale, stereo reconstruction or missing-history neutrality changed");
+                        continue;
+                    }
                     require(std::isfinite(result[eye].x)&&result[eye].x>0&&result[eye].x<=1,"invalid visibility");
                     if (scenario==3) require(result[eye].x==1&&result[eye].y==1,"disabled visibility changed shading");
                     else if(shader==0) {
@@ -145,7 +174,7 @@ RWBuffer<float4> Result : register(u0);
                 if(shader==0) ambientResult=result;
             }
         }
-        std::cout<<"Skylighting stereo world positions, rotated normals, moved origins, shared reflection visibility and disabled neutrality passed\n";
+        std::cout<<"Skylighting stereo world positions, rotated normals, moved origins, shared reflection visibility, isolated sun lobes, missing history and disabled neutrality passed\n";
     }
 }
 int main(int count,char** arguments)

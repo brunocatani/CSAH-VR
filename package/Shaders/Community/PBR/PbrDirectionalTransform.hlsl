@@ -38,6 +38,7 @@ struct PixelOutput
 {
     float4 Diffuse : SV_Target0;
     float4 Specular : SV_Target1;
+    float4 DiffuseScale : SV_Target2;
 };
 
 PixelOutput PSMain(PixelInput input)
@@ -45,6 +46,7 @@ PixelOutput PSMain(PixelInput input)
     PixelOutput output;
     output.Diffuse = input.VanillaDiffuse;
     output.Specular = input.VanillaSpecular;
+    output.DiffuseScale = 1.0f;
 
     [branch]
     if (PbrFeatureParams0.x > 1.0f / 255.0f &&
@@ -188,10 +190,21 @@ PixelOutput PSMain(PixelInput input)
                     (1.0f - metalness).xxx,
                     authoredActive),
                 active);
+            output.DiffuseScale.xyz *= lerp(
+                1.0f.xxx,
+                lerp(
+                    1.0f.xxx,
+                    (1.0f - metalness).xxx,
+                    authoredActive),
+                active);
             [branch]
             if (PbrFeatureParams1.y > 0.5f)
             {
                 output.Diffuse.xyz *= lerp(
+                    1.0f.xxx,
+                    saturate(1.0f.xxx - fresnel),
+                    active);
+                output.DiffuseScale.xyz *= lerp(
                     1.0f.xxx,
                     saturate(1.0f.xxx - fresnel),
                     active);

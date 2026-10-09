@@ -1880,6 +1880,7 @@ namespace csah::render
             }
             if (activeContactShadowBinding &&
                 !contact_shadows::Runtime::get().compositorReady(
+                    skylighting::Runtime::get().requested() ||
                     (wrapped_grass::Runtime::get().requested() ||
                         hair_specular::Runtime::get().requested() ||
                         subsurface_scattering::Runtime::get().requested() ||
@@ -2092,6 +2093,8 @@ namespace csah::render
             runtime.captureDirectionalFrame(
                 context,
                 contact_shadows::Runtime::get().tracksOriginal(engineShader));
+            skylighting::Runtime::get().captureDirectionalFrame(
+                context, contact_shadows::Runtime::get().sunShadowLayout(engineShader));
             return runtime.isHostPixelShader(engineShader);
         }
 
@@ -3277,7 +3280,8 @@ namespace csah::render
                 contactShadowRuntime.compositorReady(
                     wrappedGrassFeatureActive || hairSpecularFeatureActive ||
                     subsurfaceScatteringFeatureActive ||
-                    basicWetnessFeatureActive || cloudShadowFeatureActive);
+                    basicWetnessFeatureActive || cloudShadowFeatureActive ||
+                    skylighting::Runtime::get().requested());
             const auto materialCompositorActive =
                 dflightCompositorActive || pbrFeatureActive;
             if (contactShadowRuntime.tracksOriginal(shader) &&
@@ -3343,7 +3347,8 @@ namespace csah::render
                             hairSpecularFeatureActive ||
                             subsurfaceScatteringFeatureActive ||
                             basicWetnessFeatureActive ||
-                            cloudShadowFeatureActive || pbrFeatureActive);
+                            cloudShadowFeatureActive || pbrFeatureActive ||
+                            skylighting::Runtime::get().requested());
             }
             const auto descriptorPending = pendingDFPrePassDescriptor.active;
             const auto activeDescriptor = activeDFPrePassDescriptor();
@@ -3626,7 +3631,8 @@ namespace csah::render
                         linear_lighting::ReplacementShaderFamily::
                             dFLightAmbient);
             const auto skylightingVisibility = skylighting::Runtime::get().scopeVisibilityDraw(
-                context, static_cast<bool>(activeIblMaterialBinding));
+                context, static_cast<bool>(activeIblMaterialBinding) ||
+                    static_cast<bool>(activeContactShadowBinding));
             const auto bloomGlareBindings =
                 bloom_glare::Runtime::get().scopeDraw(
                     context,
@@ -3716,7 +3722,8 @@ namespace csah::render
                         linear_lighting::ReplacementShaderFamily::
                             dFLightAmbient);
             const auto skylightingVisibility = skylighting::Runtime::get().scopeVisibilityDraw(
-                context, static_cast<bool>(activeIblMaterialBinding));
+                context, static_cast<bool>(activeIblMaterialBinding) ||
+                    static_cast<bool>(activeContactShadowBinding));
             const auto bloomGlareBindings =
                 bloom_glare::Runtime::get().scopeDraw(
                     context,
@@ -3818,7 +3825,8 @@ namespace csah::render
                         linear_lighting::ReplacementShaderFamily::
                             dFLightAmbient);
             const auto skylightingVisibility = skylighting::Runtime::get().scopeVisibilityDraw(
-                context, static_cast<bool>(activeIblMaterialBinding));
+                context, static_cast<bool>(activeIblMaterialBinding) ||
+                    static_cast<bool>(activeContactShadowBinding));
             const auto bloomGlareBindings =
                 bloom_glare::Runtime::get().scopeDraw(
                     context,
@@ -3922,7 +3930,8 @@ namespace csah::render
                         linear_lighting::ReplacementShaderFamily::
                             dFLightAmbient);
             const auto skylightingVisibility = skylighting::Runtime::get().scopeVisibilityDraw(
-                context, static_cast<bool>(activeIblMaterialBinding));
+                context, static_cast<bool>(activeIblMaterialBinding) ||
+                    static_cast<bool>(activeContactShadowBinding));
             const auto bloomGlareBindings =
                 bloom_glare::Runtime::get().scopeDraw(
                     context,

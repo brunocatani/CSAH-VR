@@ -21,6 +21,7 @@ from dxbc_transform import (
     TransformError as ContractError,
     build_dxbc,
     executable_operands,
+    flatten_operands,
     instructions,
     pack_words,
     replace_operand_with_temp,
@@ -29,32 +30,8 @@ from dxbc_transform import (
 )
 
 
-EXPECTED_IDENTITY = (26152, "12280787d2a5110c820f433751c84648")
 EXPECTED_ALIAS_KEYS = {0x01200202, 0x01200282, 0x11200202}
-EXPECTED_COMPATIBLE_IDENTITIES = {
-    (6828, "59202691aa359fcd5900f599a5a9401a"),
-    (7252, "6df4c07ac73d016d0b078f1bab9bac29"),
-    (8064, "636de1da5e378cf72643b3ab1ae84e4f"),
-    (8136, "e2774088908877c95b3d85b075cc4c26"),
-    (8592, "576f8cd0a7ac65e880e0b467a01ffddc"),
-    (9104, "f30e0fb10fefd006db43d4e0b0c8d072"),
-    (9344, "8e7b6f32072e8b055d045bf050fc0f29"),
-    (9388, "7eb923ee2d544d316d6622e11f1565c0"),
-    (9416, "9f68da84fc72a2aacad5e5b904e7543d"),
-    (9460, "cf973011206ae3771c81fc2824bd4740"),
-    (12444, "89ec8c2ef251d18a6c65bb26fff7f48d"),
-    (12516, "5ad3bbc79c0c069a099503309dd79cf8"),
-    (23540, "2865b9e659692125a0862a44572f9968"),
-    (25356, "954fecb587442ee441be2bbdd3b7b452"),
-    (25428, "727d0ca8d00f545ff882644ce9dd810b"),
-    (26152, "12280787d2a5110c820f433751c84648"),
-    (26224, "ab8a2f400febf79d57d16eacba4742c1"),
-    (30248, "cf4a06d7ed1be30eace888f9f49abe10"),
-    (30320, "16b391d8e5b12cb2ee54bc649a3eb099"),
-    (47768, "15ba6f1a97b6fc9cf283f8a693980233"),
-    (47840, "701edc76806d06211e9d7424e956a8d4"),
-    (63708, "2b54b616dfe2b7af7803919609bc6456"),
-}
+EXPECTED_COMPATIBLE_SHADER_COUNT = 22
 DFLIGHT_DIRECTIONAL_DESCRIPTOR_MASK = 0x00000003
 DFLIGHT_CHARACTER_DESCRIPTOR_MASK = 0x04000000
 CONTACT_CONSTANT_SLOT = 13
@@ -214,7 +191,7 @@ def original_shader(root: Path) -> bytes:
         for item in inventory.containers
         if item.family == "DFLight"
         and item.stage == "PS"
-        and item.identity == EXPECTED_IDENTITY
+        and item.key in EXPECTED_ALIAS_KEYS
     ]
     keys = {int(item.key) for item in matches if item.key is not None}
     if keys != EXPECTED_ALIAS_KEYS or len(matches) != len(EXPECTED_ALIAS_KEYS):
@@ -597,7 +574,7 @@ def replace_instruction_operands(
 ) -> list[int]:
     operands = {
         operand.start: operand
-        for operand in executable_operands(instruction, 0, len(instruction))
+        for operand in flatten_operands(executable_operands(instruction, 0, len(instruction)))
     }
     result: list[int] = []
     cursor = 0
@@ -891,7 +868,7 @@ def remap_transform_instruction(
     visibility_scratch: int
 ) -> list[int]:
     replacements: dict[int, list[int]] = {}
-    for operand in executable_operands(instruction, 0, len(instruction)):
+    for operand in flatten_operands(executable_operands(instruction, 0, len(instruction))):
         if operand.operand_type == OPERAND_TEMP:
             if (
                 len(operand.immediate_indices) != 1
@@ -919,7 +896,7 @@ def remap_wrapped_grass_instruction(
     instruction: list[int], first_scratch: int, template_temp_count: int
 ) -> list[int]:
     replacements: dict[int, list[int]] = {}
-    for operand in executable_operands(instruction, 0, len(instruction)):
+    for operand in flatten_operands(executable_operands(instruction, 0, len(instruction))):
         if operand.operand_type == OPERAND_TEMP:
             if (
                 len(operand.immediate_indices) != 1
@@ -956,7 +933,7 @@ def remap_hair_specular_instruction(
     instruction: list[int], first_scratch: int, template_temp_count: int
 ) -> list[int]:
     replacements: dict[int, list[int]] = {}
-    for operand in executable_operands(instruction, 0, len(instruction)):
+    for operand in flatten_operands(executable_operands(instruction, 0, len(instruction))):
         if operand.operand_type == OPERAND_TEMP:
             if (
                 len(operand.immediate_indices) != 1
@@ -989,7 +966,7 @@ def remap_basic_wetness_instruction(
     instruction: list[int], first_scratch: int, template_temp_count: int
 ) -> list[int]:
     replacements: dict[int, list[int]] = {}
-    for operand in executable_operands(instruction, 0, len(instruction)):
+    for operand in flatten_operands(executable_operands(instruction, 0, len(instruction))):
         if operand.operand_type == OPERAND_TEMP:
             if (
                 len(operand.immediate_indices) != 1
@@ -1028,7 +1005,7 @@ def remap_basic_wetness_instruction(
 
 
 def remap_pbr_instruction(
-    instruction: list[int], first_scratch: int, template_temp_count: int
+    instruction: list[int], first_scratch: int, template_temp_count: int, diffuse_scale: int
 ) -> list[int]:
     replacements: dict[int, list[int]] = {}
     input_to_temp = {
@@ -1037,7 +1014,7 @@ def remap_pbr_instruction(
         4: 5,  # decoded normal
         5: 2,  # view carrier; template consumes xzw
     }
-    for operand in executable_operands(instruction, 0, len(instruction)):
+    for operand in flatten_operands(executable_operands(instruction, 0, len(instruction))):
         if operand.operand_type == OPERAND_TEMP:
             if (
                 len(operand.immediate_indices) != 1
@@ -1072,6 +1049,8 @@ def remap_pbr_instruction(
                 replacements[operand.start] = replace_operand_with_temp(
                     instruction, operand, 1
                 )
+            elif operand.immediate_indices == (2,):
+                replacements[operand.start] = replace_operand_with_temp(instruction, operand, diffuse_scale)
             else:
                 raise ContractError("PBR directional template output changed")
     return replace_instruction_operands(instruction, replacements)
@@ -1081,7 +1060,7 @@ def remap_directional_diagnostic_instruction(
     instruction: list[int], first_scratch: int, template_temp_count: int
 ) -> list[int]:
     replacements: dict[int, list[int]] = {}
-    for operand in executable_operands(instruction, 0, len(instruction)):
+    for operand in flatten_operands(executable_operands(instruction, 0, len(instruction))):
         if operand.operand_type == OPERAND_TEMP:
             if (
                 len(operand.immediate_indices) != 1
@@ -1237,6 +1216,91 @@ def patch_directional_diagnostic(
     return build_dxbc(version, patched_chunks)
 
 
+def compile_skylighting_template(root: Path, fxc: Path, temporary: Path) -> bytes:
+    output = temporary / "SkylightingDirectionalTransform.dxbc"
+    source = root / "package/Shaders/Community/Skylighting/SkylightingDirectionalTransform.hlsl"
+    run([str(fxc), "/nologo", "/T", "ps_5_0", "/E", "PSMain", "/O3", "/Ges", "/WX", "/Fo", str(output), str(source)],
+        "Skylighting directional compilation")
+    return output.read_bytes()
+
+
+def sun_shadow_layout(original: bytes) -> int:
+    _, _, _, words = shader_words(original)
+    _, _, body = shader_declarations_and_body(words)
+    for start, end in body:
+        if (words[start] & 0x7FF) != MOV_OPCODE: continue
+        operands = executable_operands(words, start, end)
+        if len(operands) != 2: continue
+        destination, source = operands
+        if (destination.operand_type == OPERAND_TEMP and (words[destination.start] & 0xFFF) == 0x42 and
+            source.operand_type == OPERAND_CONSTANT_BUFFER and source.immediate_indices == (2, 11) and
+            (words[source.start] & 0xFFF) == 0x1A):
+            return 1  # one projected slice, selected by native cb2[11].y
+    return 2  # split thresholds cb2[11]/[12], native slices zero and one
+
+
+def sun_template_contract(template: bytes):
+    _, _, _, words = shader_words(template)
+    declarations = []
+    for start, end in instructions(words):
+        if (words[start] & 0x7FF) != OPCODE_DCL_RESOURCE: continue
+        operand = executable_operands(words, start, end)[0]
+        if operand.immediate_indices[0] in (52, 53, 54): declarations.append(words[start:end])
+    if len(declarations) != 3: raise ContractError("Skylighting sun t52/t53/t54 contract changed")
+    temps, _, body = shader_declarations_and_body(words)
+    if (words[body[-1][0]] & 0x7FF) != OPCODE_RET: raise ContractError("Skylighting sun return changed")
+    return declarations, [words[a:b] for a,b in body[:-1]], words[temps[0] + 1]
+
+
+def remap_sun_instruction(instruction, first_temp, rim, transmission, diffuse_scale, contact, output):
+    replacements = {}
+    for operand in flatten_operands(executable_operands(instruction, 0, len(instruction))):
+        if operand.operand_type == OPERAND_TEMP:
+            replacements[operand.start] = replace_operand_with_temp(instruction, operand, first_temp + operand.immediate_indices[0])
+        elif operand.operand_type == OPERAND_OUTPUT:
+            if operand.immediate_indices != (0,): raise ContractError("Skylighting sun output changed")
+            replacements[operand.start] = replace_operand_with_temp(instruction, operand, output)
+        elif operand.operand_type == OPERAND_INPUT and operand.immediate_indices[0] >= 2:
+            index = operand.immediate_indices[0]
+            register = {2:5, 3:rim, 4:transmission, 5:diffuse_scale, 6:0, 7:contact}.get(index)
+            if register is None: raise ContractError("Skylighting sun input changed")
+            replacement = replace_operand_with_temp(instruction, operand, register)
+            if index == 6:
+                mode = (replacement[0] >> 2) & 3
+                if mode == 2: replacement[0] = (replacement[0] & ~(3 << 4)) | (3 << 4)
+                elif mode == 1: replacement[0] = (replacement[0] & ~(255 << 4)) | (255 << 4)
+                else: raise ContractError("native shadow input selection changed")
+            replacements[operand.start] = replacement
+    return replace_instruction_operands(instruction, replacements)
+
+
+def sun_lobe_sites(words, body, wrapped_site, output_site):
+    hard, back, forward = [], [], []
+    for start, end in body:
+        if (words[start] & 0x7FF) != 0x32 or not (wrapped_site[0] - 30 < start < output_site[0]): continue
+        operands = executable_operands(words, start, end)
+        if len(operands) != 4: continue
+        destination, a, b, addend = operands
+        if destination.operand_type != OPERAND_TEMP or destination.immediate_indices != (0,) or (words[destination.start] & 0xFFF) != 0x72: continue
+        if addend.operand_type != OPERAND_TEMP or addend.immediate_indices != (0,): continue
+        if a.operand_type == OPERAND_CONSTANT_BUFFER and a.immediate_indices == (2, 3):
+            if b.operand_type == OPERAND_TEMP and (words[b.start] & 0xFFF) == 0xFF6: hard.append((start,end))
+            elif b.operand_type == OPERAND_TEMP and b.immediate_indices == (1,): back.append((start,end))
+        elif a.operand_type == OPERAND_TEMP and a.immediate_indices == (1,) and b.operand_type == OPERAND_TEMP:
+            forward.append((start,end))
+    if len(hard)!=1 or len(back)!=1 or len(forward)!=1: raise ContractError("native soft-sun lobe decomposition changed")
+    return hard[0], back[0], forward[0]
+
+
+def record_transmission(instruction, register, accumulate):
+    operands = executable_operands(instruction, 0, len(instruction))
+    result = [0x32 if accumulate else MUL_OPCODE, *temp_mask(register,7),
+        *instruction[operands[1].start:operands[1].end], *instruction[operands[2].start:operands[2].end]]
+    if accumulate: result.extend(temp_swizzle(register,0x246))
+    result[0] |= len(result) << 24
+    return result
+
+
 def patch_shader(
     original: bytes,
     contact_template: bytes,
@@ -1244,6 +1308,7 @@ def patch_shader(
     hair_specular_template: bytes,
     basic_wetness_template: bytes,
     pbr_template: bytes,
+    skylighting_template: bytes,
 ) -> bytes:
     version, chunks, shader_index, words = shader_words(original)
     temp_declaration, _, body = shader_declarations_and_body(words)
@@ -1303,12 +1368,21 @@ def patch_shader(
         raise ContractError(
             "directional DFLight unexpectedly owns the private PBR b7 slot"
         )
+    if original_resource_slots & {52, 53, 54}:
+        raise ContractError("native directional shader owns a private Skylighting resource slot")
     first_scratch = original_temps
     visibility_scratch = first_scratch + template_temps
     wrapped_first_scratch = visibility_scratch + 1
     hair_first_scratch = wrapped_first_scratch + wrapped_template_temps
     wetness_first_scratch = hair_first_scratch + hair_template_temps
     pbr_first_scratch = wetness_first_scratch + wetness_template_temps
+    sun_declarations, sun_transform, sun_temps = sun_template_contract(skylighting_template)
+    diffuse_scale_scratch = pbr_first_scratch + pbr_template_temps
+    rim_scratch = diffuse_scale_scratch + 1
+    transmission_scratch = rim_scratch + 1
+    sun_first_scratch = transmission_scratch + 1
+    sun_delta_scratch = sun_first_scratch + sun_temps
+
 
     o1_write = output_contract(words, body, 1, MUL_OPCODE)
     o0_write = output_contract(words, body, 0, DIV_OPCODE)
@@ -1360,6 +1434,7 @@ def patch_shader(
                 instruction,
                 pbr_first_scratch,
                 pbr_template_temps,
+                diffuse_scale_scratch,
             )
         )
 
@@ -1374,7 +1449,17 @@ def patch_shader(
         )
     wrapped_site = wrapped_sites[0]
 
+    hard_site, back_site, forward_site = sun_lobe_sites(words, body, wrapped_site, o1_write)
+    transformed_sun = []
+    for instruction in sun_transform:
+        transformed_sun.extend(remap_sun_instruction(instruction, sun_first_scratch, rim_scratch,
+            transmission_scratch, diffuse_scale_scratch, visibility_scratch, sun_delta_scratch))
     prefix = words[: temp_declaration[0]]
+    for start,end in instructions(words):
+        if (words[start] & 0x7FF) == OPCODE_DCL_CONSTANT_BUFFER:
+            operand = executable_operands(words, start, end)[0]
+            if operand.immediate_indices[0] == 12: prefix[end-1] = max(prefix[end-1],61)
+    for declaration in sun_declarations: prefix.extend(declaration)
     for declaration in declarations:
         prefix.extend(declaration)
     for declaration in wrapped_declarations:
@@ -1386,18 +1471,24 @@ def patch_shader(
     for declaration in pbr_declarations:
         prefix.extend(declaration)
     updated_temps = words[temp_declaration[0] : temp_declaration[1]]
-    updated_temps[1] = pbr_first_scratch + pbr_template_temps
+    updated_temps[1] = sun_delta_scratch + 1
     rewritten: list[int] = []
     for start, end in body:
+        if (start, end) == hard_site:
+            rewritten.extend([0x05000036, *temp_mask(rim_scratch,7), *temp_swizzle(0,0x246)])
         if (start, end) == o1_write:
             rewritten.extend(transformed_wetness)
             rewritten.extend(transformed_pbr)
             rewritten.extend(transformed_hair)
             rewritten.extend(transformed)
+            rewritten.extend(transformed_sun)
             rewritten.extend(multiply_rgb(1, visibility_scratch))
         elif (start, end) == o0_write:
             rewritten.extend(multiply_rgb(0, visibility_scratch))
+            rewritten.extend([0x07000000, *temp_mask(0,7), *temp_swizzle(0,0x246), *temp_swizzle(sun_delta_scratch,0x246)])
         rewritten.extend(words[start:end])
+        if (start, end) == back_site: rewritten.extend(record_transmission(words[start:end], transmission_scratch, False))
+        if (start, end) == forward_site: rewritten.extend(record_transmission(words[start:end], transmission_scratch, True))
         if (start, end) == wrapped_site:
             rewritten.extend(transformed_wrapped)
 
@@ -1624,6 +1715,7 @@ def write_shader_family_header(
             "    std::size_t replacementBytecodeLength;",
             "    std::array<const unsigned char*, 6> diagnosticBytecode;",
             "    std::array<std::size_t, 6> diagnosticBytecodeLength;",
+            "    unsigned sunShadowLayout;",
             "};",
             "",
             "inline constexpr std::array<",
@@ -1647,7 +1739,7 @@ def write_shader_family_header(
         rows.append(
             "    Fo4vrCsContactShadowShaderContract{ "
             f"{item.size}, {{ {checksum} }}, {symbol}, sizeof({symbol}), "
-            f"{{ {diagnostic_pointers} }}, {{ {diagnostic_lengths} }} }},"
+            f"{{ {diagnostic_pointers} }}, {{ {diagnostic_lengths} }}, {sun_shadow_layout(item.data)} }},"
         )
     rows.extend(("}};", ""))
     path.write_text("\n".join(rows), encoding="utf-8")
@@ -1696,6 +1788,7 @@ def main() -> int:
                 temporary,
             )
         )
+        skylighting_template = compile_skylighting_template(root, args.fxc.resolve(), temporary)
         compute = compile_compute_shader(root, args.fxc.resolve(), temporary)
         dispatch = compile_dispatch_shader(
             root,
@@ -1719,6 +1812,7 @@ def main() -> int:
                     hair_specular_template,
                     basic_wetness_template,
                     pbr_template,
+                    skylighting_template,
                 )
                 diagnostics = tuple(
                     patch_directional_diagnostic(
@@ -1732,20 +1826,10 @@ def main() -> int:
                 continue
             candidates.append((original, candidate, diagnostics))
 
-        compatible_identities = {
-            item.identity for item, _, _ in candidates
-        }
-        if compatible_identities != EXPECTED_COMPATIBLE_IDENTITIES:
-            missing = sorted(
-                EXPECTED_COMPATIBLE_IDENTITIES - compatible_identities
-            )
-            unexpected = sorted(
-                compatible_identities - EXPECTED_COMPATIBLE_IDENTITIES
-            )
+        if len(candidates) != EXPECTED_COMPATIBLE_SHADER_COUNT:
             raise ContractError(
-                "structurally compatible directional DFLight inventory changed: "
-                f"missing={missing}, unexpected={unexpected}"
-            )
+                "structurally compatible directional coverage changed: "
+                f"expected {EXPECTED_COMPATIBLE_SHADER_COUNT}, found {len(candidates)}")
 
         required_assembly = (
             "dcl_constantbuffer CB13[3], immediateIndexed",

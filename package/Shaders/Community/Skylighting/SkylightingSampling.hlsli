@@ -2,6 +2,8 @@
 #define CSAH_SKYLIGHTING_SAMPLING
 Texture3D<float4> NearSkylightingProbeArray : register(t50);
 Texture3D<float4> FarSkylightingProbeArray : register(t51);
+Texture3D<float4> NearSkylightingSunHistory : register(t53);
+Texture3D<float4> FarSkylightingSunHistory : register(t54);
 static const float kPi = 3.14159265358979323846f;
 struct ProbeLevelSettings
 {
@@ -28,6 +30,8 @@ ProbeLevelSettings ReadSkylightingLevel(uint base)
 }
 #define NearLevel ReadSkylightingLevel(5)
 #define FarLevel ReadSkylightingLevel(11)
+#define NearSunLevel ReadSkylightingLevel(20)
+#define FarSunLevel ReadSkylightingLevel(26)
 #define Response SkylightingParameters[18]
 #define ProbeWorldOrigin SkylightingParameters[19]
 #else
@@ -42,6 +46,8 @@ cbuffer SkylightingSettings : register(b13)
     // z=feature active, w=reserved.
     float4 Response;
     float4 ProbeWorldOrigin;
+    ProbeLevelSettings NearSunLevel;
+    ProbeLevelSettings FarSunLevel;
 };
 
 #endif
@@ -99,7 +105,8 @@ float LevelExtent(
     return max(length(normalized.xy), normalized.z);
 }
 
-bool SampleProbeLevel(
+bool SampleProbeField(
+    uint field,
     uint levelIndex,
     float3 relativeWorldPosition,
     float3 normal,
@@ -116,9 +123,9 @@ bool SampleProbeLevel(
     weightedSample = false;
     ProbeLevelSettings level;
     if (levelIndex == 0u) {
-        level = NearLevel;
+        if (field == 0) level = NearLevel; else level = NearSunLevel;
     } else {
-        level = FarLevel;
+        if (field == 0) level = FarLevel; else level = FarSunLevel;
     }
     if (Response.z <= 0.5f ||
         any(level.ArrayDimensions.xyz == 0u)) {
@@ -172,14 +179,16 @@ bool SampleProbeLevel(
                 const int3 physicalCell = int3(
                     (uint3(logicalCell) + level.ArrayOrigin.xyz) %
                     level.ArrayDimensions.xyz);
-                [branch]
-                if (levelIndex == 0u) {
-                    sum += NearSkylightingProbeArray.Load(
-                        int4(physicalCell, 0)) * weight;
+                float4 sample;
+                if (field == 0) {
+                    if (levelIndex == 0) sample = NearSkylightingProbeArray.Load(int4(physicalCell, 0));
+                    else sample = FarSkylightingProbeArray.Load(int4(physicalCell, 0));
                 } else {
-                    sum += FarSkylightingProbeArray.Load(
-                        int4(physicalCell, 0)) * weight;
+                    if (levelIndex == 0) sample = NearSkylightingSunHistory.Load(int4(physicalCell, 0));
+                    else sample = FarSkylightingSunHistory.Load(int4(physicalCell, 0));
+                    if (!isfinite(sample.w) || sample.w < 0) continue;
                 }
+                sum += sample * weight;
                 weightSum += weight;
             }
         }
@@ -228,8 +237,8 @@ bool SampleSkylighting(
     float4 nearVisibility = unitVisibility;
     bool nearInside = false;
     bool nearWeighted = false;
-    const bool nearSampled = nearWeight > 0.0f && SampleProbeLevel(
-        0u,
+    const bool nearSampled = nearWeight > 0.0f && SampleProbeField(
+        0u, 0u,
         relativeWorldPosition,
         normal,
         nearVisibility,
@@ -243,8 +252,8 @@ bool SampleSkylighting(
     bool farInside = false;
     bool farWeighted = false;
     const bool farSampled = nearWeight < 0.999f && farFade > 0.0f &&
-        SampleProbeLevel(
-            1u,
+        SampleProbeField(
+            0u, 1u,
             relativeWorldPosition,
             normal,
             farVisibility,
@@ -267,6 +276,22 @@ bool SampleSkylighting(
     return true;
 }
 
+
+float SkylightingSunVisibility(float3 worldPosition, float3 normalWorld, float nativeVisibility)
+{
+    if (Response.z <= 0.5f) return nativeVisibility;
+    const float3 position = worldPosition - ProbeWorldOrigin.xyz;
+    float nearWeight = 1.0f - smoothstep(0.55f, 0.90f, LevelExtent(position, NearSunLevel));
+    float farWeight = (1.0f - nearWeight) * (1.0f - smoothstep(0.75f, 0.98f, LevelExtent(position, FarSunLevel)));
+    float4 nearValue = 0, farValue = 0;
+    bool inside, weighted;
+    if (nearWeight > 0 && !SampleProbeField(1u, 0u, position, normalWorld, nearValue, inside, weighted)) nearWeight = 0;
+    if (farWeight > 0 && !SampleProbeField(1u, 1u, position, normalWorld, farValue, inside, weighted)) farWeight = 0;
+    const float weight = nearWeight + farWeight;
+    if (weight <= 1.0e-6f) return nativeVisibility;
+    const float visibility = (nearValue.w * nearWeight + farValue.w * farWeight) / weight;
+    return lerp(nativeVisibility, saturate(visibility), saturate(weight));
+}
 
 float SkylightingReflectionVisibility(float3 worldPosition, float3 normalWorld, float3 viewWorld, float roughness)
 {

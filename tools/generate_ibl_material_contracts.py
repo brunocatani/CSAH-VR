@@ -25,6 +25,7 @@ from dxbc_transform import (
     TransformError as ContractError,
     build_dxbc,
     executable_operands,
+    flatten_operands,
     instructions,
     pack_words,
     replace_operand_with_temp,
@@ -539,7 +540,7 @@ def template_contract(
     output_writes = [
         operand
         for instruction in body_words[:-1]
-        for operand in executable_operands(instruction, 0, len(instruction))
+        for operand in flatten_operands(executable_operands(instruction, 0, len(instruction)))
         if operand.operand_type == OPERAND_OUTPUT
     ]
     output_indices = {
@@ -558,7 +559,7 @@ def replace_instruction_operands(
     cursor = 0
     operands = {
         operand.start: operand
-        for operand in executable_operands(instruction, 0, len(instruction))
+        for operand in flatten_operands(executable_operands(instruction, 0, len(instruction)))
     }
     while cursor < len(instruction):
         replacement = replacements.get(cursor)
@@ -604,7 +605,7 @@ def remap_template_instruction(
     lobe_scratch: int,
 ) -> list[int]:
     replacements: dict[int, list[int]] = {}
-    for operand in executable_operands(instruction, 0, len(instruction)):
+    for operand in flatten_operands(executable_operands(instruction, 0, len(instruction))):
         if operand.operand_type == OPERAND_TEMP:
             if (
                 len(operand.immediate_indices) != 1

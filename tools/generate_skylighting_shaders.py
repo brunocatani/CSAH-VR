@@ -61,6 +61,8 @@ def arguments() -> argparse.Namespace:
     parser.add_argument("--ambient-header", type=Path, required=True)
     parser.add_argument("--compute-binary", type=Path, required=True)
     parser.add_argument("--compute-header", type=Path, required=True)
+    parser.add_argument("--sun-compute-binary", type=Path, required=True)
+    parser.add_argument("--sun-compute-header", type=Path, required=True)
     return parser.parse_args()
 
 
@@ -98,6 +100,7 @@ def compile_shader(
             "/O3",
             "/Ges",
             "/WX",
+            *(["/Gis"] if source.name == "UpdateSunProbesCS.hlsl" else []),
             "/Fo",
             str(output),
             "/Fc",
@@ -506,9 +509,9 @@ def write_byte_array(rows: list[str], symbol: str, data: bytes) -> None:
     rows.extend(("};", ""))
 
 
-def write_compute_header(path: Path, data: bytes) -> None:
+def write_compute_header(path: Path, data: bytes, symbol: str = "csah_skylighting_update_probes") -> None:
     rows = ["#pragma once", ""]
-    write_byte_array(rows, "csah_skylighting_update_probes", data)
+    write_byte_array(rows, symbol, data)
     path.write_text("\n".join(rows), encoding="utf-8")
 
 
@@ -684,6 +687,13 @@ def main() -> int:
                 raise ContractError(
                     "Skylighting probe-update assembly changed: " + required
                 )
+
+        sun, _ = compile_shader(
+            args.fxc.resolve(), shader_root / "UpdateSunProbesCS.hlsl",
+            "cs_5_0", "CSMain", temporary / "UpdateSunProbesCS.dxbc",
+            temporary / "UpdateSunProbesCS.asm.txt", "Skylighting sun history compilation")
+        args.sun_compute_binary.write_bytes(sun)
+        write_compute_header(args.sun_compute_header, sun, "csah_skylighting_update_sun")
 
         candidates: list[tuple[bytes, list[int]]] = []
         for index, source in enumerate(ambient_sources(root)):

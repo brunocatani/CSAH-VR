@@ -460,6 +460,12 @@ set(SKYLIGHTING_SETTINGS_STORE_HEADER
   "${SKYLIGHTING_SOURCE_DIR}/SkylightingSettingsStore.h")
 set(SKYLIGHTING_SAMPLING_SHADER_SOURCE
   "${ROOT_DIR}/package/Shaders/Community/Skylighting/SkylightingSampling.hlsli")
+set(SKYLIGHTING_RECEIVER_SHADER_SOURCE
+  "${ROOT_DIR}/package/Shaders/Community/Skylighting/SkylightingReceiver.hlsli")
+set(SKYLIGHTING_SUN_SHADER_SOURCE
+  "${ROOT_DIR}/package/Shaders/Community/Skylighting/UpdateSunProbesCS.hlsl")
+set(SKYLIGHTING_DIRECTIONAL_SHADER_SOURCE
+  "${ROOT_DIR}/package/Shaders/Community/Skylighting/SkylightingDirectionalTransform.hlsl")
 set(SKYLIGHTING_AMBIENT_SHADER_SOURCE
   "${ROOT_DIR}/package/Shaders/Community/Skylighting/SkylightingAmbientTransform.hlsl")
 set(SKYLIGHTING_COMPUTE_SHADER_SOURCE
@@ -471,6 +477,9 @@ set(SKYLIGHTING_VERIFY_SCRIPT
 set_source_files_properties(
   "${SKYLIGHTING_AMBIENT_SHADER_SOURCE}"
   "${SKYLIGHTING_SAMPLING_SHADER_SOURCE}"
+  "${SKYLIGHTING_RECEIVER_SHADER_SOURCE}"
+  "${SKYLIGHTING_SUN_SHADER_SOURCE}"
+  "${SKYLIGHTING_DIRECTIONAL_SHADER_SOURCE}"
   "${SKYLIGHTING_COMPUTE_SHADER_SOURCE}"
   PROPERTIES HEADER_FILE_ONLY TRUE)
 set(SKY_SYNC_SOURCE_DIR
@@ -835,6 +844,9 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
   "${SKYLIGHTING_SHADER_GENERATOR}"
   "${SKYLIGHTING_AMBIENT_SHADER_SOURCE}"
   "${SKYLIGHTING_SAMPLING_SHADER_SOURCE}"
+  "${SKYLIGHTING_RECEIVER_SHADER_SOURCE}"
+  "${SKYLIGHTING_SUN_SHADER_SOURCE}"
+  "${SKYLIGHTING_DIRECTIONAL_SHADER_SOURCE}"
   "${SKYLIGHTING_COMPUTE_SHADER_SOURCE}"
   "${SKYLIGHTING_AMBIENT_HEADER}"
   "${SKYLIGHTING_COMPUTE_HEADER}"
@@ -1654,6 +1666,9 @@ add_custom_command(
     "${CONTACT_SHADOW_SHADER_GENERATOR}"
     "${CONTACT_SHADOW_SHADER_SOURCE}"
     "${CONTACT_SHADOW_WRAPPED_SHADER_SOURCE}"
+    "${SKYLIGHTING_SAMPLING_SHADER_SOURCE}"
+    "${SKYLIGHTING_RECEIVER_SHADER_SOURCE}"
+    "${SKYLIGHTING_DIRECTIONAL_SHADER_SOURCE}"
     "${CONTACT_SHADOW_HAIR_SHADER_SOURCE}"
     "${CONTACT_SHADOW_WETNESS_SHADER_SOURCE}"
     "${PBR_DIRECTIONAL_SHADER_SOURCE}"
@@ -1850,9 +1865,13 @@ set(SKYLIGHTING_COMPUTE_BINARY
   "${SKYLIGHTING_GENERATED_DIR}/UpdateProbesCS.dxbc")
 set(SKYLIGHTING_COMPUTE_HEADER
   "${SKYLIGHTING_GENERATED_DIR}/UpdateProbesCS.h")
+set(SKYLIGHTING_SUN_BINARY "${SKYLIGHTING_GENERATED_DIR}/UpdateSunProbesCS.dxbc")
+set(SKYLIGHTING_SUN_HEADER "${SKYLIGHTING_GENERATED_DIR}/UpdateSunProbesCS.h")
 add_custom_command(
   OUTPUT
     "${SKYLIGHTING_AMBIENT_HEADER}"
+    "${SKYLIGHTING_SUN_BINARY}"
+    "${SKYLIGHTING_SUN_HEADER}"
     "${SKYLIGHTING_COMPUTE_BINARY}"
     "${SKYLIGHTING_COMPUTE_HEADER}"
   COMMAND "${Python3_EXECUTABLE}"
@@ -1862,10 +1881,15 @@ add_custom_command(
     --ambient-header "${SKYLIGHTING_AMBIENT_HEADER}"
     --compute-binary "${SKYLIGHTING_COMPUTE_BINARY}"
     --compute-header "${SKYLIGHTING_COMPUTE_HEADER}"
+    --sun-compute-binary "${SKYLIGHTING_SUN_BINARY}"
+    --sun-compute-header "${SKYLIGHTING_SUN_HEADER}"
   DEPENDS
     "${SKYLIGHTING_SHADER_GENERATOR}"
     "${SKYLIGHTING_AMBIENT_SHADER_SOURCE}"
   "${SKYLIGHTING_SAMPLING_SHADER_SOURCE}"
+  "${SKYLIGHTING_RECEIVER_SHADER_SOURCE}"
+  "${SKYLIGHTING_SUN_SHADER_SOURCE}"
+  "${SKYLIGHTING_DIRECTIONAL_SHADER_SOURCE}"
     "${SKYLIGHTING_COMPUTE_SHADER_SOURCE}"
     "${ROOT_DIR}/tools/dxbc_transform.py"
     "${DFLIGHT_AMBIENT_CONTRACT_MANIFEST}"
@@ -1875,6 +1899,8 @@ add_custom_command(
 add_custom_target(SkylightingShaders
   DEPENDS
     "${SKYLIGHTING_AMBIENT_HEADER}"
+    "${SKYLIGHTING_SUN_BINARY}"
+    "${SKYLIGHTING_SUN_HEADER}"
     "${SKYLIGHTING_COMPUTE_BINARY}"
     "${SKYLIGHTING_COMPUTE_HEADER}")
 add_custom_target(VerifySkylighting ALL
@@ -2277,6 +2303,9 @@ add_library(${PROJECT_NAME} SHARED
   "${SKYLIGHTING_SHADER_GENERATOR}"
   "${SKYLIGHTING_AMBIENT_SHADER_SOURCE}"
   "${SKYLIGHTING_SAMPLING_SHADER_SOURCE}"
+  "${SKYLIGHTING_RECEIVER_SHADER_SOURCE}"
+  "${SKYLIGHTING_SUN_SHADER_SOURCE}"
+  "${SKYLIGHTING_DIRECTIONAL_SHADER_SOURCE}"
   "${SKYLIGHTING_COMPUTE_SHADER_SOURCE}"
   "${SKYLIGHTING_AMBIENT_HEADER}"
   "${SKYLIGHTING_COMPUTE_HEADER}"
@@ -3320,6 +3349,14 @@ if(BUILD_CSAH_TESTS)
   target_precompile_headers(CSAHSkylightingResourceTests PRIVATE "${SOURCE_DIR}/PCH.h")
   target_link_libraries(CSAHSkylightingResourceTests PRIVATE CommonLibF4::CommonLibF4 d3d11 dxguid shell32 spdlog::spdlog)
   add_test(NAME CSAH.SkylightingResources COMMAND CSAHSkylightingResourceTests)
+
+  add_test(NAME CSAH.ShaderNestedRemapping COMMAND "${Python3_EXECUTABLE}" "${ROOT_DIR}/tests/test_shader_nested_remapping.py")
+
+  add_executable(CSAHSkylightingSunHistoryTests "${ROOT_DIR}/tests/SkylightingSunHistoryTests.cpp")
+  target_compile_features(CSAHSkylightingSunHistoryTests PRIVATE cxx_std_23)
+  target_compile_definitions(CSAHSkylightingSunHistoryTests PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_link_libraries(CSAHSkylightingSunHistoryTests PRIVATE d3d11 d3dcompiler)
+  add_test(NAME CSAH.SkylightingSunHistory COMMAND CSAHSkylightingSunHistoryTests "${ROOT_DIR}")
 
   add_executable(CSAHSkylightingSamplingTests "${ROOT_DIR}/tests/SkylightingSamplingTests.cpp")
   target_compile_features(CSAHSkylightingSamplingTests PRIVATE cxx_std_23)

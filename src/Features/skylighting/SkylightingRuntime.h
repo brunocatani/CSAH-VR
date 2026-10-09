@@ -21,13 +21,14 @@ namespace csah::skylighting
         ScopedVisibilityBindings() noexcept = default;
         ScopedVisibilityBindings(ID3D11DeviceContext* context,
             ID3D11ShaderResourceView* nearProbe, ID3D11ShaderResourceView* farProbe,
-            ID3D11ShaderResourceView* parameters) noexcept;
+            ID3D11ShaderResourceView* parameters, ID3D11ShaderResourceView* nearSun,
+            ID3D11ShaderResourceView* farSun) noexcept;
         ~ScopedVisibilityBindings();
         ScopedVisibilityBindings(const ScopedVisibilityBindings&) = delete;
         ScopedVisibilityBindings& operator=(const ScopedVisibilityBindings&) = delete;
     private:
         ID3D11DeviceContext* context_{};
-        std::array<Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>, 3> previous_;
+        std::array<Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>, 5> previous_;
     };
 
     using NativePrecipitationRender =
@@ -113,6 +114,7 @@ namespace csah::skylighting
         [[nodiscard]] bool visibilityReady() const noexcept;
         [[nodiscard]] ScopedVisibilityBindings scopeVisibilityDraw(
             ID3D11DeviceContext* context, bool consumerActive) noexcept;
+        void captureDirectionalFrame(ID3D11DeviceContext* context, std::uint32_t shadowLayout) noexcept;
         [[nodiscard]] ScopedAmbientBindings scopeAmbientDraw(
             ID3D11DeviceContext* context,
             bool ambientReplacementActive) noexcept;
@@ -176,12 +178,20 @@ namespace csah::skylighting
             UInt4 updateControl{};
             Float4 response{};
             Float4 probeWorldOrigin{};
+            ProbeLevelConstants nearSunLevel{};
+            ProbeLevelConstants farSunLevel{};
         };
-        static_assert(sizeof(Constants) == 320);
+        static_assert(sizeof(Constants) == 512);
 
-        struct ProbeResources
+        struct RollingVolumeState
         {
             Dimensions dimensions{};
+            std::array<std::int64_t, 3> previousCell{};
+            bool previousCellValid{};
+        };
+
+        struct ProbeResources : RollingVolumeState
+        {
             Microsoft::WRL::ComPtr<ID3D11Texture3D> probeTexture;
             Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> probeResource;
             Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView> probeOutput;
@@ -190,8 +200,10 @@ namespace csah::skylighting
                 accumulationResource;
             Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView>
                 accumulationOutput;
-            std::array<std::int64_t, 3> previousCell{};
-            bool previousCellValid{};
+            Microsoft::WRL::ComPtr<ID3D11Texture3D> sunTexture;
+            Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> sunResource;
+            Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView> sunOutput;
+            RollingVolumeState sunGrid{};
             bool dataValid{};
             std::uint32_t updateSliceCursor{};
             std::uint32_t captureQuadrant{};
@@ -218,7 +230,7 @@ namespace csah::skylighting
         void submitAmbientDiagnostic() noexcept;
         void consumeAmbientDiagnosticReadback() noexcept;
         [[nodiscard]] bool updateRollingVolume(
-            ProbeResources& level,
+            RollingVolumeState& level,
             ProbeLevelConstants& levelConstants,
             float captureDistance,
             float captureHeight,
@@ -247,12 +259,18 @@ namespace csah::skylighting
         Microsoft::WRL::ComPtr<ID3D11Query>
             ambientDiagnosticCompletion_;
         Microsoft::WRL::ComPtr<ID3D11ComputeShader> updateShader_;
+        Microsoft::WRL::ComPtr<ID3D11ComputeShader> updateSunShader_;
+        Microsoft::WRL::ComPtr<ID3D11Buffer> sunConstants_;
         Microsoft::WRL::ComPtr<ID3D11SamplerState> comparisonSampler_;
         Microsoft::WRL::ComPtr<ID3D11Buffer> constantsBuffer_;
         Microsoft::WRL::ComPtr<ID3D11Buffer> visibilityParameters_;
         Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> visibilityParametersView_;
         render::GpuTimingProfiler gpuTiming_;
         render::GpuTimingProfiler ambientDrawGpuTiming_;
+        render::GpuTimingProfiler sunGpuTiming_;
+        std::uint64_t lastSunCaptureFrame_{ ~std::uint64_t{} };
+        std::uint64_t sunCaptures_{};
+        bool sunTimingAttempted_{};
         D3D11_TEXTURE2D_DESC privateDepthDescription_{};
         D3D11_DEPTH_STENCIL_VIEW_DESC privateDepthViewDescription_{};
         Constants constants_{};

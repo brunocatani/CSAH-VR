@@ -96,6 +96,7 @@ namespace csah::contact_shadows
             selectDirectionalDiagnosticPixelShader(
                 ID3D11PixelShader* requested,
                 std::uint8_t diagnosticMode) noexcept;
+        [[nodiscard]] std::uint32_t sunShadowLayout(ID3D11PixelShader* shader) const noexcept;
         [[nodiscard]] bool tracksOriginal(
             ID3D11PixelShader* shader) const noexcept;
         [[nodiscard]] bool isDirectionalDiagnosticPixelShader(

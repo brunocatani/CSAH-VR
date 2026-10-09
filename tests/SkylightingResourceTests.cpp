@@ -53,29 +53,29 @@ namespace
         require(!enabled.probeDataValid && !enabled.exteriorActive && enabled.probeDispatches == 0,
             "unobserved probes became eligible for shading");
         D3D11_BUFFER_DESC description{};
-        description.ByteWidth=320;description.BindFlags=D3D11_BIND_SHADER_RESOURCE;
+        description.ByteWidth=512;description.BindFlags=D3D11_BIND_SHADER_RESOURCE;
         Microsoft::WRL::ComPtr<ID3D11Buffer> sentinel;
         require(SUCCEEDED(device->CreateBuffer(&description,nullptr,&sentinel)),"sentinel buffer");
         D3D11_SHADER_RESOURCE_VIEW_DESC view{};
-        view.Format=DXGI_FORMAT_R32G32B32A32_FLOAT;view.ViewDimension=D3D11_SRV_DIMENSION_BUFFER;view.Buffer.NumElements=20;
+        view.Format=DXGI_FORMAT_R32G32B32A32_FLOAT;view.ViewDimension=D3D11_SRV_DIMENSION_BUFFER;view.Buffer.NumElements=32;
         Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> sentinelView;
         require(SUCCEEDED(device->CreateShaderResourceView(sentinel.Get(),&view,&sentinelView)),"sentinel view");
-        std::array<ID3D11ShaderResourceView*,3> before{sentinelView.Get(),sentinelView.Get(),sentinelView.Get()};
-        context->PSSetShaderResources(50,3,before.data());
+        std::array<ID3D11ShaderResourceView*,5> before{sentinelView.Get(),sentinelView.Get(),sentinelView.Get(),sentinelView.Get(),sentinelView.Get()};
+        context->PSSetShaderResources(50,5,before.data());
         description.ByteWidth=16;description.BindFlags=D3D11_BIND_CONSTANT_BUFFER;
         Microsoft::WRL::ComPtr<ID3D11Buffer> contactConstants;
         require(SUCCEEDED(device->CreateBuffer(&description,nullptr,&contactConstants)),"contact constants");
         auto* contact=contactConstants.Get();context->PSSetConstantBuffers(13,1,&contact);
         {
             auto visibility=runtime.scopeVisibilityDraw(context.Get(),true);
-            std::array<ID3D11ShaderResourceView*,3> active{};context->PSGetShaderResources(50,3,active.data());
-            require(!active[0]&&!active[1]&&!active[2],"unobserved visibility inputs were exposed");
+            std::array<ID3D11ShaderResourceView*,5> active{};context->PSGetShaderResources(50,5,active.data());
+            require(!active[0]&&!active[1]&&!active[2]&&!active[3]&&!active[4],"unobserved visibility inputs were exposed");
             Microsoft::WRL::ComPtr<ID3D11Buffer> current;context->PSGetConstantBuffers(13,1,&current);
             require(current.Get()==contactConstants.Get(),"Skylighting overwrote contact-shadow constants");
         }
-        std::array<ID3D11ShaderResourceView*,3> after{};context->PSGetShaderResources(50,3,after.data());
+        std::array<ID3D11ShaderResourceView*,5> after{};context->PSGetShaderResources(50,5,after.data());
         for(auto* restored:after) {require(restored==sentinelView.Get(),"visibility bindings were not restored");restored->Release();}
-        before.fill(nullptr);context->PSSetShaderResources(50,3,before.data());
+        before.fill(nullptr);context->PSSetShaderResources(50,5,before.data());
         settings.enabled = false;
         runtime.applySettings(settings);
         runtime.onNativePrecipitationFrame(nullptr, nullptr, nullptr);
