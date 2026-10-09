@@ -1442,6 +1442,16 @@ namespace csah::ibl
 
         reflectionFreeCaptureDiagnosticReserved_ = diagnosticRequested;
         reflectionFreeCaptureProductionReserved_ = productionRequested;
+        // Diagnostics retain full radiance. Alpha-to-coverage also needs the
+        // native pixel shader's opacity; a constant mask cannot preserve it.
+        // Ordinary acquisition keeps hardware geometry/depth/stencil coverage
+        // and evaluates native lighting only at the cubemap taps.
+        ComPtr<ID3D11BlendState> captureBlend;
+        context->OMGetBlendState(&captureBlend, nullptr, nullptr);
+        D3D11_BLEND_DESC captureBlendDescription{};
+        if (captureBlend) captureBlend->GetDesc(&captureBlendDescription);
+        reflectionFreeCaptureCompactReserved_ = productionRequested && !diagnosticRequested &&
+            !captureBlendDescription.AlphaToCoverageEnable;
         if (diagnosticRequested) {
             readback->reflectionFreeCaptureAttempted = true;
         }
@@ -1451,7 +1461,7 @@ namespace csah::ibl
                 std::memory_order_release);
         }
         if (!reflectionFreeCaptureResources_.prepareScratch(
-                outputView.Get())) {
+                outputView.Get(), reflectionFreeCaptureCompactReserved_)) {
             if (diagnosticRequested) {
                 readback->completed = true;
                 readback->failureLogged = true;
@@ -1518,6 +1528,8 @@ namespace csah::ibl
             reflectionFreeCaptureDiagnosticReserved_;
         const auto productionReserved =
             reflectionFreeCaptureProductionReserved_;
+        const auto compactReserved = reflectionFreeCaptureCompactReserved_;
+        reflectionFreeCaptureCompactReserved_ = false;
         reflectionFreeCaptureDiagnosticReserved_ = false;
         reflectionFreeCaptureProductionReserved_ = false;
         if (!diagnosticReserved && !productionReserved) {
@@ -1576,7 +1588,8 @@ namespace csah::ibl
 
         if (productionReserved && environmentAcquisitionEnabled() &&
             reflectionFreeCaptureResources_.sourceFormat() == DXGI_FORMAT_R11G11B10_FLOAT &&
-            scratchDescription.Format == DXGI_FORMAT_R16G16B16A16_FLOAT) {
+            (scratchDescription.Format == DXGI_FORMAT_R16G16B16A16_FLOAT ||
+                (compactReserved && scratchDescription.Format == DXGI_FORMAT_R8_UNORM))) {
             ID3D11ShaderResourceView* depthRaw{};
             context->PSGetShaderResources(7, 1, &depthRaw);
             ComPtr<ID3D11ShaderResourceView> depth;
@@ -1590,10 +1603,21 @@ namespace csah::ibl
                 environmentProvider_.publishedEnvironment() &&
                 environmentProvider_.publishedValidity() &&
                 environmentProvider_.publishedPosition();
+            auto* radiance = reflectionFreeCaptureResources_.scratchShaderResource();
+            if (compactReserved) {
+                if (!compactCapture_.dispatch(context, radiance, contractPlusOne - 1)) {
+                    if (!loggedReflectionFreeCaptureFailure_) {
+                        loggedReflectionFreeCaptureFailure_ = true;
+                        logging::warn("IBL native compact capture could not dispatch; retaining the last validated environment.");
+                    }
+                    return;
+                }
+                radiance = compactCapture_.radiance();
+            }
             if (environmentUpdater_.dispatchUpdate(
                     context,
                     environmentProvider_,
-                    reflectionFreeCaptureResources_.scratchShaderResource(),
+                    radiance,
                     depth.Get(),
                     sceneConstants.Get(),
                     useHistory,
@@ -1883,6 +1907,15 @@ namespace csah::ibl
         if (!createMaterialResources(createPixelShader)) {
             return false;
         }
+        const auto coverage = loadEmbeddedShader(IDR_IBL_CAPTURE_COVERAGE_PS);
+        if (!coverage.data || FAILED(createPixelShader(device_.Get(), coverage.data, coverage.size, nullptr, &coverageShader_))) return false;
+        std::array<CompactCapture::Bytecode, CompactCapture::kShaderCount> compactShaders{};
+        for (std::size_t index = 0; index < compactShaders.size(); ++index) {
+            const auto code = loadEmbeddedShader(IDR_IBL_COMPACT_CAPTURE_FIRST_CS + static_cast<int>(index));
+            compactShaders[index] = {code.data, code.size};
+        }
+        if (!compactCapture_.initialize(device_.Get(), compactShaders, 128)) return false;
+        const auto compactUpdate = loadEmbeddedShader(IDR_IBL_COMPACT_UPDATE_CS);
         const auto updateEmbedded = loadEmbeddedShader(
             IDR_IBL_ENVIRONMENT_UPDATE_CS);
         const auto filterEmbedded = loadEmbeddedShader(
@@ -1901,7 +1934,7 @@ namespace csah::ibl
                 filterEmbedded.size,
                 reductionEmbedded.data,
                 reductionEmbedded.size,
-                128)) {
+                128, compactUpdate.data, compactUpdate.size)) {
             return false;
         }
 
@@ -2529,6 +2562,8 @@ namespace csah::ibl
         materialStyle_.reset();
         nextDiffuseFitMilliseconds_ = 0;
         reflectionFreeCaptureResources_.reset();
+        compactCapture_.reset(); coverageShader_.Reset();
+        reflectionFreeCaptureCompactReserved_ = false;
         reflectionFreeDrawTiming_.reset();
         for (auto& replacement : materialReplacementShaders_) {
             replacement.Reset();

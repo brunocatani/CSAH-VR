@@ -77,7 +77,7 @@ namespace csah::ibl
         void reset() noexcept;
 
         [[nodiscard]] bool prepareScratch(
-            ID3D11RenderTargetView* outputView) noexcept;
+            ID3D11RenderTargetView* outputView, bool coverageOnly = false) noexcept;
         [[nodiscard]] bool scratchMatches(
             ID3D11RenderTargetView* outputView) const noexcept;
         [[nodiscard]] ID3D11DepthStencilState* readOnlyDepthState(
@@ -145,6 +145,7 @@ namespace csah::ibl
             scratchShaderResource_;
         D3D11_TEXTURE2D_DESC scratchDescription_{};
         DXGI_FORMAT sourceFormat_{ DXGI_FORMAT_UNKNOWN };
+        bool coverageOnly_{};
     };
 
     // Render-thread-only transaction used around one duplicate qualified

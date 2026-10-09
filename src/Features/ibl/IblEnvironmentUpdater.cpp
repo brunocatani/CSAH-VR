@@ -181,7 +181,8 @@ namespace csah::ibl
         std::size_t filterShaderBytecodeSize,
         const void* reductionShaderBytecode,
         std::size_t reductionShaderBytecodeSize,
-        std::uint32_t extent) noexcept
+        std::uint32_t extent,
+        const void* compactShaderBytecode, std::size_t compactShaderBytecodeSize) noexcept
     {
         if (!device || !captureShaderBytecode ||
             captureShaderBytecodeSize < 20 ||
@@ -228,6 +229,11 @@ namespace csah::ibl
                 reductionShaderBytecodeSize, nullptr, &candidate.reductionShader))) {
             recordFailure();
             return false;
+        }
+
+        if (compactShaderBytecode && FAILED(device->CreateComputeShader(compactShaderBytecode,
+                compactShaderBytecodeSize, nullptr, &candidate.compactCaptureShader))) {
+            recordFailure(); return false;
         }
 
         D3D11_SAMPLER_DESC samplerDescription{};
@@ -369,21 +375,19 @@ namespace csah::ibl
 
         ComPtr<ID3D11Texture2D> radianceTexture;
         D3D11_SHADER_RESOURCE_VIEW_DESC radianceView{};
-        if (!textureFromView(
-                reflectionFreeRadiance,
-                radianceTexture,
-                radianceView,
-                radianceDescription) ||
-            radianceView.ViewDimension != D3D11_SRV_DIMENSION_TEXTURE2D ||
-            (radianceView.Format != DXGI_FORMAT_R11G11B10_FLOAT &&
-                radianceView.Format != DXGI_FORMAT_R16G16B16A16_FLOAT) ||
-            radianceDescription.Format != radianceView.Format ||
-            radianceDescription.ArraySize != 1 ||
-            radianceDescription.SampleDesc.Count != 1 ||
-            radianceDescription.Width < 2 || radianceDescription.Height == 0 ||
-            (radianceDescription.Width & 1U) != 0) {
-            return false;
-        }
+        if (!textureFromView(reflectionFreeRadiance, radianceTexture, radianceView, radianceDescription) ||
+            radianceDescription.SampleDesc.Count != 1 || radianceDescription.Format != radianceView.Format) return false;
+        const bool compact = radianceView.ViewDimension == D3D11_SRV_DIMENSION_TEXTURE2DARRAY;
+        if (compact) {
+            if (!resources_.compactCaptureShader || radianceView.Format != DXGI_FORMAT_R32G32B32A32_FLOAT ||
+                radianceDescription.ArraySize != 12 || radianceDescription.Width != resources_.extent ||
+                radianceDescription.Height != resources_.extent || radianceView.Texture2DArray.FirstArraySlice != 0 ||
+                radianceView.Texture2DArray.ArraySize != 12 || radianceView.Texture2DArray.MostDetailedMip != 0 ||
+                radianceView.Texture2DArray.MipLevels != 1) return false;
+        } else if (radianceView.ViewDimension != D3D11_SRV_DIMENSION_TEXTURE2D ||
+            (radianceView.Format != DXGI_FORMAT_R11G11B10_FLOAT && radianceView.Format != DXGI_FORMAT_R16G16B16A16_FLOAT) ||
+            radianceDescription.ArraySize != 1 || radianceDescription.Width < 2 || !radianceDescription.Height ||
+            (radianceDescription.Width & 1U) != 0) return false;
 
         ComPtr<ID3D11Texture2D> depthTexture;
         D3D11_SHADER_RESOURCE_VIEW_DESC depthView{};
@@ -396,12 +400,16 @@ namespace csah::ibl
             depthView.ViewDimension != D3D11_SRV_DIMENSION_TEXTURE2D ||
             depthView.Format != DXGI_FORMAT_R24_UNORM_X8_TYPELESS ||
             depthDescription.Format != DXGI_FORMAT_R24G8_TYPELESS ||
-            depthDescription.Width != radianceDescription.Width ||
-            depthDescription.Height != radianceDescription.Height ||
+            (!compact && (depthDescription.Width != radianceDescription.Width ||
+                depthDescription.Height != radianceDescription.Height)) ||
+            depthDescription.Width < 2 || (depthDescription.Width & 1U) || !depthDescription.Height ||
             depthDescription.ArraySize != 1 ||
             depthDescription.SampleDesc.Count != 1) {
             return false;
         }
+
+        // Atlas dimensions describe storage; projection uses the native depth extent.
+        if (compact) { radianceDescription.Width = depthDescription.Width; radianceDescription.Height = depthDescription.Height; }
 
         D3D11_BUFFER_DESC constantDescription{};
         sceneConstants->GetDesc(&constantDescription);
@@ -548,7 +556,7 @@ namespace csah::ibl
             0,
             0);
         auto* sampler = resources_.sampler.Get();
-        context->CSSetShader(resources_.captureShader.Get(), nullptr, 0);
+        context->CSSetShader(sourceDescription.ArraySize == 12 ? resources_.compactCaptureShader.Get() : resources_.captureShader.Get(), nullptr, 0);
         context->CSSetShaderResources(
             0,
             static_cast<UINT>(captureSources.size()),

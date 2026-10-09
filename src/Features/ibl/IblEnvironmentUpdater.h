@@ -63,7 +63,9 @@ namespace csah::ibl
             std::size_t filterShaderBytecodeSize,
             const void* reductionShaderBytecode,
             std::size_t reductionShaderBytecodeSize,
-            std::uint32_t extent) noexcept;
+            std::uint32_t extent,
+            const void* compactShaderBytecode = nullptr,
+            std::size_t compactShaderBytecodeSize = 0) noexcept;
         void reset() noexcept;
 
         [[nodiscard]] bool dispatchUpdate(
@@ -96,6 +98,7 @@ namespace csah::ibl
         {
             Microsoft::WRL::ComPtr<ID3D11Device> device;
             Microsoft::WRL::ComPtr<ID3D11ComputeShader> captureShader;
+            Microsoft::WRL::ComPtr<ID3D11ComputeShader> compactCaptureShader;
             Microsoft::WRL::ComPtr<ID3D11ComputeShader> filterShader;
             Microsoft::WRL::ComPtr<ID3D11ComputeShader> reductionShader;
             Microsoft::WRL::ComPtr<ID3D11SamplerState> sampler;

@@ -2,7 +2,11 @@
 
 // Shared stereo capture with deterministic nearest-surface reprojection.
 // Depth/owner/resolve passes adapt the DynamicCubemapF4 1.3.1 approach (GPL-3.0).
+#if COMPACT_CAPTURE
+Texture2DArray<float4> ReflectionFreeRadiance : register(t0);
+#else
 Texture2D<float3> ReflectionFreeRadiance : register(t0);
+#endif
 Texture2D<float> SceneDepth : register(t1);
 TextureCube<float3> PreviousEnvironment : register(t2);
 TextureCube<float> PreviousValidity : register(t3);
@@ -112,74 +116,15 @@ bool ReconstructPersistentWorldPosition(
         all(abs(worldPosition) < MaximumCaptureDistance * 4.0f);
 }
 
-float3 CubeDirection(uint face, float2 coordinate)
+#include "CaptureProjection.hlsli"
+
+bool SampleObservedRadiance(float2 uv, uint eye, uint3 cubeCoordinate, out float3 radiance)
 {
-    float3 direction = 0.0f;
-    switch (face)
-    {
-    case 0:
-        direction = float3(1.0f, -coordinate.y, -coordinate.x);
-        break;
-    case 1:
-        direction = float3(-1.0f, -coordinate.y, coordinate.x);
-        break;
-    case 2:
-        direction = float3(coordinate.x, 1.0f, coordinate.y);
-        break;
-    case 3:
-        direction = float3(coordinate.x, -1.0f, -coordinate.y);
-        break;
-    case 4:
-        direction = float3(coordinate.x, -coordinate.y, 1.0f);
-        break;
-    default:
-        direction = float3(-coordinate.x, -coordinate.y, -1.0f);
-        break;
-    }
-    return normalize(direction);
-}
-
-bool ProjectEye(float3 worldDirection, uint eye, out float2 localUv,
-    out float edgeWeight)
-{
-    const float3 viewDirection = float3(
-        dot(Scene[0u].xyz, worldDirection),
-        dot(Scene[1u].xyz, worldDirection),
-        dot(Scene[2u].xyz, worldDirection));
-    const float4 viewVector = float4(viewDirection, 0.0f);
-    const uint projectionBase = 4u + eye * 4u;
-    const float4 clipDirection = float4(
-        dot(Scene[projectionBase + 0u], viewVector),
-        dot(Scene[projectionBase + 1u], viewVector),
-        dot(Scene[projectionBase + 2u], viewVector),
-        dot(Scene[projectionBase + 3u], viewVector));
-    if (!all(clipDirection == clipDirection) ||
-        !(clipDirection.w > PositionEpsilon))
-    {
-        localUv = 0.0f;
-        edgeWeight = 0.0f;
-        return false;
-    }
-
-    const float2 ndc = clipDirection.xy / clipDirection.w;
-    const float2 edge = 1.0f - abs(ndc);
-    if (min(edge.x, edge.y) <= 0.0f)
-    {
-        localUv = 0.0f;
-        edgeWeight = 0.0f;
-        return false;
-    }
-
-    // FO4VR motion-vector DXBC uses the algebraically equivalent
-    // previousUV-currentUV transform (-0.5,+0.5), proving this mapping.
-    localUv = ndc * float2(0.5f, -0.5f) + 0.5f;
-    edgeWeight = saturate(min(edge.x, edge.y) * 8.0f);
-    edgeWeight *= edgeWeight;
-    return true;
-}
-
-bool SampleObservedRadiance(float2 uv, uint eye, out float3 radiance)
-{
+#if COMPACT_CAPTURE
+    const float4 sample = ReflectionFreeRadiance.Load(int4(cubeCoordinate.xy, cubeCoordinate.z + eye * 6, 0));
+    radiance = sample.rgb;
+    return sample.a > 0.0f && all(isfinite(sample)) && all(sample.rgb >= 0.0f);
+#else
     const float2 pixel = uv * float2(SourceExtent) - 0.5f;
     const int2 base = int2(floor(pixel));
     const float2 fraction = frac(pixel);
@@ -208,9 +153,11 @@ bool SampleObservedRadiance(float2 uv, uint eye, out float3 radiance)
         }
     }
     return observed;
+#endif
 }
 
 bool SampleEye(
+    uint3 cubeCoordinate,
     float3 worldDirection,
     uint eye,
     out float3 radiance,
@@ -240,7 +187,7 @@ bool SampleEye(
     const float depth = SceneDepth.SampleLevel(
         LinearClampSampler, packedUv, 0.0f);
     const bool validDepth = depth == depth && depth >= 0.0f && depth <= 1.0f;
-    const bool validRadiance = SampleObservedRadiance(packedUv, eye, radiance);
+    const bool validRadiance = SampleObservedRadiance(packedUv, eye, cubeCoordinate, radiance);
     if (!validDepth || !validRadiance)
     {
         radiance = 0.0f;
@@ -402,7 +349,7 @@ void main(
     {
         float3 radiance, position;
         float weight, positionWeight;
-        if (SampleEye(worldDirection, eye, radiance, weight, position, positionWeight))
+        if (SampleEye(dispatchId, worldDirection, eye, radiance, weight, position, positionWeight))
         {
             if (positionWeight > 0.0f)
             {

@@ -3688,3 +3688,30 @@ if(BUILD_CSAH_TESTS)
     COMMAND "${Python3_EXECUTABLE}"
       "${ROOT_DIR}/tests/test_census_linear_lighting_fxp.py")
 endif()
+
+target_sources(CSAH PRIVATE
+  "${SOURCE_DIR}/Features/ibl/IblCompactCapture.cpp"
+  "${SOURCE_DIR}/Features/ibl/IblCompactCapture.h")
+add_custom_target(VerifyIblCompactCapture ALL
+  COMMAND "${CMAKE_COMMAND}" -E env "PYTHONDONTWRITEBYTECODE=1"
+    "${Python3_EXECUTABLE}" "${ROOT_DIR}/tools/generate_ibl_compact_capture.py" --root "${ROOT_DIR}" --check
+  COMMENT "Verifying native compact cubemap lighting and coverage shaders"
+  VERBATIM)
+add_dependencies(CSAH VerifyIblCompactCapture)
+
+if(BUILD_CSAH_TESTS)
+  add_executable(CSAHIblCompactCaptureTests
+    "${ROOT_DIR}/tests/IblCompactCaptureTests.cpp"
+    "${SOURCE_DIR}/Features/ibl/IblCompactCapture.cpp"
+    "${IBL_ENVIRONMENT_PROVIDER_SOURCE}"
+    "${IBL_ENVIRONMENT_UPDATER_SOURCE}"
+    "${IBL_REFLECTION_FREE_CAPTURE_SOURCE}"
+    "${IBL_COMPUTE_STATE_SCOPE_SOURCE}"
+    "${GPU_TIMING_PROFILER_SOURCE}")
+  target_compile_features(CSAHIblCompactCaptureTests PRIVATE cxx_std_23)
+  target_compile_definitions(CSAHIblCompactCaptureTests PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_include_directories(CSAHIblCompactCaptureTests PRIVATE "${SOURCE_DIR}")
+  target_precompile_headers(CSAHIblCompactCaptureTests PRIVATE "${SOURCE_DIR}/PCH.h")
+  target_link_libraries(CSAHIblCompactCaptureTests PRIVATE CommonLibF4::CommonLibF4 d3d11 d3dcompiler dxguid shell32 spdlog::spdlog)
+  add_test(NAME CSAH.IblCompactCapture COMMAND CSAHIblCompactCaptureTests "${ROOT_DIR}")
+endif()

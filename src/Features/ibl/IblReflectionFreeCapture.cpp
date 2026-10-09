@@ -184,6 +184,7 @@ namespace csah::ibl
         scratchTexture_.Reset();
         scratchDescription_ = {};
         sourceFormat_ = DXGI_FORMAT_UNKNOWN;
+        coverageOnly_ = false;
         blackScreenReflectionSrv_.Reset();
         blackScreenReflectionTexture_.Reset();
         blackEnvironmentSrv_.Reset();
@@ -224,14 +225,14 @@ namespace csah::ibl
         ID3D11RenderTargetView* outputView) const noexcept
     {
         D3D11_TEXTURE2D_DESC required{};
-        return scratchTexture_ && scratchRenderTarget_ &&
-            scratchShaderResource_ &&
-            describeOutput(outputView, device_.Get(), required) &&
-            sameScratchDescription(required, scratchDescription_);
+        if (!scratchTexture_ || !scratchRenderTarget_ || !scratchShaderResource_ ||
+            !describeOutput(outputView, device_.Get(), required)) return false;
+        if (coverageOnly_) required.Format = DXGI_FORMAT_R8_UNORM;
+        return sameScratchDescription(required, scratchDescription_);
     }
 
     bool ReflectionFreeCaptureResources::prepareScratch(
-        ID3D11RenderTargetView* outputView) noexcept
+        ID3D11RenderTargetView* outputView, bool coverageOnly) noexcept
     {
         if (!device_ || !blackEnvironmentSrv_ ||
             !blackScreenReflectionSrv_) {
@@ -241,12 +242,14 @@ namespace csah::ibl
         if (!describeOutput(outputView, device_.Get(), required)) {
             return false;
         }
+        if (coverageOnly) required.Format = DXGI_FORMAT_R8_UNORM;
         D3D11_RENDER_TARGET_VIEW_DESC sourceView{};
         outputView->GetDesc(&sourceView);
         if (scratchTexture_ && scratchRenderTarget_ &&
             scratchShaderResource_ &&
             sameScratchDescription(required, scratchDescription_)) {
             sourceFormat_ = sourceView.Format;
+            coverageOnly_ = coverageOnly;
             return true;
         }
 
@@ -268,12 +271,14 @@ namespace csah::ibl
             return false;
         }
 
-        render::nameResource(texture.Get(), "CSAH / Cubemaps / Reflection-free composite");
+        if (coverageOnly) render::nameResource(texture.Get(), "CSAH / Cubemaps / Native coverage");
+        else render::nameResource(texture.Get(), "CSAH / Cubemaps / Reflection-free diagnostic");
         scratchTexture_ = std::move(texture);
         scratchRenderTarget_ = std::move(renderTarget);
         scratchShaderResource_ = std::move(shaderResource);
         scratchDescription_ = required;
         sourceFormat_ = sourceView.Format;
+        coverageOnly_ = coverageOnly;
         return true;
     }
 

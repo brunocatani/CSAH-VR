@@ -2297,6 +2297,25 @@ namespace csah::render
         }
 
         template <class DrawCall>
+        bool issueReflectionFreeDraw(ID3D11DeviceContext* context, DrawCall& draw) noexcept
+        {
+            auto* coverage = ibl::Runtime::get().reflectionFreeCoverageShader();
+            if (!coverage) { draw(); return true; }
+            if (!originalPSSetShader) return false;
+            Microsoft::WRL::ComPtr<ID3D11PixelShader> previous;
+            context->PSGetShader(previous.GetAddressOf(), nullptr, nullptr);
+            if (!previous) return false;
+            // Use the trampoline so this private coverage draw cannot change
+            // host shader classification, feature ownership, or camera state.
+            originalPSSetShader(context, coverage, nullptr, 0);
+            draw();
+            originalPSSetShader(context, previous.Get(), nullptr, 0);
+            Microsoft::WRL::ComPtr<ID3D11PixelShader> restored;
+            context->PSGetShader(restored.GetAddressOf(), nullptr, nullptr);
+            return restored.Get() == previous.Get();
+        }
+
+        template <class DrawCall>
         void issueDrawWithIblMaterial(
             ID3D11DeviceContext* context,
             DrawCall&& draw) noexcept
@@ -2315,16 +2334,16 @@ namespace csah::render
                     context,
                     contractPlusOne);
                 if (reflectionFree.active()) {
-                auto disabled = runtime.scopeMaterialBindings(
-                    context,
-                    activeIblMaterialBinding,
-                    false);
+                    auto disabled = runtime.scopeMaterialBindings(
+                        context,
+                        activeIblMaterialBinding,
+                        false);
                     auto wetnessDisabled =
                         basic_wetness::Runtime::get().scopeDraw(
                             context,
                             false);
                     if (disabled.active() && wetnessDisabled.active()) {
-                        draw();
+                        const auto captureDrawn = issueReflectionFreeDraw(context, draw);
                         const auto materialRestored = disabled.restore();
                         const auto reflectionRestored =
                             reflectionFree.restore();
@@ -2335,7 +2354,7 @@ namespace csah::render
                         runtime.onReflectionFreeCaptureDrawComplete(
                             context,
                             contractPlusOne,
-                            reflectionRestored && materialRestored);
+                            captureDrawn && reflectionRestored && materialRestored);
                     } else {
                         (void)reflectionFree.restore();
                         runtime.onReflectionFreeCaptureDrawComplete(
@@ -2349,12 +2368,12 @@ namespace csah::render
                     context,
                     contractPlusOne);
                 if (reflectionFree.active()) {
-                    draw();
+                    const auto captureDrawn = issueReflectionFreeDraw(context, draw);
                     const auto restored = reflectionFree.restore();
                     runtime.onReflectionFreeCaptureDrawComplete(
                         context,
                         contractPlusOne,
-                        restored);
+                        captureDrawn && restored);
                 }
             }
 

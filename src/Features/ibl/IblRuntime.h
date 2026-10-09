@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Features/ibl/IblCaptureProbeModel.h"
+#include "Features/ibl/IblCompactCapture.h"
 #include "Features/ibl/IblEnvironmentProvider.h"
 #include "Features/ibl/IblEnvironmentUpdater.h"
 #include "Features/ibl/IblMaterialBindingScope.h"
@@ -200,6 +201,9 @@ namespace csah::ibl
         [[nodiscard]] ScopedReflectionFreeCapture beginReflectionFreeCapture(
             ID3D11DeviceContext* context,
             std::uint16_t contractPlusOne) noexcept;
+        [[nodiscard]] ID3D11PixelShader* reflectionFreeCoverageShader() const noexcept
+        { return reflectionFreeCaptureCompactReserved_ ? coverageShader_.Get() : nullptr; }
+
         void onReflectionFreeCaptureDrawComplete(
             ID3D11DeviceContext* context,
             std::uint16_t contractPlusOne,
@@ -323,6 +327,9 @@ namespace csah::ibl
         MaterialStyle materialStyle_;
         std::uint64_t nextDiffuseFitMilliseconds_{};
         ReflectionFreeCaptureResources reflectionFreeCaptureResources_;
+        CompactCapture compactCapture_;
+        Microsoft::WRL::ComPtr<ID3D11PixelShader> coverageShader_;
+        bool reflectionFreeCaptureCompactReserved_{};
         render::GpuTimingProfiler reflectionFreeDrawTiming_;
         std::array<
             Microsoft::WRL::ComPtr<ID3D11PixelShader>,
