@@ -644,11 +644,19 @@ namespace csah::ibl
     bool Runtime::tryGetSslrEnvironment(
         SslrEnvironmentView& view) noexcept
     {
+        return tryGetEnvironment(view,sslrConsumerEnabled_.load(std::memory_order_acquire));
+    }
+
+    bool Runtime::tryGetWaterEnvironment(SslrEnvironmentView& view) noexcept
+    {
+        return tryGetEnvironment(view,enabled_.load(std::memory_order_acquire) &&
+            dynamicCubemapsEnabled_.load(std::memory_order_acquire));
+    }
+
+    bool Runtime::tryGetEnvironment(SslrEnvironmentView& view,bool requested) noexcept
+    {
         view = {};
-        if (!sslrConsumerEnabled_.load(std::memory_order_acquire) ||
-            !resourcesReady_.load(std::memory_order_acquire)) {
-            return false;
-        }
+        if(!requested || !resourcesReady_.load(std::memory_order_acquire)) return false;
         updateMaterialEnvironmentTransition(GetTickCount64());
 
         const auto requestedSession =

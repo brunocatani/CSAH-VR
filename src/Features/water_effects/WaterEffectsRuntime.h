@@ -5,8 +5,22 @@
 #include <wrl/client.h>
 #include <array>
 #include <atomic>
+namespace csah::ibl {struct SslrEnvironmentView;}
 namespace csah::water_effects
 {
+    class ScopedReflectionBindings final
+    {
+    public:
+        ScopedReflectionBindings(ID3D11DeviceContext* context,const std::array<ID3D11ShaderResourceView*,7>& views,
+            ID3D11SamplerState* sampler) noexcept;
+        ~ScopedReflectionBindings();
+        ScopedReflectionBindings(const ScopedReflectionBindings&)=delete;
+        ScopedReflectionBindings& operator=(const ScopedReflectionBindings&)=delete;
+    private:
+        ID3D11DeviceContext* context_{};
+        std::array<Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>,7> previous_;
+        Microsoft::WRL::ComPtr<ID3D11SamplerState> sampler_;
+    };
     class ScopedCausticBindings final
     {
     public:
@@ -39,33 +53,45 @@ namespace csah::water_effects
         [[nodiscard]] bool requested() const noexcept {return enabled_.load(std::memory_order_acquire);}
         [[nodiscard]] bool causticsRequested() const noexcept
         {return requested() && caustics_.load(std::memory_order_relaxed);}
+        [[nodiscard]] bool reflectionsRequested() const noexcept
+        {return requested() && reflections_.load(std::memory_order_relaxed) && reflectionStrength_.load(std::memory_order_relaxed)>0;}
         void onSkyUpdated(bool worldReady,float seconds) noexcept {world_.capture(causticsRequested(),worldReady,seconds);}
         void resetWorld() noexcept {world_.invalidate();}
         void onDeviceCreated(ID3D11Device* device,ID3D11DeviceContext* context) noexcept;
         [[nodiscard]] ScopedBindings scopeDraw(ID3D11DeviceContext* context,bool water) noexcept;
         [[nodiscard]] ScopedCausticBindings scopeCaustics(ID3D11DeviceContext* context) noexcept;
+        [[nodiscard]] ScopedReflectionBindings scopeReflections(ID3D11DeviceContext* context,bool water,
+            const ibl::SslrEnvironmentView& environment) noexcept;
     private:
         Runtime()=default;
         template<class T> using Ptr=Microsoft::WRL::ComPtr<T>;
         bool ensureBuffer(Ptr<ID3D11Buffer>& buffer,Ptr<ID3D11ShaderResourceView>& view,UINT bytes) noexcept;
         bool publishParameters() noexcept;
         bool ensureCaustics() noexcept;
+        bool ensureReflections() noexcept;
         Ptr<ID3D11Device> device_;Ptr<ID3D11DeviceContext> context_;
         std::array<Ptr<ID3D11Buffer>,3> buffers_;
         std::array<Ptr<ID3D11ShaderResourceView>,3> views_;
         Ptr<ID3D11Texture2D> causticTexture_;
         Ptr<ID3D11ShaderResourceView> causticView_;
         Ptr<ID3D11SamplerState> causticSampler_;
+        Ptr<ID3D11Buffer> reflectionParameters_;
+        Ptr<ID3D11ShaderResourceView> reflectionParameterView_;
+        Ptr<ID3D11SamplerState> reflectionSampler_;
+        std::array<float,16> uploadedReflection_{};
         WorldData world_;
         std::atomic_bool enabled_{};
-        std::atomic_bool parallax_{true},caustics_{true};
+        std::atomic_bool parallax_{true},caustics_{true},reflections_{true};
         std::atomic<float> scale_{1};
         std::atomic<float> causticStrength_{1};
+        std::atomic<float> reflectionStrength_{1},reflectionDistance_{1024};
         std::atomic_uint64_t settingsRevision_{1};
         UINT missingDraws_{};
         UINT missingCausticDraws_{};
         std::uint64_t publishedSettings_{},publishedWorld_{};
         bool failed_{},loggedFailure_{};
         bool causticFailed_{},loggedCausticFailure_{},loggedCausticPlanes_{};
+        bool reflectionFailed_{},reflectionUploaded_{},loggedReflectionFailure_{};
+        UINT missingReflectionDraws_{};
     };
 }

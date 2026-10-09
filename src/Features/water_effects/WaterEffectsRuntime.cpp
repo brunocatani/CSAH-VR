@@ -1,10 +1,26 @@
 #include "Features/water_effects/WaterEffectsRuntime.h"
 #include "support/Logger.h"
 #include "WaterCausticsTexture.h"
+#include "Features/ibl/IblRuntime.h"
 #include <iterator>
 namespace csah::water_effects
 {
     using Microsoft::WRL::ComPtr;
+    ScopedReflectionBindings::ScopedReflectionBindings(ID3D11DeviceContext* context,
+        const std::array<ID3D11ShaderResourceView*,7>& views,ID3D11SamplerState* sampler) noexcept:context_(context)
+    {
+        if(!context_) return;
+        std::array<ID3D11ShaderResourceView*,7> previous{};context_->PSGetShaderResources(69,7,previous.data());
+        for(UINT i=0;i<7;i++) previous_[i].Attach(previous[i]);context_->PSGetSamplers(14,1,&sampler_);
+        if(previous==views && sampler_.Get()==sampler) {context_=nullptr;return;}
+        context_->PSSetShaderResources(69,7,views.data());context_->PSSetSamplers(14,1,&sampler);
+    }
+    ScopedReflectionBindings::~ScopedReflectionBindings()
+    {
+        if(!context_) return;
+        std::array<ID3D11ShaderResourceView*,7> previous{};for(UINT i=0;i<7;i++) previous[i]=previous_[i].Get();
+        context_->PSSetShaderResources(69,7,previous.data());auto* sampler=sampler_.Get();context_->PSSetSamplers(14,1,&sampler);
+    }
     ScopedCausticBindings::ScopedCausticBindings(ID3D11DeviceContext* context,ID3D11ShaderResourceView* texture,
         ID3D11ShaderResourceView* parameters,ID3D11SamplerState* sampler) noexcept:context_(context)
     {
@@ -39,6 +55,7 @@ namespace csah::water_effects
     {
         const auto s=sanitize(value);scale_.store(s.parallaxScale,std::memory_order_relaxed);
         parallax_.store(s.parallax);caustics_.store(s.caustics);causticStrength_.store(s.causticStrength);
+        reflections_.store(s.reflections);reflectionStrength_.store(s.reflectionStrength);reflectionDistance_.store(s.reflectionDistance);
         enabled_.store(s.enabled,std::memory_order_release);settingsRevision_.fetch_add(1,std::memory_order_release);
         if(!s.enabled || !s.caustics) world_.invalidate();
     }
@@ -47,6 +64,8 @@ namespace csah::water_effects
         device_=device;context_=context;buffers_={};views_={};missingDraws_=missingCausticDraws_=0;
         publishedSettings_=publishedWorld_=0;failed_=loggedFailure_=causticFailed_=loggedCausticFailure_=loggedCausticPlanes_=false;
         causticSampler_.Reset();causticView_.Reset();causticTexture_.Reset();
+        reflectionParameters_.Reset();reflectionParameterView_.Reset();reflectionSampler_.Reset();
+        reflectionFailed_=reflectionUploaded_=loggedReflectionFailure_=false;missingReflectionDraws_=0;uploadedReflection_={};
     }
     bool Runtime::ensureBuffer(Ptr<ID3D11Buffer>& buffer,Ptr<ID3D11ShaderResourceView>& view,UINT bytes) noexcept
     {
@@ -102,6 +121,40 @@ namespace csah::water_effects
         if(!context || context!=context_.Get()) return {nullptr,nullptr,nullptr,nullptr};
         if(!causticsRequested() || !device_ || !ensureCaustics() || !publishParameters()) return {context,nullptr,nullptr,nullptr};
         return {context,causticView_.Get(),views_[0].Get(),causticSampler_.Get()};
+    }
+    bool Runtime::ensureReflections() noexcept
+    {
+        if(reflectionParameterView_ && reflectionSampler_) return true;
+        if(reflectionFailed_ && ++missingReflectionDraws_%60!=0) return false;
+        D3D11_SAMPLER_DESC sampler{};sampler.Filter=D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+        sampler.AddressU=sampler.AddressV=sampler.AddressW=D3D11_TEXTURE_ADDRESS_CLAMP;sampler.MaxLOD=D3D11_FLOAT32_MAX;
+        if(!ensureBuffer(reflectionParameters_,reflectionParameterView_,64) ||
+            (!reflectionSampler_ && FAILED(device_->CreateSamplerState(&sampler,&reflectionSampler_)))) {
+            reflectionFailed_=true;missingReflectionDraws_=0;
+            if(!loggedReflectionFailure_) {loggedReflectionFailure_=true;logging::error("Water reflection binding allocation failed; native water reflections remain active while resources recover.");}
+            return false;
+        }
+        reflectionFailed_=false;reflectionUploaded_=false;return true;
+    }
+    ScopedReflectionBindings Runtime::scopeReflections(ID3D11DeviceContext* context,bool water,
+        const ibl::SslrEnvironmentView& environment) noexcept
+    {
+        if(!water || !context || context!=context_.Get()) return {nullptr,{},nullptr};
+        if(!reflectionsRequested() || !device_ || !environment.publishedAvailable || !environment.publishedEnvironment ||
+            !environment.publishedValidity || !environment.publishedPosition || !ensureReflections()) return {context,{},nullptr};
+        const bool previous=environment.previousAvailable && environment.previousEnvironment && environment.previousValidity && environment.previousPosition;
+        const auto& currentOrigin=environment.publishedProbeOrigin;const auto& oldOrigin=environment.previousProbeOrigin;
+        const std::array<float,16> parameters{
+            environment.transitionWeight,previous?1.0f:0.0f,1,reflectionStrength_.load(),
+            currentOrigin.position.x,currentOrigin.position.y,currentOrigin.position.z,currentOrigin.valid?1.0f:0.0f,
+            oldOrigin.position.x,oldOrigin.position.y,oldOrigin.position.z,oldOrigin.valid?1.0f:0.0f,
+            reflectionDistance_.load(),0,0,0};
+        if(!reflectionUploaded_ || parameters!=uploadedReflection_) {
+            context->UpdateSubresource(reflectionParameters_.Get(),0,nullptr,parameters.data(),0,0);uploadedReflection_=parameters;reflectionUploaded_=true;
+        }
+        return {context,{environment.publishedEnvironment,environment.publishedValidity,environment.publishedPosition,
+            previous?environment.previousEnvironment:nullptr,previous?environment.previousValidity:nullptr,previous?environment.previousPosition:nullptr,
+            reflectionParameterView_.Get()},reflectionSampler_.Get()};
     }
     ScopedBindings Runtime::scopeDraw(ID3D11DeviceContext* context,bool water) noexcept
     {

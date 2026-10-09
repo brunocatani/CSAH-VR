@@ -2267,6 +2267,14 @@ namespace csah::render
             }
         }
 
+        [[nodiscard]] water_effects::ScopedReflectionBindings scopeWaterReflections(ID3D11DeviceContext* context,bool water) noexcept
+        {
+            ibl::SslrEnvironmentView environment;
+            auto& runtime=water_effects::Runtime::get();
+            if(water && runtime.reflectionsRequested()) (void)ibl::Runtime::get().tryGetWaterEnvironment(environment);
+            return runtime.scopeReflections(context,water,environment);
+        }
+
         void recordActiveIblCaptureProbe(
             ID3D11DeviceContext* context) noexcept
         {
@@ -3645,6 +3653,8 @@ namespace csah::render
             const auto giBindings=screen_space_gi::Runtime::get().scopeAmbient(context,
                 activeReplacementBinding.family==linear_lighting::ReplacementShaderFamily::dFLightAmbient,
                 pbr::Runtime::get().requested()?surface_classification::Runtime::get().pbrMaterialShaderResourceView():nullptr);
+            const auto waterReflections=scopeWaterReflections(context,
+                activeReplacementBinding.family==linear_lighting::ReplacementShaderFamily::water);
             const auto waterBindings=water_effects::Runtime::get().scopeDraw(context,
                 activeReplacementBinding.family==linear_lighting::ReplacementShaderFamily::water);
             const auto terrainBindings=terrain_variation::Runtime::get().scopeDraw(context,
@@ -3654,7 +3664,8 @@ namespace csah::render
                 activeReplacementBinding.family==linear_lighting::ReplacementShaderFamily::material);
             const auto skylightingVisibility = skylighting::Runtime::get().scopeVisibilityDraw(
                 context, static_cast<bool>(activeIblMaterialBinding) ||
-                    static_cast<bool>(activeContactShadowBinding));
+                    static_cast<bool>(activeContactShadowBinding) ||
+                    (activeReplacementBinding.family==linear_lighting::ReplacementShaderFamily::water && water_effects::Runtime::get().reflectionsRequested()));
             const auto bloomGlareBindings =
                 bloom_glare::Runtime::get().scopeDraw(
                     context,
@@ -3746,6 +3757,8 @@ namespace csah::render
             const auto giBindings=screen_space_gi::Runtime::get().scopeAmbient(context,
                 activeReplacementBinding.family==linear_lighting::ReplacementShaderFamily::dFLightAmbient,
                 pbr::Runtime::get().requested()?surface_classification::Runtime::get().pbrMaterialShaderResourceView():nullptr);
+            const auto waterReflections=scopeWaterReflections(context,
+                activeReplacementBinding.family==linear_lighting::ReplacementShaderFamily::water);
             const auto waterBindings=water_effects::Runtime::get().scopeDraw(context,
                 activeReplacementBinding.family==linear_lighting::ReplacementShaderFamily::water);
             const auto terrainBindings=terrain_variation::Runtime::get().scopeDraw(context,
@@ -3755,7 +3768,8 @@ namespace csah::render
                 activeReplacementBinding.family==linear_lighting::ReplacementShaderFamily::material);
             const auto skylightingVisibility = skylighting::Runtime::get().scopeVisibilityDraw(
                 context, static_cast<bool>(activeIblMaterialBinding) ||
-                    static_cast<bool>(activeContactShadowBinding));
+                    static_cast<bool>(activeContactShadowBinding) ||
+                    (activeReplacementBinding.family==linear_lighting::ReplacementShaderFamily::water && water_effects::Runtime::get().reflectionsRequested()));
             const auto bloomGlareBindings =
                 bloom_glare::Runtime::get().scopeDraw(
                     context,
@@ -3859,6 +3873,8 @@ namespace csah::render
             const auto giBindings=screen_space_gi::Runtime::get().scopeAmbient(context,
                 activeReplacementBinding.family==linear_lighting::ReplacementShaderFamily::dFLightAmbient,
                 pbr::Runtime::get().requested()?surface_classification::Runtime::get().pbrMaterialShaderResourceView():nullptr);
+            const auto waterReflections=scopeWaterReflections(context,
+                activeReplacementBinding.family==linear_lighting::ReplacementShaderFamily::water);
             const auto waterBindings=water_effects::Runtime::get().scopeDraw(context,
                 activeReplacementBinding.family==linear_lighting::ReplacementShaderFamily::water);
             const auto terrainBindings=terrain_variation::Runtime::get().scopeDraw(context,
@@ -3868,7 +3884,8 @@ namespace csah::render
                 activeReplacementBinding.family==linear_lighting::ReplacementShaderFamily::material);
             const auto skylightingVisibility = skylighting::Runtime::get().scopeVisibilityDraw(
                 context, static_cast<bool>(activeIblMaterialBinding) ||
-                    static_cast<bool>(activeContactShadowBinding));
+                    static_cast<bool>(activeContactShadowBinding) ||
+                    (activeReplacementBinding.family==linear_lighting::ReplacementShaderFamily::water && water_effects::Runtime::get().reflectionsRequested()));
             const auto bloomGlareBindings =
                 bloom_glare::Runtime::get().scopeDraw(
                     context,
@@ -3974,6 +3991,8 @@ namespace csah::render
             const auto giBindings=screen_space_gi::Runtime::get().scopeAmbient(context,
                 activeReplacementBinding.family==linear_lighting::ReplacementShaderFamily::dFLightAmbient,
                 pbr::Runtime::get().requested()?surface_classification::Runtime::get().pbrMaterialShaderResourceView():nullptr);
+            const auto waterReflections=scopeWaterReflections(context,
+                activeReplacementBinding.family==linear_lighting::ReplacementShaderFamily::water);
             const auto waterBindings=water_effects::Runtime::get().scopeDraw(context,
                 activeReplacementBinding.family==linear_lighting::ReplacementShaderFamily::water);
             const auto terrainBindings=terrain_variation::Runtime::get().scopeDraw(context,
@@ -3983,7 +4002,8 @@ namespace csah::render
                 activeReplacementBinding.family==linear_lighting::ReplacementShaderFamily::material);
             const auto skylightingVisibility = skylighting::Runtime::get().scopeVisibilityDraw(
                 context, static_cast<bool>(activeIblMaterialBinding) ||
-                    static_cast<bool>(activeContactShadowBinding));
+                    static_cast<bool>(activeContactShadowBinding) ||
+                    (activeReplacementBinding.family==linear_lighting::ReplacementShaderFamily::water && water_effects::Runtime::get().reflectionsRequested()));
             const auto bloomGlareBindings =
                 bloom_glare::Runtime::get().scopeDraw(
                     context,

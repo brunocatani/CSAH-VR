@@ -1,0 +1,139 @@
+"""Replace the native water sky-gradient value before tint, Fresnel and SSLR.
+
+Only contracts with an existing stereo origin and a verified reflection-normal
+producer participate. All later native blending and output channels are kept.
+"""
+from dxbc_transform import (
+    OPCODE_CUSTOMDATA,OPCODE_DCL_CONSTANT_BUFFER,OPCODE_DCL_RESOURCE,OPCODE_DCL_SAMPLER,
+    OPCODE_DCL_TEMPS,OPCODE_RET,OPERAND_CONSTANT_BUFFER,OPERAND_INPUT,OPERAND_OUTPUT,OPERAND_RESOURCE,
+    OPERAND_TEMP,DxbcChunk,build_dxbc,executable_operands,instructions,opcode_extension_end,
+    pack_words,replace_operand_with_temp,shader_declarations_and_body,shader_words,
+)
+from water_parallax_transform import require,signature,instruction
+
+def apply(original,template):
+    version,chunks,index,words=shader_words(original)
+    temps,start,body=shader_declarations_and_body(words)
+    sig=signature(chunks)
+    if ('TEXCOORD',0) not in sig or ('EYEPOS',0) not in sig: return original
+    if sig[('TEXCOORD',0)].read_write_mask&7!=7 or sig[('EYEPOS',0)].read_write_mask&1!=1: return original
+    constants={};resources=set();samplers=set()
+    for a,b in instructions(words):
+        if a>=start: break
+        opcode=words[a]&2047
+        if opcode not in (OPCODE_DCL_CONSTANT_BUFFER,OPCODE_DCL_RESOURCE,OPCODE_DCL_SAMPLER): continue
+        indices=executable_operands(words,a,b)[0].immediate_indices
+        if opcode==OPCODE_DCL_CONSTANT_BUFFER: constants[indices[0]]=indices[1]
+        elif opcode==OPCODE_DCL_RESOURCE: resources.add(indices[0])
+        else: samplers.add(indices[0])
+    if constants.get(12,0)<61: return original
+    privateResources={50,51,52,*range(69,76)}
+    require(not resources.intersection(privateResources) and 14 not in samplers,'water reflection resource collision')
+    def cb(op,row): return op.operand_type==OPERAND_CONSTANT_BUFFER and op.immediate_indices==(1,row)
+    def temp(op): return op.immediate_indices[0] if op.operand_type==OPERAND_TEMP and len(op.immediate_indices)==1 else None
+    sites=[]
+    for i,(a,b) in enumerate(body):
+        if words[a]&2047!=0: continue
+        ops=executable_operands(words[a:b],0,b-a)
+        if len(ops)==3 and cb(ops[1],3) and cb(ops[2],4): sites.append(i)
+    if not sites: return original
+    require(len(sites)==1,'water sky gradient is ambiguous')
+    site=sites[0]
+    def row(i):
+        a,b=body[i];return words[a:b]
+    def operands(i):
+        ins=row(i);return executable_operands(ins,0,len(ins))
+    firstMad=site+1;firstOps=operands(firstMad)
+    require(row(firstMad)[0]&2047==0x32 and cb(firstOps[3],3),'water first sky gradient changed')
+    secondSites=[i for i in range(firstMad+1,min(len(body),firstMad+8))
+        if row(i)[0]&2047==0 and len(operands(i))==3 and cb(operands(i)[2],5)]
+    require(len(secondSites)==1,'water second sky gradient changed')
+    second=secondSites[0];lastMad=second+1;lastOps=operands(lastMad)
+    require(row(lastMad)[0]&2047==0x32,'water final sky gradient changed')
+    gradientFirst=temp(operands(site)[0]);gradientSecond=temp(operands(second)[0]);colour=temp(lastOps[0])
+    require(colour is not None and temp(firstOps[0])==gradientFirst and temp(firstOps[2])==gradientFirst and
+        temp(operands(second)[1])==gradientFirst and temp(lastOps[2])==gradientSecond and temp(lastOps[3])==gradientFirst,
+        'water sky gradient data flow changed')
+    def source_lane(ins,op,lane=0):
+        require(temp(op) is not None,'water slope source is not a temporary')
+        token=ins[op.start];mode=(token>>2)&3
+        require(mode in (1,2),'water slope component selection changed')
+        return temp(op),((token>>(4+(2*lane if mode==1 else 0)))&3)
+    def writer(before,source):
+        register,lane=source
+        for i in range(before-1,-1,-1):
+            op=operands(i)
+            if op and temp(op[0])==register and ((row(i)[op[0].start]>>4)&15)&(1<<lane): return i
+        raise RuntimeError('water slope producer missing')
+    slopeA=source_lane(row(firstMad),firstOps[1]);slopeB=source_lane(row(lastMad),lastOps[1])
+    wa=writer(firstMad,slopeA);wb=writer(lastMad,slopeB)
+    require(row(wa)[0]&2047==0 and row(wb)[0]&2047==0x32,'water gradient slope functions changed')
+    reflectionA=source_lane(row(wa),operands(wa)[1],slopeA[1]);reflectionB=source_lane(row(wb),operands(wb)[1],slopeB[1])
+    reflectionSite=writer(wa,reflectionA)
+    require(writer(wb,reflectionB)==reflectionSite and row(reflectionSite)[0]&2047==0x32,'water sky slopes no longer share a reflected ray')
+    reflectionOps=operands(reflectionSite);normal=temp(reflectionOps[1])
+    require(normal is not None and reflectionSite>=2,'water reflection normal unavailable')
+    double=reflectionSite-1;dot=reflectionSite-2
+    require(row(double)[0]&2047==0 and row(dot)[0]&2047==0x10,'water reflection dot/double changed')
+    dotOps=operands(dot);doubleOps=operands(double)
+    normalOperands=[op for op in dotOps[1:] if temp(op)==normal]
+    require(len(normalOperands)==1,'water reflection normal ambiguous')
+    normalOperand=normalOperands[0];normalWords=row(dot)[normalOperand.start:normalOperand.end]
+    require(temp(doubleOps[1])==temp(dotOps[0]) and temp(doubleOps[2])==temp(dotOps[0]) and
+        temp(reflectionOps[2])==temp(doubleOps[0]),'water reflection projection data flow changed')
+    _,tc,_,tw=shader_words(template);tt,ts,tb=shader_declarations_and_body(tw);templateSig=signature(tc)
+    normalScratch=words[temps[0]+1];first=normalScratch+1;templateCount=tw[tt[0]+1]
+    remappedInputs={}
+    for key,value in templateSig.items():
+        if key==('TEXCOORD',8): remappedInputs[value.register]=('temp',normalScratch)
+        elif key==('TEXCOORD',9): remappedInputs[value.register]=('temp',colour)
+        else:
+            require(key in sig,'water reflection input missing')
+            remappedInputs[value.register]=('input',sig[key].register)
+    def remap(ins):
+        def operand(op):
+            if op.operand_type in (OPERAND_TEMP,OPERAND_INPUT,OPERAND_OUTPUT):
+                require(len(op.immediate_indices)==1 and op.immediate_indices[0] is not None,'indirect water reflection temporary')
+                n=op.immediate_indices[0]
+                if op.operand_type==OPERAND_INPUT:
+                    kind,value=remappedInputs[n]
+                    if kind=='input':
+                        result=list(ins[op.start:op.end]);result[-1]=value;return result
+                    return replace_operand_with_temp(ins,op,value)
+                if op.operand_type==OPERAND_OUTPUT:
+                    require(n==0 and ((ins[op.start]>>4)&15)==7,'water reflection must write RGB only')
+                    return replace_operand_with_temp(ins,op,colour)
+                return replace_operand_with_temp(ins,op,first+n)
+            result=[];cursor=op.start
+            for child in op.relative_operands:
+                result+=ins[cursor:child.start]+operand(child);cursor=child.end
+            return result+ins[cursor:op.end]
+        result=ins[:opcode_extension_end(ins,0,len(ins))]
+        for op in executable_operands(ins,0,len(ins)): result+=operand(op)
+        result[0]=(result[0]&~(127<<24))|(len(result)<<24);return result
+    prefix=words[:temps[0]];private=set()
+    for a,b in instructions(tw):
+        if a>=ts: break
+        opcode=tw[a]&2047
+        require(opcode!=OPCODE_CUSTOMDATA,'water reflection template introduced immediate table')
+        if opcode==OPCODE_DCL_RESOURCE:
+            slot=executable_operands(tw,a,b)[0].immediate_indices[0]
+            require(slot in privateResources,'water reflection texture footprint changed')
+            prefix+=tw[a:b];private.add(slot)
+        elif opcode==OPCODE_DCL_SAMPLER:
+            require(executable_operands(tw,a,b)[0].immediate_indices==(14,),'water reflection sampler footprint changed');prefix+=tw[a:b]
+        elif opcode==OPCODE_DCL_CONSTANT_BUFFER:
+            require(executable_operands(tw,a,b)[0].immediate_indices==(12,61),'water reflection camera footprint changed')
+    require(private==privateResources,'water reflection inputs incomplete')
+    prefix+=instruction(OPCODE_DCL_TEMPS,[first+templateCount])+words[temps[1]:start]
+    transformed=[]
+    for a,b in tb:
+        if tw[a]&2047==OPCODE_RET: require(b==len(tw),'water reflection template early return')
+        else: transformed+=remap(tw[a:b])
+    capture=body[dot][0];inject=body[lastMad][0]
+    for a,b in body:
+        if a==capture: prefix+=instruction(0x36,[0x00100072,normalScratch],normalWords)
+        prefix+=words[a:b]
+        if a==inject: prefix+=transformed
+    prefix[1]=len(prefix);out=list(chunks);out[index]=DxbcChunk(chunks[index].tag,pack_words(prefix))
+    return build_dxbc(version,out)

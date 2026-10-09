@@ -122,6 +122,8 @@ namespace csah::ibl
         [[nodiscard]] bool tryGetSslrEnvironment(
             SslrEnvironmentView& view) noexcept;
 
+        [[nodiscard]] bool tryGetWaterEnvironment(SslrEnvironmentView& view) noexcept;
+
         // Allocation-free DFLight hot-path read. Publication is seqlocked and
         // valid only for the current world capture session. Environment
         // refreshes never disable diffuse IBL in the visible scene.
@@ -238,6 +240,8 @@ namespace csah::ibl
         [[nodiscard]] RuntimeSnapshot snapshot() const noexcept;
 
     private:
+        [[nodiscard]] bool tryGetEnvironment(SslrEnvironmentView& view,bool requested) noexcept;
+
         // The local FXP contains 183 DFComposite PS records. Keep bounded
         // headroom even if the engine creates a distinct object per alias.
         static constexpr std::size_t kCaptureShaderSlotCount = 256;

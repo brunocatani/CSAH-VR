@@ -1,4 +1,5 @@
 #include "Features/water_effects/WaterEffectsRuntime.h"
+#include "Features/ibl/IblRuntime.h"
 #include <d3dcompiler.h>
 #include <array>
 #include <cmath>
@@ -61,10 +62,12 @@ Out main(uint vertex:SV_VertexID,uint eye:SV_InstanceID){Out o;float2 uv=float2(
         ComPtr<ID3D11Texture2D> target,staging;ComPtr<ID3D11RenderTargetView> rtv;check(device->CreateTexture2D(&td,nullptr,&target),"target");check(device->CreateRenderTargetView(target.Get(),nullptr,&rtv),"RTV");td.BindFlags=0;td.Usage=D3D11_USAGE_STAGING;td.CPUAccessFlags=D3D11_CPU_ACCESS_READ;check(device->CreateTexture2D(&td,nullptr,&staging),"staging");
         D3D11_VIEWPORT viewport{0,0,32,16,0,1};context->RSSetViewports(1,&viewport);D3D11_RASTERIZER_DESC rd{};rd.FillMode=D3D11_FILL_SOLID;rd.CullMode=D3D11_CULL_NONE;rd.DepthClipEnable=TRUE;ComPtr<ID3D11RasterizerState> raster;check(device->CreateRasterizerState(&rd,&raster),"raster");context->RSSetState(raster.Get());
         auto& runtime=csah::water_effects::Runtime::get();runtime.onDeviceCreated(device.Get(),context.Get());csah::water_effects::Settings settings;runtime.applySettings(settings);
+        csah::ibl::SslrEnvironmentView environment;
         const auto render=[&](ID3D11PixelShader* shader) {
             context->PSSetShader(shader,nullptr,0);auto* output=rtv.Get();context->OMSetRenderTargets(1,&output,nullptr);
-            {auto bindings=runtime.scopeDraw(context.Get(),true);context->DrawInstanced(3,2,0,0);}
+            {auto bindings=runtime.scopeDraw(context.Get(),true);auto reflections=runtime.scopeReflections(context.Get(),true,environment);context->DrawInstanced(3,2,0,0);}
             std::array<ComPtr<ID3D11ShaderResourceView>,3> restored;for(UINT i=0;i<3;i++) {context->PSGetShaderResources(66+i,1,&restored[i]);require(!restored[i],"water bindings escaped draw scope");}
+            ComPtr<ID3D11ShaderResourceView> reflected;context->PSGetShaderResources(75,1,&reflected);require(!reflected,"water reflection parameters escaped draw scope");
             context->OMSetRenderTargets(0,nullptr,nullptr);context->CopyResource(staging.Get(),target.Get());D3D11_MAPPED_SUBRESOURCE map{};check(context->Map(staging.Get(),0,D3D11_MAP_READ,0,&map),"readback");std::vector<V> result(32*16);for(UINT y=0;y<16;y++) std::memcpy(result.data()+y*32,static_cast<const std::byte*>(map.pData)+y*map.RowPitch,32*sizeof(V));context->Unmap(staging.Get(),0);return result;
         };
         const auto compare=[](const std::vector<V>& a,const std::vector<V>& b,const char* message) {
@@ -82,8 +85,35 @@ Out main(uint vertex:SV_VertexID,uint eye:SV_InstanceID){Out o;float2 uv=float2(
         for(UINT y=0;y<16;y++) for(UINT x=0;x<16;x++) {const auto a=displaced[y*32+x],b=displaced[y*32+x+16];require(std::abs(a.x-b.x)<3e-5f && std::abs(a.y-b.y)<3e-5f && std::abs(a.z-b.z)<3e-5f,"stereo water mismatch");}
         vertexGeometry[14].x=1;context->UpdateSubresource(vsGeometry.Get(),0,nullptr,vertexGeometry.data(),0,0);compare(render(patched.Get()),heightBaseline,"incompatible vertex UVs did not retain native sampling");
         cb=nullptr;context->VSSetConstantBuffers(1,1,&cb);compare(render(patched.Get()),heightBaseline,"missing native scales did not retain native water");
+        cb=vsMaterial.Get();context->VSSetConstantBuffers(1,1,&cb);vertexGeometry[14].x=0;context->UpdateSubresource(vsGeometry.Get(),0,nullptr,vertexGeometry.data(),0,0);
+        settings.parallax=false;settings.reflectionDistance=4096;runtime.applySettings(settings);
+        std::array<ComPtr<ID3D11Texture2D>,4> cubes;std::array<ComPtr<ID3D11ShaderResourceView>,4> cubeViews;
+        const auto fillCube=[&](UINT cube,bool valid) {
+            std::array<V,16> pixels{};
+            for(UINT face=0;face<6;face++) {
+                const auto colour=cube==0?(face==4?V{0,0,4,1}:V{4,0,0,1}):cube==1?V{valid?1.0f:0.0f,0,0,0}:cube==2?V{}:V{0,4,0,1};
+                pixels.fill(colour);context->UpdateSubresource(cubes[cube].Get(),face,nullptr,pixels.data(),4*sizeof(V),0);
+            }
+        };
+        for(UINT i=0;i<4;i++) {
+            D3D11_TEXTURE2D_DESC d{};d.Width=d.Height=4;d.ArraySize=6;d.MipLevels=d.SampleDesc.Count=1;d.Format=DXGI_FORMAT_R32G32B32A32_FLOAT;d.BindFlags=D3D11_BIND_SHADER_RESOURCE;d.MiscFlags=D3D11_RESOURCE_MISC_TEXTURECUBE;
+            check(device->CreateTexture2D(&d,nullptr,&cubes[i]),"environment cube");check(device->CreateShaderResourceView(cubes[i].Get(),nullptr,&cubeViews[i]),"environment view");fillCube(i,true);
+        }
+        environment.publishedAvailable=true;environment.publishedEnvironment=cubeViews[0].Get();environment.publishedValidity=cubeViews[1].Get();environment.publishedPosition=cubeViews[2].Get();
+        const auto reflected=render(patched.Get());float reflectedChange=0;
+        for(UINT i=0;i<reflected.size();i++) {
+            require(std::isfinite(reflected[i].x)&&std::isfinite(reflected[i].z)&&reflected[i].w==heightBaseline[i].w,"reflection changed alpha or produced non-finite colour");
+            reflectedChange+=reflected[i].z-heightBaseline[i].z;
+        }
+        require(reflectedChange>.1f,"outgoing water reflection sampled the wrong hemisphere or never contributed");
+        fillCube(1,false);compare(render(patched.Get()),heightBaseline,"missing cubemap coverage did not preserve native water");fillCube(1,true);
+        environment.previousAvailable=true;environment.previousEnvironment=cubeViews[3].Get();environment.previousValidity=cubeViews[1].Get();environment.previousPosition=cubeViews[2].Get();
+        environment.transitionWeight=0;const auto oldReflection=render(patched.Get());environment.transitionWeight=.5f;const auto transition=render(patched.Get());
+        for(UINT i=0;i<transition.size();i++) require(std::abs(transition[i].y-(oldReflection[i].y+reflected[i].y)*.5f)<1e-4f && std::abs(transition[i].z-(oldReflection[i].z+reflected[i].z)*.5f)<1e-4f,"water environment transition is not coherent");
+        settings.reflectionDistance=64;runtime.applySettings(settings);compare(render(patched.Get()),heightBaseline,"distant reflection did not preserve native water");
+        settings.reflectionDistance=4096;settings.reflections=false;runtime.applySettings(settings);compare(render(patched.Get()),heightBaseline,"disabled reflection did not preserve native water");
         runtime.onDeviceCreated(nullptr,nullptr);context->ClearState();
-        std::cout<<(driver==D3D_DRIVER_TYPE_WARP?"WARP":"Hardware")<<": 31 native shader variants, disabled parity, flat-height neutrality, active parallax and incompatible-UV fallback passed\n";
+        std::cout<<(driver==D3D_DRIVER_TYPE_WARP?"WARP":"Hardware")<<": native water variants, parallax, stereo, outgoing reflections, missing coverage, history transition, distance fade and disable passed\n";
     }
 }
 int main(int argc,char** argv)
