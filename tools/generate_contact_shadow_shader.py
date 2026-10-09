@@ -881,6 +881,11 @@ def remap_transform_instruction(
                 operand,
                 first_scratch + int(operand.immediate_indices[0]),
             )
+        elif operand.operand_type == OPERAND_INPUT:
+            if operand.immediate_indices == (2,):
+                replacements[operand.start] = replace_operand_with_temp(instruction, operand, 5)
+            elif operand.immediate_indices not in ((0,), (1,)):
+                raise ContractError("contact-shadow template receiver input changed")
         elif operand.operand_type == OPERAND_OUTPUT:
             if operand.immediate_indices != (0,):
                 raise ContractError("contact-shadow template output changed")

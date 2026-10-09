@@ -1,7 +1,7 @@
 Texture2D<float> SceneDepth : register(t0);
 Texture2D<float> RawContactShadow : register(t1);
 TextureCube<float> CloudOcclusion : register(t2);
-RWTexture2D<unorm float> ResolvedShadowMask : register(u0);
+RWTexture2D<unorm float2> ResolvedShadowMask : register(u0);
 SamplerState CloudSampler : register(s0);
 
 cbuffer NativeDFLight : register(b2)
@@ -122,5 +122,5 @@ void CSMain(uint3 dispatchThread : SV_DispatchThreadID)
     }
 
     ResolvedShadowMask[pixel] =
-        contactVisibility * cloudVisibility;
+        float2(contactVisibility, cloudVisibility);
 }

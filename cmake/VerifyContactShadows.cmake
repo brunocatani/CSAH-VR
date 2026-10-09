@@ -101,7 +101,7 @@ foreach(required IN ITEMS
     "Texture2D<float> SceneDepth : register(t0)"
     "Texture2D<float> RawContactShadow : register(t1)"
     "TextureCube<float> CloudOcclusion : register(t2)"
-    "RWTexture2D<unorm float> ResolvedShadowMask : register(u0)"
+    "RWTexture2D<unorm float2> ResolvedShadowMask : register(u0)"
     "SamplerState CloudSampler : register(s0)"
     "NativeDFLight : register(b2)"
     "NativeStereo : register(b8)"
@@ -111,7 +111,7 @@ foreach(required IN ITEMS
     "const float viewDepth = abs(surface.z)"
     "1.0f - smoothstep(0.0f, fadeDistance, viewDepth)"
     "saturate(ContactParams0.x) * distanceScale"
-    "contactVisibility * cloudVisibility"
+    "float2(contactVisibility, cloudVisibility)"
     "[numthreads(8, 8, 1)]")
   string(FIND "${resolveShaderSource}" "${required}" found)
   if(found EQUAL -1)
@@ -140,7 +140,7 @@ foreach(forbidden IN ITEMS "RE::" "REL::" "GetRendererData")
 endforeach()
 
 foreach(required IN ITEMS
-    "Texture2D<float> ContactShadowMask : register(t46)"
+    "Texture2D<float2> ContactShadowMask : register(t46)"
     "ContactShadowSettings : register(b13)"
     "ContactShadowMask.Load"
     "lerp("

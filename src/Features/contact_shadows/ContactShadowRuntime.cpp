@@ -693,6 +693,7 @@ namespace csah::contact_shadows
 
         const auto createTarget = [&](
                                       const char* label,
+                                      DXGI_FORMAT format,
                                       Microsoft::WRL::ComPtr<ID3D11Texture2D>&
                                           targetTexture,
                                       Microsoft::WRL::ComPtr<
@@ -700,6 +701,7 @@ namespace csah::contact_shadows
                                       Microsoft::WRL::ComPtr<
                                           ID3D11UnorderedAccessView>&
                                           targetOutput) noexcept {
+            description.Format = format;
             const auto textureResult = device_->CreateTexture2D(
                 &description,
                 nullptr,
@@ -737,11 +739,13 @@ namespace csah::contact_shadows
         Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView> nextOutput;
         if (!createTarget(
                 "raw mask",
+                DXGI_FORMAT_R8_UNORM,
                 nextRawTexture,
                 nextRawView,
                 nextRawOutput) ||
             !createTarget(
-                "resolved mask",
+                "resolved contact/cloud mask",
+                DXGI_FORMAT_R8G8_UNORM,
                 nextTexture,
                 nextView,
                 nextOutput)) {
@@ -759,7 +763,7 @@ namespace csah::contact_shadows
         maskHeight_ = source.Height;
         maskRebuilds_.fetch_add(1, std::memory_order_relaxed);
         logging::info(
-            "Contact Shadows raw and resolved stereo masks allocated at {}x{} R8_UNORM.",
+            "Contact Shadows raw R8 and independent contact/cloud RG8 stereo masks allocated at {}x{}.",
             maskWidth_,
             maskHeight_);
         return true;
