@@ -81,6 +81,7 @@
 // TexNormal                         texture  float4          2d             t1      1
 // TexSpecular                       texture  float4          2d             t2      1
 // TexGradientRemap                  texture  float4          2d             t5      1
+// LodBlendingParameters             texture  float4         buf            t55      1
 // PerMaterial                       cbuffer      NA          NA            cb2      1
 // LinearLightingFrame               cbuffer      NA          NA            cb5      1
 // LinearLightingGeometry            cbuffer      NA          NA            cb8      1
@@ -130,6 +131,7 @@ dcl_resource_texture2d (float,float,float,float) t0
 dcl_resource_texture2d (float,float,float,float) t1
 dcl_resource_texture2d (float,float,float,float) t2
 dcl_resource_texture2d (float,float,float,float) t5
+dcl_resource_buffer (float,float,float,float) t55
 dcl_input_ps linear v1.xyz
 dcl_input_ps linear v2.xyz
 dcl_input_ps linear v3.xyz
@@ -148,6 +150,16 @@ dcl_temps 6
 mov r0.x, v4.w
 mov r0.y, v5.w
 sample_indexable(texture2d)(float,float,float,float) r0.zw, r0.xyxx, t0.xzyw, s0
+ld_indexable(buffer)(float,float,float,float) r1.xy, l(1, 1, 1, 1), t55.xyzw
+ge r1.xy, l(0.500000, 0.500000, 0.000000, 0.000000), r1.xyxx
+or r1.x, r1.y, r1.x
+if_z r1.x
+  ld_indexable(buffer)(float,float,float,float) r1.xy, l(0, 0, 0, 0), t55.zwxy
+  log r1.z, |r0.z|
+  mul r1.y, r1.z, r1.y
+  exp r1.y, r1.y
+  mul r0.z, r1.x, r1.y
+endif
 mad r0.w, r0.w, v6.w, -cb2[1].w
 lt r0.w, r0.w, l(0.000000)
 discard_nz r0.w
@@ -276,4 +288,4 @@ mov o0.w, cb2[0].z
 mul r4.w, cb2[0].w, l(0.010000)
 mov o3.xyzw, r4.xywz
 ret
-// Approximately 131 instruction slots used
+// Approximately 141 instruction slots used

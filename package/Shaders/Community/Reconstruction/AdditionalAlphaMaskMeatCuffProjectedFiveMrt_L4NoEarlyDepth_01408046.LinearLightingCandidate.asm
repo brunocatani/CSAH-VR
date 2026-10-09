@@ -80,6 +80,7 @@
 // TexMeatCuffSpecular               texture  float4          2d            t11      1 
 // TexAdditionalAlpha                texture  float4          2d            t12      1 
 // TexAdditionalAlphaNoise           texture  float4          2d            t15      1 
+// LodBlendingParameters             texture  float4         buf            t55      1 
 // PerMaterial                       cbuffer      NA          NA            cb2      1 
 // LinearLightingFrame               cbuffer      NA          NA            cb5      1 
 // LinearLightingGeometry            cbuffer      NA          NA            cb8      1 
@@ -136,6 +137,7 @@ dcl_resource_texture2d (float,float,float,float) t10
 dcl_resource_texture2d (float,float,float,float) t11
 dcl_resource_texture2d (float,float,float,float) t12
 dcl_resource_texture2d (float,float,float,float) t15
+dcl_resource_buffer (float,float,float,float) t55
 dcl_input_ps_siv linear noperspective v0.xy, position
 dcl_input_ps linear v1.xyz
 dcl_input_ps linear v2.xyz
@@ -204,30 +206,41 @@ sample_indexable(texture2d)(float,float,float,float) r3.xy, r3.xyxx, t10.xyzw, s
 mad r5.xy, r3.xyxx, l(2.000000, 2.000000, 0.000000, 0.000000), l(-1.000000, -1.000000, 0.000000, 0.000000)
 mov r3.x, v4.w
 mov r3.y, v5.w
-sample_indexable(texture2d)(float,float,float,float) r6.xyzw, r3.xyxx, t0.xyzw, s0
-sample_indexable(texture2d)(float,float,float,float) r7.xy, r3.xyxx, t1.xyzw, s1
+sample_indexable(texture2d)(float,float,float,float) r6.xyzw, r3.xyxx, t0.wxyz, s0
+ld_indexable(buffer)(float,float,float,float) r7.xy, l(1, 1, 1, 1), t55.xyzw
+ge r7.xy, l(0.500000, 0.500000, 0.000000, 0.000000), r7.xyxx
+or r1.w, r7.y, r7.x
+if_z r1.w
+  ld_indexable(buffer)(float,float,float,float) r7.xy, l(0, 0, 0, 0), t55.zwxy
+  log r8.xyz, |r6.yzwy|
+  mul r7.yzw, r7.yyyy, r8.xxyz
+  exp r7.yzw, r7.yyzw
+  mul r7.xyz, r7.xxxx, r7.yzwy
+else 
+  mov r7.xyz, r6.yzwy
+endif 
+sample_indexable(texture2d)(float,float,float,float) r8.xy, r3.xyxx, t1.xyzw, s1
 sample_indexable(texture2d)(float,float,float,float) r3.xy, r3.xyxx, t2.xyzw, s2
-mad r7.xy, r7.xyxx, l(2.000000, 2.000000, 0.000000, 0.000000), l(-1.000000, -1.000000, 0.000000, 0.000000)
-dp2 r1.w, r7.xyxx, r7.xyxx
+mad r8.xy, r8.xyxx, l(2.000000, 2.000000, 0.000000, 0.000000), l(-1.000000, -1.000000, 0.000000, 0.000000)
+dp2 r1.w, r8.xyxx, r8.xyxx
 min r1.w, r1.w, l(1.000000)
 add r1.w, -r1.w, l(1.000000)
 sqrt r1.w, r1.w
-movc r7.z, v11.x, r1.w, -r1.w
-dp3 r8.y, r0.xyzx, r7.xyzx
-dp3 r8.z, r1.xyzx, r7.xyzx
-dp3 r8.w, r2.xyzx, r7.xyzx
+movc r8.z, v11.x, r1.w, -r1.w
+dp3 r6.y, r0.xyzx, r8.xyzx
+dp3 r6.z, r1.xyzx, r8.xyzx
+dp3 r6.w, r2.xyzx, r8.xyzx
 discard_nz r0.w
 dp2 r1.w, r5.xyxx, r5.xyxx
 add r1.w, -r1.w, l(1.000000)
 sqrt r5.z, r1.w
-dp3 r7.y, r0.xyzx, r5.xyzx
-dp3 r7.z, r1.xyzx, r5.xyzx
-dp3 r7.w, r2.xyzx, r5.xyzx
-movc r0.xyz, r0.wwww, r6.xyzx, r4.xyzx
+dp3 r8.y, r0.xyzx, r5.xyzx
+dp3 r8.z, r1.xyzx, r5.xyzx
+dp3 r8.w, r2.xyzx, r5.xyzx
+movc r0.xyz, r0.wwww, r7.xyzx, r4.xyzx
 movc r1.xy, r0.wwww, r3.xyxx, r3.zwzz
-mov r8.x, r6.w
-mov r7.x, r4.w
-movc r2.xyzw, r0.wwww, r8.xyzw, r7.xyzw
+mov r8.x, r4.w
+movc r2.xyzw, r0.wwww, r6.xyzw, r8.xyzw
 add r1.zw, -cb2[0].xxxy, cb2[3].xxxy
 mad r1.zw, r1.zzzw, cb12[50].xxxx, cb2[0].xxxy
 mul r1.zw, r1.zzzw, cb2[0].xxxy
@@ -292,4 +305,4 @@ mul o3.z, cb2[0].w, l(0.010000)
 mov o3.w, r1.x
 mov o4.w, r1.x
 ret 
-// Approximately 141 instruction slots used
+// Approximately 152 instruction slots used

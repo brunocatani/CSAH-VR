@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Features/basic_wetness/BasicWetnessSettings.h"
+#include "Features/lod_blending/LodBlendingSettings.h"
 #include "Features/bloom_glare/BloomGlareSettings.h"
 #include "Features/cloud_shadows/CloudShadowSettings.h"
 #include "Features/complex_materials/ComplexParallaxSettings.h"
@@ -39,6 +40,7 @@ namespace csah::shared_settings
         hair_specular::Settings hairSpecular{};
         subsurface_scattering::Settings subsurfaceScattering{};
         basic_wetness::Settings basicWetness{};
+        lod_blending::Settings lodBlending{};
         cloud_shadows::Settings cloudShadows{};
         volumetric_lighting::Settings volumetricLighting{};
         vanilla_fixes::Settings vanillaFixes{};
@@ -65,6 +67,7 @@ namespace csah::shared_settings
         bool hairSpecular{};
         bool subsurfaceScattering{};
         bool basicWetness{};
+        bool lodBlending{};
         bool cloudShadows{};
         bool volumetricLighting{};
         bool vanillaFixesGate{};
@@ -94,6 +97,7 @@ namespace csah::shared_settings
                 static_cast<std::size_t>(hairSpecular) +
                 static_cast<std::size_t>(subsurfaceScattering) +
                 static_cast<std::size_t>(basicWetness) +
+                static_cast<std::size_t>(lodBlending) +
                 static_cast<std::size_t>(cloudShadows) +
                 static_cast<std::size_t>(volumetricLighting) +
                 static_cast<std::size_t>(vanillaFixes) +
@@ -126,6 +130,7 @@ namespace csah::shared_settings
             .subsurfaceScattering = previous.subsurfaceScattering !=
                 next.subsurfaceScattering,
             .basicWetness = previous.basicWetness != next.basicWetness,
+            .lodBlending = previous.lodBlending != next.lodBlending,
             .cloudShadows = previous.cloudShadows != next.cloudShadows,
             .volumetricLighting = previous.volumetricLighting !=
                 next.volumetricLighting,

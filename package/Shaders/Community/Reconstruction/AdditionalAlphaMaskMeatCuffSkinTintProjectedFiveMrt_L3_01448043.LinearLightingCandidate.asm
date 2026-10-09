@@ -80,6 +80,7 @@
 // TexMeatCuffSpecular               texture  float4          2d            t11      1 
 // TexAdditionalAlpha                texture  float4          2d            t12      1 
 // TexAdditionalAlphaNoise           texture  float4          2d            t15      1 
+// LodBlendingParameters             texture  float4         buf            t55      1 
 // PerMaterial                       cbuffer      NA          NA            cb2      1 
 // LinearLightingFrame               cbuffer      NA          NA            cb5      1 
 // LinearLightingGeometry            cbuffer      NA          NA            cb8      1 
@@ -137,6 +138,7 @@ dcl_resource_texture2d (float,float,float,float) t10
 dcl_resource_texture2d (float,float,float,float) t11
 dcl_resource_texture2d (float,float,float,float) t12
 dcl_resource_texture2d (float,float,float,float) t15
+dcl_resource_buffer (float,float,float,float) t55
 dcl_input_ps_siv linear noperspective v0.xy, position
 dcl_input_ps linear v1.xyz
 dcl_input_ps linear v2.xyz
@@ -191,10 +193,20 @@ mul r2.xyz, r0.wwww, v3.xyzx
 lt r0.w, v7.x, l(0.000000)
 lt r1.w, l(10.000000), v7.x
 or r0.w, r0.w, r1.w
+mov r3.x, v4.w
+mov r3.y, v5.w
+sample_indexable(texture2d)(float,float,float,float) r4.xyzw, r3.xyxx, t0.xyzw, s0
+ld_indexable(buffer)(float,float,float,float) r3.zw, l(1, 1, 1, 1), t55.zwxy
+ge r3.zw, l(0.000000, 0.000000, 0.500000, 0.500000), r3.zzzw
+or r1.w, r3.w, r3.z
+if_z r1.w
+  ld_indexable(buffer)(float,float,float,float) r3.zw, l(0, 0, 0, 0), t55.xyzw
+  log r5.xyz, |r4.xyzx|
+  mul r5.xyz, r3.wwww, r5.xyzx
+  exp r5.xyz, r5.xyzx
+  mul r4.xyz, r3.zzzz, r5.xyzx
+endif 
 if_nz r0.w
-  mov r3.x, v4.w
-  mov r3.y, v5.w
-  sample_indexable(texture2d)(float,float,float,float) r4.xyzw, r3.xyxx, t0.xyzw, s0
   sample_indexable(texture2d)(float,float,float,float) r3.zw, r3.xyxx, t1.zwxy, s1
   sample_indexable(texture2d)(float,float,float,float) r3.xy, r3.xyxx, t2.xyzw, s2
   mad r5.xy, r3.zwzz, l(2.000000, 2.000000, 0.000000, 0.000000), l(-1.000000, -1.000000, 0.000000, 0.000000)
@@ -315,4 +327,4 @@ mul o3.z, cb2[0].w, l(0.010000)
 mov o3.w, l(0.019608)
 mov o4.w, r0.y
 ret 
-// Approximately 162 instruction slots used
+// Approximately 172 instruction slots used

@@ -2111,6 +2111,7 @@ add_custom_command(
   DEPENDS
     "${COMPLEX_PARALLAX_HLSL_SOURCE}"
     "${ROOT_DIR}/package/Shaders/Community/LinearLighting/LinearLighting.hlsli"
+    "${ROOT_DIR}/package/Shaders/Community/LODBlending/LODBlending.hlsli"
   COMMENT "Compiling combined base landscape complex parallax"
   VERBATIM)
 
@@ -2129,6 +2130,7 @@ add_custom_command(
   DEPENDS
     "${COMPLEX_PARALLAX_HLSL_SOURCE}"
     "${ROOT_DIR}/package/Shaders/Community/LinearLighting/LinearLighting.hlsli"
+    "${ROOT_DIR}/package/Shaders/Community/LODBlending/LODBlending.hlsli"
   COMMENT "Compiling combined LOD landscape complex parallax"
   VERBATIM)
 
@@ -2150,6 +2152,7 @@ add_custom_command(
   DEPENDS
     "${COMPLEX_PARALLAX_HLSL_SOURCE}"
     "${ROOT_DIR}/package/Shaders/Community/LinearLighting/LinearLighting.hlsli"
+    "${ROOT_DIR}/package/Shaders/Community/LODBlending/LODBlending.hlsli"
   COMMENT "Compiling combined instanced LOD landscape complex parallax"
   VERBATIM)
 
@@ -2170,6 +2173,7 @@ add_custom_command(
   DEPENDS
     "${COMPLEX_PARALLAX_HLSL_SOURCE}"
     "${ROOT_DIR}/package/Shaders/Community/LinearLighting/LinearLighting.hlsli"
+    "${ROOT_DIR}/package/Shaders/Community/LODBlending/LODBlending.hlsli"
   COMMENT "Compiling classified base landscape complex parallax"
   VERBATIM)
 
@@ -2191,6 +2195,7 @@ add_custom_command(
   DEPENDS
     "${COMPLEX_PARALLAX_HLSL_SOURCE}"
     "${ROOT_DIR}/package/Shaders/Community/LinearLighting/LinearLighting.hlsli"
+    "${ROOT_DIR}/package/Shaders/Community/LODBlending/LODBlending.hlsli"
   COMMENT "Compiling classified LOD landscape complex parallax"
   VERBATIM)
 
@@ -2213,6 +2218,7 @@ add_custom_command(
   DEPENDS
     "${COMPLEX_PARALLAX_HLSL_SOURCE}"
     "${ROOT_DIR}/package/Shaders/Community/LinearLighting/LinearLighting.hlsli"
+    "${ROOT_DIR}/package/Shaders/Community/LODBlending/LODBlending.hlsli"
   COMMENT "Compiling classified instanced LOD landscape complex parallax"
   VERBATIM)
 
@@ -2264,6 +2270,12 @@ target_compile_options(CSAHCore PRIVATE
 )
 
 add_library(${PROJECT_NAME} SHARED
+  "${SOURCE_DIR}/Features/lod_blending/LodBlendingRuntime.cpp"
+  "${SOURCE_DIR}/Features/lod_blending/LodBlendingRuntime.h"
+  "${SOURCE_DIR}/Features/lod_blending/LodBlendingSettings.h"
+  "${SOURCE_DIR}/Features/lod_blending/LodClassification.h"
+  "${SOURCE_DIR}/Features/lod_blending/LodBlendingSettingsStore.cpp"
+  "${SOURCE_DIR}/Features/lod_blending/LodBlendingSettingsStore.h"
   "${SOURCE_DIR}/PCH.h"
   "${SOURCE_DIR}/XSEPlugin.cpp"
   "${SOURCE_DIR}/exports.def"
@@ -3359,6 +3371,15 @@ if(BUILD_CSAH_TESTS)
     CommonLibF4::CommonLibF4 d3d11 dxguid shell32 spdlog::spdlog)
   add_test(NAME CSAH.IblEnvironmentUpdater
     COMMAND CSAHIblEnvironmentUpdaterTests "${ROOT_DIR}")
+
+  add_executable(CSAHLodBlendingTests "${ROOT_DIR}/tests/LodBlendingTests.cpp"
+    "${SOURCE_DIR}/Features/lod_blending/LodBlendingRuntime.cpp")
+  target_compile_features(CSAHLodBlendingTests PRIVATE cxx_std_23)
+  target_compile_definitions(CSAHLodBlendingTests PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_include_directories(CSAHLodBlendingTests PRIVATE "${SOURCE_DIR}")
+  target_precompile_headers(CSAHLodBlendingTests PRIVATE "${SOURCE_DIR}/PCH.h")
+  target_link_libraries(CSAHLodBlendingTests PRIVATE CommonLibF4::CommonLibF4 d3d11 d3dcompiler spdlog::spdlog)
+  add_test(NAME CSAH.LodBlending COMMAND CSAHLodBlendingTests "${ROOT_DIR}")
 
   add_executable(CSAHSkylightingResourceTests
     "${ROOT_DIR}/tests/SkylightingResourceTests.cpp"

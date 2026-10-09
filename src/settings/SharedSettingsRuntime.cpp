@@ -1,6 +1,8 @@
 #include "settings/SharedSettingsRuntime.h"
 
 #include "Features/basic_wetness/BasicWetnessRuntime.h"
+#include "Features/lod_blending/LodBlendingRuntime.h"
+#include "Features/lod_blending/LodBlendingSettingsStore.h"
 #include "Features/basic_wetness/BasicWetnessSettingsStore.h"
 #include "Features/bloom_glare/BloomGlareRuntime.h"
 #include "Features/bloom_glare/BloomGlareSettingsStore.h"
@@ -111,6 +113,7 @@ namespace csah::shared_settings
                 .subsurfaceScattering =
                     subsurface_scattering::loadSettings(path),
                 .basicWetness = basic_wetness::loadSettings(path),
+                .lodBlending = lod_blending::loadSettings(path),
                 .cloudShadows = cloud_shadows::loadSettings(path),
                 .volumetricLighting =
                     volumetric_lighting::loadSettings(path),
@@ -178,6 +181,7 @@ namespace csah::shared_settings
                 subsurface_scattering::Runtime::get().applySettings(
                     next.subsurfaceScattering);
             }
+            if(changes.lodBlending) lod_blending::Runtime::get().applySettings(next.lodBlending);
             if (changes.basicWetness) {
                 basic_wetness::Runtime::get().applySettings(
                     next.basicWetness);

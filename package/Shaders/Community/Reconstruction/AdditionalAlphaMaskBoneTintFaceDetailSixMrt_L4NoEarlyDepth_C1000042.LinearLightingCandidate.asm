@@ -80,6 +80,7 @@
 // TexBoneTintLookup                 texture  float4          2d            t13      1 
 // TexBoneTintPalette                texture  float4          2d            t14      1 
 // TexAdditionalAlphaNoise           texture  float4          2d            t15      1 
+// LodBlendingParameters             texture  float4         buf            t55      1 
 // PerMaterial                       cbuffer      NA          NA            cb2      1 
 // LinearLightingFrame               cbuffer      NA          NA            cb5      1 
 // LinearLightingGeometry            cbuffer      NA          NA            cb8      1 
@@ -135,6 +136,7 @@ dcl_resource_texture2d (float,float,float,float) t12
 dcl_resource_texture2d (float,float,float,float) t13
 dcl_resource_texture2d (float,float,float,float) t14
 dcl_resource_texture2d (float,float,float,float) t15
+dcl_resource_buffer (float,float,float,float) t55
 dcl_input_ps_siv linear noperspective v0.xy, position
 dcl_input_ps linear v1.xyz
 dcl_input_ps linear v1.w
@@ -181,6 +183,16 @@ endif
 mov r0.x, v4.w
 mov r0.y, v5.w
 sample_indexable(texture2d)(float,float,float,float) r1.xyz, r0.xyxx, t0.xyzw, s0
+ld_indexable(buffer)(float,float,float,float) r0.zw, l(1, 1, 1, 1), t55.zwxy
+ge r0.zw, l(0.000000, 0.000000, 0.500000, 0.500000), r0.zzzw
+or r0.z, r0.w, r0.z
+if_z r0.z
+  ld_indexable(buffer)(float,float,float,float) r0.zw, l(0, 0, 0, 0), t55.xyzw
+  log r2.xyz, |r1.xyzx|
+  mul r2.xyz, r0.wwww, r2.xyzx
+  exp r2.xyz, r2.xyzx
+  mul r1.xyz, r0.zzzz, r2.xyzx
+endif 
 sample_indexable(texture2d)(float,float,float,float) r2.xyz, r0.xyxx, t8.xywz, s8
 add r0.z, -r2.z, l(1.000000)
 mul r0.z, r0.z, v1.w
@@ -201,10 +213,7 @@ mul r3.xyz, r3.xyzx, l(4.000000, 4.000000, 4.000000, 0.000000)
 eq r0.z, cb2[4].w, l(-1.000000)
 mad r2.zw, -cb2[4].wwwz, cb12[50].xxxx, l(0.000000, 0.000000, 1.000000, 1.000000)
 movc r0.z, r0.z, l(1.000000), r2.z
-log r4.xyz, |r1.xyzx|
-mul r4.xyz, r4.xyzx, cb5[1].xxxx
-exp r4.xyz, r4.xyzx
-mul r4.xyz, r4.xyzx, cb5[3].wwww
+mul r4.xyz, r1.xyzx, cb5[3].wwww
 movc r1.xyz, cb5[0].xxxx, r4.xyzx, r1.xyzx
 mad o0.xyz, r0.zzzz, r1.xyzx, r3.xyzx
 dp3 r0.z, v3.xyzx, v3.xyzx
@@ -302,4 +311,4 @@ mov o0.w, cb2[0].z
 mul o3.z, cb2[0].w, l(0.010000)
 mov o3.w, l(0.019608)
 ret 
-// Approximately 150 instruction slots used
+// Approximately 157 instruction slots used

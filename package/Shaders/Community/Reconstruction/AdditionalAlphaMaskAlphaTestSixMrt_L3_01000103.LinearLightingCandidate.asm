@@ -82,6 +82,7 @@
 // TexSpecular                       texture  float4          2d             t2      1
 // TexAdditionalAlpha                texture  float4          2d            t12      1
 // TexAdditionalAlphaNoise           texture  float4          2d            t15      1
+// LodBlendingParameters             texture  float4         buf            t55      1
 // PerMaterial                       cbuffer      NA          NA            cb2      1
 // LinearLightingFrame               cbuffer      NA          NA            cb5      1
 // LinearLightingGeometry            cbuffer      NA          NA            cb8      1
@@ -132,6 +133,7 @@ dcl_resource_texture2d (float,float,float,float) t1
 dcl_resource_texture2d (float,float,float,float) t2
 dcl_resource_texture2d (float,float,float,float) t12
 dcl_resource_texture2d (float,float,float,float) t15
+dcl_resource_buffer (float,float,float,float) t55
 dcl_input_ps_siv linear noperspective v0.xy, position
 dcl_input_ps linear v1.xyz
 dcl_input_ps linear v2.xyz
@@ -177,10 +179,20 @@ endif
 mov r0.x, v4.w
 mov r0.y, v5.w
 sample_indexable(texture2d)(float,float,float,float) r1.xyzw, r0.xyxx, t0.xyzw, s0
-mul r1.xyz, r1.xyzx, v6.xyzx
+ld_indexable(buffer)(float,float,float,float) r0.zw, l(1, 1, 1, 1), t55.zwxy
+ge r0.zw, l(0.000000, 0.000000, 0.500000, 0.500000), r0.zzzw
+or r0.z, r0.w, r0.z
+if_z r0.z
+  ld_indexable(buffer)(float,float,float,float) r0.zw, l(0, 0, 0, 0), t55.xyzw
+  log r2.xyz, |r1.xyzx|
+  mul r2.xyz, r0.wwww, r2.xyzx
+  exp r2.xyz, r2.xyzx
+  mul r1.xyz, r0.zzzz, r2.xyzx
+endif
 mad r0.z, r1.w, v6.w, -cb2[1].w
 lt r0.z, r0.z, l(0.000000)
 discard_nz r0.z
+mul r1.xyz, r1.xyzx, v6.xyzx
 eq r0.z, cb2[4].w, l(-1.000000)
 mad r2.xy, -cb2[4].wzww, cb12[50].xxxx, l(1.000000, 1.000000, 0.000000, 0.000000)
 movc r0.z, r0.z, l(1.000000), r2.x
@@ -297,4 +309,4 @@ mov o0.w, cb2[0].z
 mul r4.w, cb2[0].w, l(0.010000)
 mov o3.xyzw, r4.xywz
 ret
-// Approximately 149 instruction slots used
+// Approximately 159 instruction slots used

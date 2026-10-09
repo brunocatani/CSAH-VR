@@ -80,6 +80,7 @@
 // TexMeatCuffSpecular               texture  float4          2d            t11      1 
 // TexAdditionalAlpha                texture  float4          2d            t12      1 
 // TexAdditionalAlphaNoise           texture  float4          2d            t15      1 
+// LodBlendingParameters             texture  float4         buf            t55      1 
 // PerMaterial                       cbuffer      NA          NA            cb2      1 
 // LinearLightingFrame               cbuffer      NA          NA            cb5      1 
 // LinearLightingGeometry            cbuffer      NA          NA            cb8      1 
@@ -137,6 +138,7 @@ dcl_resource_texture2d (float,float,float,float) t10
 dcl_resource_texture2d (float,float,float,float) t11
 dcl_resource_texture2d (float,float,float,float) t12
 dcl_resource_texture2d (float,float,float,float) t15
+dcl_resource_buffer (float,float,float,float) t55
 dcl_input_ps_siv linear noperspective v0.xy, position
 dcl_input_ps linear v1.xyz
 dcl_input_ps linear v2.xyz
@@ -207,6 +209,16 @@ mad r5.xy, r3.xyxx, l(2.000000, 2.000000, 0.000000, 0.000000), l(-1.000000, -1.0
 mov r3.x, v4.w
 mov r3.y, v5.w
 sample_indexable(texture2d)(float,float,float,float) r6.xyzw, r3.xyxx, t0.xyzw, s0
+ld_indexable(buffer)(float,float,float,float) r7.xy, l(1, 1, 1, 1), t55.xyzw
+ge r7.xy, l(0.500000, 0.500000, 0.000000, 0.000000), r7.xyxx
+or r1.w, r7.y, r7.x
+if_z r1.w
+  ld_indexable(buffer)(float,float,float,float) r7.xy, l(0, 0, 0, 0), t55.zwxy
+  log r8.xyz, |r6.xyzx|
+  mul r7.yzw, r7.yyyy, r8.xxyz
+  exp r7.yzw, r7.yyzw
+  mul r6.xyz, r7.xxxx, r7.yzwy
+endif 
 sample_indexable(texture2d)(float,float,float,float) r7.xy, r3.xyxx, t1.xyzw, s1
 sample_indexable(texture2d)(float,float,float,float) r3.xy, r3.xyxx, t2.xyzw, s2
 mad r7.xy, r7.xyxx, l(2.000000, 2.000000, 0.000000, 0.000000), l(-1.000000, -1.000000, 0.000000, 0.000000)
@@ -295,4 +307,4 @@ mul o3.z, cb2[0].w, l(0.010000)
 mov o3.w, r1.x
 mov o4.w, r1.x
 ret 
-// Approximately 142 instruction slots used
+// Approximately 152 instruction slots used

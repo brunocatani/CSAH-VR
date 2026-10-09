@@ -103,7 +103,7 @@ PSOutput PSMain(PSInput input)
     }
 #endif
 
-    const float4 baseDiffuseSample = TexDiffuse.Sample(SampDiffuse, input.uv);
+    const float4 baseDiffuseSample = AdjustMaterialLodAlbedo(TexDiffuse.Sample(SampDiffuse, input.uv));
     const bool useDismemberment = input.dismembermentSelector.y > 0.0;
     const float2 specularSample = useDismemberment ?
         TexDismembermentSpecular.Sample(

@@ -18,7 +18,7 @@
 //   uint isDirLightLinear;             // Offset:    4 Size:     4 [unused]
 //   float dirLightMult;                // Offset:    8 Size:     4 [unused]
 //   float lightGamma;                  // Offset:   12 Size:     4 [unused]
-//   float colorGamma;                  // Offset:   16 Size:     4
+//   float colorGamma;                  // Offset:   16 Size:     4 [unused]
 //   float emitColorGamma;              // Offset:   20 Size:     4
 //   float glowmapGamma;                // Offset:   24 Size:     4 [unused]
 //   float ambientGamma;                // Offset:   28 Size:     4 [unused]
@@ -108,6 +108,7 @@
 // CombinedDepths                    texture  struct         r/o             t6      1 
 // TexAdditionalAlpha                texture  float4          2d            t12      1 
 // TexAdditionalAlphaNoise           texture  float4          2d            t15      1 
+// LodBlendingParameters             texture  float4         buf            t55      1 
 // PerMaterial                       cbuffer      NA          NA            cb2      1 
 // LinearLightingFrame               cbuffer      NA          NA            cb5      1 
 // LinearLightingGeometry            cbuffer      NA          NA            cb8      1 
@@ -159,6 +160,7 @@ dcl_resource_structured t4, 92
 dcl_resource_structured t6, 100
 dcl_resource_texture2d (float,float,float,float) t12
 dcl_resource_texture2d (float,float,float,float) t15
+dcl_resource_buffer (float,float,float,float) t55
 dcl_input_ps_siv linear noperspective v0.xy, position
 dcl_input_ps linear v1.xyz
 dcl_input_ps linear v2.xyz
@@ -212,6 +214,16 @@ mov r4.x, v4.w
 mov r4.y, v5.w
 mov r4.zw, r3.xxxy
 sample_indexable(texture2darray)(float,float,float,float) r5.xyzw, r4.xyzx, t0.xyzw, s0
+ld_indexable(buffer)(float,float,float,float) r6.xy, l(1, 1, 1, 1), t55.xyzw
+ge r6.xy, l(0.500000, 0.500000, 0.000000, 0.000000), r6.xyxx
+or r4.z, r6.y, r6.x
+if_z r4.z
+  ld_indexable(buffer)(float,float,float,float) r6.xy, l(0, 0, 0, 0), t55.zwxy
+  log r7.xyz, |r5.xyzx|
+  mul r6.yzw, r6.yyyy, r7.xxyz
+  exp r6.yzw, r6.yyzw
+  mul r5.xyz, r6.xxxx, r6.yzwy
+endif 
 mul r5.xyz, r5.xyzx, v6.xyzx
 mad r1.w, r5.w, v6.w, -r1.w
 lt r1.w, r1.w, l(0.000000)
@@ -267,10 +279,7 @@ ld_structured_indexable(structured_buffer, stride=100)(mixed,mixed,mixed,mixed) 
 mul o2.y, r0.x, l(0.003922)
 mov_sat o2.w, r0.x
 movc r0.x, r4.w, l(1.000000), r4.y
-log r2.xyz, |r5.xyzx|
-mul r2.xyz, r2.xyzx, cb5[1].xxxx
-exp r2.xyz, r2.xyzx
-mul r2.xyz, r2.xyzx, cb5[3].wwww
+mul r2.xyz, r5.xyzx, cb5[3].wwww
 movc r2.xyz, cb5[0].xxxx, r2.xyzx, r5.xyzx
 mul o0.xyz, r0.xxxx, r2.xyzx
 max r0.x, cb8[0].x, l(0.000010)
@@ -301,4 +310,4 @@ mul o5.xy, r0.xyxx, l(-0.500000, 0.500000, 0.000000, 0.000000)
 mov o0.w, r0.z
 mov o3.w, l(1.000000)
 ret 
-// Approximately 125 instruction slots used
+// Approximately 132 instruction slots used

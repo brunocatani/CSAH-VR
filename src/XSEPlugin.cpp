@@ -1,6 +1,8 @@
 #include "PCH.h"
 
 #include "Features/basic_wetness/BasicWetnessRuntime.h"
+#include "Features/lod_blending/LodBlendingRuntime.h"
+#include "Features/lod_blending/LodBlendingSettingsStore.h"
 #include "Features/basic_wetness/BasicWetnessSettingsStore.h"
 #include "Features/bloom_glare/BloomGlareRuntime.h"
 #include "Features/bloom_glare/BloomGlareSettingsStore.h"
@@ -416,6 +418,7 @@ extern "C" __declspec(dllexport) bool F4SEAPI F4SEPlugin_Load(
             csah::hair_specular::loadSettings();
         const auto subsurfaceScatteringSettings =
             csah::subsurface_scattering::loadSettings();
+        const auto lodBlendingSettings = csah::lod_blending::loadSettings();
         const auto basicWetnessSettings =
             csah::basic_wetness::loadSettings();
         const auto cloudShadowSettings =
@@ -462,6 +465,7 @@ extern "C" __declspec(dllexport) bool F4SEAPI F4SEPlugin_Load(
             hairSpecularSettings);
         csah::subsurface_scattering::Runtime::get().applySettings(
             subsurfaceScatteringSettings);
+        csah::lod_blending::Runtime::get().applySettings(lodBlendingSettings);
         csah::basic_wetness::Runtime::get().applySettings(
             basicWetnessSettings);
         csah::pbr::Runtime::get().applySettings(pbrSettings);

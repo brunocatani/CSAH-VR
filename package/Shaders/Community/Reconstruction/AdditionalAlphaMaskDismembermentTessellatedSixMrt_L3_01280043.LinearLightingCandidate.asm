@@ -80,6 +80,7 @@
 // TexDismembermentSpecular          texture  float4          2d            t11      1 
 // TexAdditionalAlpha                texture  float4          2d            t12      1 
 // TexAdditionalAlphaNoise           texture  float4          2d            t15      1 
+// LodBlendingParameters             texture  float4         buf            t55      1 
 // PerMaterial                       cbuffer      NA          NA            cb2      1 
 // LinearLightingFrame               cbuffer      NA          NA            cb5      1 
 // LinearLightingGeometry            cbuffer      NA          NA            cb8      1 
@@ -137,6 +138,7 @@ dcl_resource_texture2d (float,float,float,float) t10
 dcl_resource_texture2d (float,float,float,float) t11
 dcl_resource_texture2d (float,float,float,float) t12
 dcl_resource_texture2d (float,float,float,float) t15
+dcl_resource_buffer (float,float,float,float) t55
 dcl_input_ps_siv linear noperspective v0.xy, position
 dcl_input_ps linear v1.xy
 dcl_input_ps linear v1.zw
@@ -247,19 +249,32 @@ and o2.x, r0.y, l(0x3f800000)
 mul o2.y, cb2[10].x, l(0.003922)
 mov_sat o2.w, cb2[10].x
 if_nz r0.x
-  sample_indexable(texture2d)(float,float,float,float) r0.xyz, v1.zwzz, t9.xyzw, s9
+  sample_indexable(texture2d)(float,float,float,float) r0.yzw, v1.zwzz, t9.wxyz, s9
 else 
   sample_indexable(texture2d)(float,float,float,float) r1.xyz, v1.xyxx, t0.xyzw, s0
-  mul r0.xyz, r1.xyzx, v2.xyzx
+  ld_indexable(buffer)(float,float,float,float) r2.xy, l(1, 1, 1, 1), t55.xyzw
+  ge r2.xy, l(0.500000, 0.500000, 0.000000, 0.000000), r2.xyxx
+  or r2.x, r2.y, r2.x
+  if_z r2.x
+    ld_indexable(buffer)(float,float,float,float) r2.xy, l(0, 0, 0, 0), t55.zwxy
+    log r3.xyz, |r1.xyzx|
+    mul r2.yzw, r2.yyyy, r3.xxyz
+    exp r2.yzw, r2.yyzw
+    mul r1.xyz, r2.xxxx, r2.yzwy
+  endif 
+  mul r0.yzw, r1.xxyz, v2.xxyz
 endif 
-eq r0.w, cb2[4].w, l(-1.000000)
-movc r0.w, r0.w, l(1.000000), r1.w
-log r1.xyz, |r0.xyzx|
-mul r1.xyz, r1.xyzx, cb5[1].xxxx
-exp r1.xyz, r1.xyzx
-mul r1.xyz, r1.xyzx, cb5[3].wwww
-movc r0.xyz, cb5[0].xxxx, r1.xyzx, r0.xyzx
-mul o0.xyz, r0.xyzx, r0.wwww
+eq r1.x, cb2[4].w, l(-1.000000)
+movc r1.x, r1.x, l(1.000000), r1.w
+log r1.yzw, |r0.yyzw|
+mul r1.yzw, r1.yyzw, cb5[1].xxxx
+exp r1.yzw, r1.yyzw
+mul r1.yzw, r1.yyzw, cb5[3].wwww
+movc r1.yzw, cb5[0].xxxx, r1.yyzw, r0.yyzw
+mul r2.xyz, r0.yzwy, cb5[3].wwww
+movc r0.yzw, cb5[0].xxxx, r2.xxyz, r0.yyzw
+movc r0.xyz, r0.xxxx, r1.yzwy, r0.yzwy
+mul o0.xyz, r0.xyzx, r1.xxxx
 ishl r0.x, v9.x, l(2)
 iadd r1.xyzw, r0.xxxx, l(66, 63, 64, 54)
 mov r2.xyz, v7.xyzx
@@ -287,4 +302,4 @@ mov o0.w, cb2[0].z
 mul o3.z, cb2[0].w, l(0.010000)
 mov o3.w, l(1.000000)
 ret 
-// Approximately 132 instruction slots used
+// Approximately 145 instruction slots used

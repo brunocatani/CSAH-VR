@@ -170,7 +170,7 @@ PSOutput PSMain(PSInput input)
 
 #if LINEAR_LIGHTING_GRADIENT_REMAP
     const float gradientRemapSource =
-        TexDiffuse.Sample(SampDiffuse, input.uv).y;
+        AdjustMaterialLodAlbedo(TexDiffuse.Sample(SampDiffuse, input.uv)).y;
     float gradientRemapRow = cb2[2].x;
 #if LINEAR_LIGHTING_VERTEX_COLOR
     gradientRemapRow += pow(input.vertexColor.x, 0.454545) - 1.0;
@@ -278,7 +278,7 @@ PSOutput PSMain(PSInput input)
 #if LINEAR_LIGHTING_GRADIENT_REMAP
         diffuse = gradientRemap.xyz;
 #else
-        diffuse = TexDiffuse.Sample(SampDiffuse, input.uv).xyz;
+        diffuse = AdjustMaterialLodAlbedo(TexDiffuse.Sample(SampDiffuse, input.uv)).xyz;
 #if LINEAR_LIGHTING_VERTEX_COLOR
         diffuse *= input.vertexColor.xyz;
 #endif

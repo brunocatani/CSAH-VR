@@ -249,6 +249,100 @@
       "label": "Tuning",
       "pages": [
         {
+          "id": "lod-matching-tuning",
+          "label": "LOD Matching",
+          "groups": [
+            {
+              "id": "lod-response",
+              "label": "Distant Colour",
+              "controls": [
+                {
+                  "id": "lod-matching",
+                  "type": "toggle",
+                  "label": "LOD Colour Matching",
+                  "help": "Enables independent terrain and distant-object colour adjustment. Neutral values preserve the original colours.",
+                  "default": true,
+                  "binding": {
+                    "type": "ini",
+                    "root": "documents",
+                    "path": "Mods_Config/CSAH/CSAH.ini",
+                    "section": "LODBlending",
+                    "key": "bEnabled"
+                  }
+                },
+                {
+                  "id": "lod-terrain-brightness",
+                  "type": "slider",
+                  "label": "Terrain LOD Brightness",
+                  "help": "Adjust distant surfaces to match your installed terrain and object textures.",
+                  "default": 1.0,
+                  "min": 0.01,
+                  "max": 5,
+                  "step": 0.01,
+                  "binding": {
+                    "type": "ini",
+                    "root": "documents",
+                    "path": "Mods_Config/CSAH/CSAH.ini",
+                    "section": "LODBlending",
+                    "key": "fTerrainBrightness"
+                  }
+                },
+                {
+                  "id": "lod-terrain-gamma",
+                  "type": "slider",
+                  "label": "Terrain LOD Gamma",
+                  "help": "Adjust distant surfaces to match your installed terrain and object textures.",
+                  "default": 1.0,
+                  "min": 0.1,
+                  "max": 3,
+                  "step": 0.01,
+                  "binding": {
+                    "type": "ini",
+                    "root": "documents",
+                    "path": "Mods_Config/CSAH/CSAH.ini",
+                    "section": "LODBlending",
+                    "key": "fTerrainGamma"
+                  }
+                },
+                {
+                  "id": "lod-object-brightness",
+                  "type": "slider",
+                  "label": "Object LOD Brightness",
+                  "help": "Adjust distant surfaces to match your installed terrain and object textures.",
+                  "default": 1.0,
+                  "min": 0.01,
+                  "max": 5,
+                  "step": 0.01,
+                  "binding": {
+                    "type": "ini",
+                    "root": "documents",
+                    "path": "Mods_Config/CSAH/CSAH.ini",
+                    "section": "LODBlending",
+                    "key": "fObjectBrightness"
+                  }
+                },
+                {
+                  "id": "lod-object-gamma",
+                  "type": "slider",
+                  "label": "Object LOD Gamma",
+                  "help": "Adjust distant surfaces to match your installed terrain and object textures.",
+                  "default": 1.0,
+                  "min": 0.1,
+                  "max": 3,
+                  "step": 0.01,
+                  "binding": {
+                    "type": "ini",
+                    "root": "documents",
+                    "path": "Mods_Config/CSAH/CSAH.ini",
+                    "section": "LODBlending",
+                    "key": "fObjectGamma"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
           "id": "skylighting-tuning",
           "label": "Skylighting",
           "groups": [

@@ -25,7 +25,7 @@
 //   uint isDirLightLinear;             // Offset:    4 Size:     4 [unused]
 //   float dirLightMult;                // Offset:    8 Size:     4 [unused]
 //   float lightGamma;                  // Offset:   12 Size:     4 [unused]
-//   float colorGamma;                  // Offset:   16 Size:     4
+//   float colorGamma;                  // Offset:   16 Size:     4 [unused]
 //   float emitColorGamma;              // Offset:   20 Size:     4
 //   float glowmapGamma;                // Offset:   24 Size:     4 [unused]
 //   float ambientGamma;                // Offset:   28 Size:     4 [unused]
@@ -83,6 +83,7 @@
 // TexScreen                         texture  float4          2d             t4      1 
 // TexAdditionalAlpha                texture  float4          2d            t12      1 
 // TexAdditionalAlphaNoise           texture  float4          2d            t15      1 
+// LodBlendingParameters             texture  float4         buf            t55      1 
 // PipboyScreenGlobals               cbuffer      NA          NA            cb0      1 
 // PerMaterial                       cbuffer      NA          NA            cb2      1 
 // LinearLightingFrame               cbuffer      NA          NA            cb5      1 
@@ -135,6 +136,7 @@ dcl_resource_texture2d (float,float,float,float) t2
 dcl_resource_texture2d (float,float,float,float) t4
 dcl_resource_texture2d (float,float,float,float) t12
 dcl_resource_texture2d (float,float,float,float) t15
+dcl_resource_buffer (float,float,float,float) t55
 dcl_input_ps_siv linear noperspective v0.xy, position
 dcl_input_ps linear v1.xyz
 dcl_input_ps linear v2.xyz
@@ -180,6 +182,16 @@ endif
 mov r0.x, v4.w
 mov r0.y, v5.w
 sample_indexable(texture2d)(float,float,float,float) r1.xyz, r0.xyxx, t0.xyzw, s0
+ld_indexable(buffer)(float,float,float,float) r0.zw, l(1, 1, 1, 1), t55.zwxy
+ge r0.zw, l(0.000000, 0.000000, 0.500000, 0.500000), r0.zzzw
+or r0.z, r0.w, r0.z
+if_z r0.z
+  ld_indexable(buffer)(float,float,float,float) r0.zw, l(0, 0, 0, 0), t55.xyzw
+  log r2.xyz, |r1.xyzx|
+  mul r2.xyz, r0.wwww, r2.xyzx
+  exp r2.xyz, r2.xyzx
+  mul r1.xyz, r0.zzzz, r2.xyzx
+endif 
 eq r0.z, cb2[4].w, l(-1.000000)
 mad r2.xy, -cb2[4].wzww, cb12[50].xxxx, l(1.000000, 1.000000, 0.000000, 0.000000)
 movc r0.z, r0.z, l(1.000000), r2.x
@@ -207,10 +219,7 @@ sample_indexable(texture2d)(float,float,float,float) r0.xyw, r0.xyxx, t4.xywz, s
 log r0.xyw, r0.xyxw
 mul r0.xyw, r0.xyxw, l(2.200000, 2.200000, 0.000000, 2.200000)
 exp r0.xyw, r0.xyxw
-log r5.xyz, |r1.xyzx|
-mul r5.xyz, r5.xyzx, cb5[1].xxxx
-exp r5.xyz, r5.xyzx
-mul r5.xyz, r5.xyzx, cb5[3].wwww
+mul r5.xyz, r1.xyzx, cb5[3].wwww
 movc r1.xyz, cb5[0].xxxx, r5.xyzx, r1.xyzx
 mul r5.xyz, r0.xywx, cb0[0].zzzz
 mad o0.xyz, r0.zzzz, r1.xyzx, r5.xyzx
@@ -286,4 +295,4 @@ mov o0.w, cb2[0].z
 mul o3.z, cb2[0].w, l(0.010000)
 mov o3.w, l(0.015686)
 ret 
-// Approximately 135 instruction slots used
+// Approximately 142 instruction slots used

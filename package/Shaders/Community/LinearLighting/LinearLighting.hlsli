@@ -1,5 +1,6 @@
 #ifndef FO4VR_COMMUNITY_SHADERS_LINEAR_LIGHTING_HLSLI
 #define FO4VR_COMMUNITY_SHADERS_LINEAR_LIGHTING_HLSLI
+#include "../LODBlending/LODBlending.hlsli"
 
 // These registers are only valid for replacement shaders whose original
 // reflection contract proves that b5 and b8 are unused.

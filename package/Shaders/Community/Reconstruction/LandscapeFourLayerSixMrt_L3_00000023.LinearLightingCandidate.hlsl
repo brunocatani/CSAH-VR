@@ -460,14 +460,14 @@ PSOutput PSMain(PSInput input)
             SampLandscapeLodDiffuse,
             landscapeLodBase * 0.00025).xyz * 3.777778) - 2.006;
 #if LINEAR_LIGHTING_INSTANCED_LANDSCAPE
-    const float3 lodMultiplier = TexLodMultiplierLayers.Sample(
+    const float3 lodMultiplier = AdjustLodAlbedo(TexLodMultiplierLayers.Sample(
         Samp3,
         float3(
             input.lodMultiplierUv,
-            float(layerIndices.lodTextureSlice))).xyz;
+            float(layerIndices.lodTextureSlice))),true).xyz;
 #else
-    const float3 lodMultiplier = TexLodMultiplier.Sample(
-        SampLodMultiplier, input.lodMultiplierUv).xyz;
+    const float3 lodMultiplier = AdjustLodAlbedo(TexLodMultiplier.Sample(
+        SampLodMultiplier, input.lodMultiplierUv),true).xyz;
 #endif
     diffuse = lerp(
         diffuse,

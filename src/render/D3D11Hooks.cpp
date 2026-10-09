@@ -1,6 +1,7 @@
 #include "render/D3D11Hooks.h"
 
 #include "Features/basic_wetness/BasicWetnessRuntime.h"
+#include "Features/lod_blending/LodBlendingRuntime.h"
 #include "Features/bloom_glare/BloomGlareRuntime.h"
 #include "Features/cloud_shadows/CloudShadowRuntime.h"
 #include "Features/contact_shadows/ContactShadowRuntime.h"
@@ -3630,6 +3631,8 @@ namespace csah::render
                     activeReplacementBinding.family ==
                         linear_lighting::ReplacementShaderFamily::
                             dFLightAmbient);
+            const auto lodBindings=lod_blending::Runtime::get().scopeDraw(context,
+                activeReplacementBinding.family==linear_lighting::ReplacementShaderFamily::material);
             const auto skylightingVisibility = skylighting::Runtime::get().scopeVisibilityDraw(
                 context, static_cast<bool>(activeIblMaterialBinding) ||
                     static_cast<bool>(activeContactShadowBinding));
@@ -3721,6 +3724,8 @@ namespace csah::render
                     activeReplacementBinding.family ==
                         linear_lighting::ReplacementShaderFamily::
                             dFLightAmbient);
+            const auto lodBindings=lod_blending::Runtime::get().scopeDraw(context,
+                activeReplacementBinding.family==linear_lighting::ReplacementShaderFamily::material);
             const auto skylightingVisibility = skylighting::Runtime::get().scopeVisibilityDraw(
                 context, static_cast<bool>(activeIblMaterialBinding) ||
                     static_cast<bool>(activeContactShadowBinding));
@@ -3824,6 +3829,8 @@ namespace csah::render
                     activeReplacementBinding.family ==
                         linear_lighting::ReplacementShaderFamily::
                             dFLightAmbient);
+            const auto lodBindings=lod_blending::Runtime::get().scopeDraw(context,
+                activeReplacementBinding.family==linear_lighting::ReplacementShaderFamily::material);
             const auto skylightingVisibility = skylighting::Runtime::get().scopeVisibilityDraw(
                 context, static_cast<bool>(activeIblMaterialBinding) ||
                     static_cast<bool>(activeContactShadowBinding));
@@ -3929,6 +3936,8 @@ namespace csah::render
                     activeReplacementBinding.family ==
                         linear_lighting::ReplacementShaderFamily::
                             dFLightAmbient);
+            const auto lodBindings=lod_blending::Runtime::get().scopeDraw(context,
+                activeReplacementBinding.family==linear_lighting::ReplacementShaderFamily::material);
             const auto skylightingVisibility = skylighting::Runtime::get().scopeVisibilityDraw(
                 context, static_cast<bool>(activeIblMaterialBinding) ||
                     static_cast<bool>(activeContactShadowBinding));
@@ -4670,6 +4679,7 @@ namespace csah::render
             hair_specular::Runtime::get().onDeviceCreated(
                 *device,
                 *immediateContext);
+            lod_blending::Runtime::get().onDeviceCreated(*device, *immediateContext);
             basic_wetness::Runtime::get().onDeviceCreated(
                 *device,
                 *immediateContext);

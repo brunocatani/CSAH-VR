@@ -1,6 +1,7 @@
 #include "render/BSDFPrePassShaderHook.h"
 
 #include "render/D3D11Hooks.h"
+#include "Features/lod_blending/LodBlendingRuntime.h"
 
 #include "support/Logger.h"
 
@@ -35,6 +36,10 @@ namespace csah::render
         constexpr std::size_t kTechniqueRestoreSlot = 5;
         constexpr std::uintptr_t kTechniqueRestoreFunctionRva = 0x028789B0;
         constexpr std::size_t kGeometrySetupSlot = 9;
+        // 142891AF0 and 142891BB0 invoke slots 9 and 10 around 1428909C0;
+        // that draw routine also dispatches cached records at pass+0x20.
+        constexpr std::size_t kGeometryRestoreSlot = 10;
+        constexpr std::uintptr_t kGeometryRestoreFunctionRva = 0x0287FC80;
         constexpr std::uintptr_t kGeometrySetupFunctionRva = 0x0287CF60;
         constexpr std::uintptr_t kGeometryDescriptorLoadRva = 0x0287D1AB;
         constexpr std::size_t kGeometryStateDescriptorOffset = 0x40;
@@ -108,9 +113,12 @@ namespace csah::render
         SetupTechniqueFunction originalSetupTechnique{};
         RestoreTechniqueFunction originalRestoreTechnique{};
         SetupGeometryFunction originalSetupGeometry{};
+        using RestoreGeometryFunction=void(__fastcall*)(void*,void*);
+        RestoreGeometryFunction originalRestoreGeometry{};
         void** techniqueSetupCell{};
         void** techniqueRestoreCell{};
         void** geometrySetupCell{};
+        void** geometryRestoreCell{};
         std::atomic_bool installed{};
         std::atomic_uint64_t techniqueSetupCalls{};
         std::atomic_uint64_t techniqueRestoreCalls{};
@@ -123,6 +131,7 @@ namespace csah::render
         constexpr std::uint32_t kIblConsumer = 1u << 2;
         constexpr std::uint32_t kSurfaceClassificationConsumer = 1u << 3;
         constexpr std::uint32_t kAuthoredPbrConsumer = 1u << 4;
+        constexpr std::uint32_t kLodBlendingConsumer = 1u << 5;
         std::atomic_uint32_t descriptorConsumerMask{};
         std::atomic_bool authoredPbrEnabled{};
         std::atomic_uint32_t authoredPbrPointerFailureMask{};
@@ -391,8 +400,14 @@ namespace csah::render
                     }
                 }
             }
+            lod_blending::Runtime::get().beginGeometry(pass);
             publishDFPrePassGeometry(descriptor, baseTexture);
             original(receiver, pass, geometryState);
+        }
+        void __fastcall hookRestoreGeometry(void* receiver,void* pass) noexcept
+        {
+            lod_blending::Runtime::get().endGeometry();
+            if(originalRestoreGeometry) originalRestoreGeometry(receiver,pass);
         }
     }
 
@@ -414,6 +429,9 @@ namespace csah::render
             image + kVtableRva + kTechniqueRestoreSlot * sizeof(void*));
         auto** nextGeometrySetupCell = reinterpret_cast<void**>(
             image + kVtableRva + kGeometrySetupSlot * sizeof(void*));
+        auto** nextGeometryRestoreCell = reinterpret_cast<void**>(
+            image+kVtableRva+kGeometryRestoreSlot*sizeof(void*));
+        auto* expectedGeometryRestore=image+kGeometryRestoreFunctionRva;
         auto* expectedTechniqueSetup = image + kTechniqueSetupFunctionRva;
         auto* expectedTechniqueRestore = image + kTechniqueRestoreFunctionRva;
         auto* expectedGeometrySetup = image + kGeometrySetupFunctionRva;
@@ -462,7 +480,9 @@ namespace csah::render
                 expectedGeometryDescriptorLoad,
                 kGeometryDescriptorLoadSignature.data(),
                 kGeometryDescriptorLoadSignature.size()) == 0;
-        if (!techniqueSetupCellMatches || !techniqueRestoreCellMatches ||
+        if (!readable(nextGeometryRestoreCell,sizeof(*nextGeometryRestoreCell)) ||
+            *nextGeometryRestoreCell!=expectedGeometryRestore || !executable(expectedGeometryRestore,16) ||
+            !techniqueSetupCellMatches || !techniqueRestoreCellMatches ||
             !geometrySetupCellMatches || !techniqueSetupCodeMatches ||
             !techniqueRestoreCodeMatches || !geometrySetupCodeMatches ||
             !geometryDescriptorLoadMatches) {
@@ -484,6 +504,7 @@ namespace csah::render
             expectedTechniqueRestore);
         originalSetupGeometry = reinterpret_cast<SetupGeometryFunction>(
             expectedGeometrySetup);
+        originalRestoreGeometry=reinterpret_cast<RestoreGeometryFunction>(expectedGeometryRestore);
         const auto techniqueSetupPatched = patchPointer(
             nextTechniqueSetupCell,
             expectedTechniqueSetup,
@@ -498,8 +519,12 @@ namespace csah::render
                 nextGeometrySetupCell,
                 expectedGeometrySetup,
                 reinterpret_cast<void*>(&hookSetupGeometry));
-        if (!geometrySetupPatched) {
+        const auto geometryRestorePatched=geometrySetupPatched && patchPointer(
+            nextGeometryRestoreCell,expectedGeometryRestore,reinterpret_cast<void*>(&hookRestoreGeometry));
+        if (!geometryRestorePatched) {
             auto rollbackComplete = true;
+            if(geometrySetupPatched) rollbackComplete=patchPointer(nextGeometrySetupCell,
+                reinterpret_cast<void*>(&hookSetupGeometry),expectedGeometrySetup);
             if (techniqueRestorePatched) {
                 rollbackComplete = patchPointer(
                     nextTechniqueRestoreCell,
@@ -520,6 +545,7 @@ namespace csah::render
         techniqueSetupCell = nextTechniqueSetupCell;
         techniqueRestoreCell = nextTechniqueRestoreCell;
         geometrySetupCell = nextGeometrySetupCell;
+        geometryRestoreCell = nextGeometryRestoreCell;
         installed.store(true, std::memory_order_release);
         logging::info(
             "Installed verified Fallout4VR BSDFPrePass descriptor lifetime hooks (vtable 0x030B8C68: SetupTechnique slot 4 RVA 0x0287B720, RestoreTechnique slot 5 RVA 0x028789B0, SetupGeometry slot 9 RVA 0x0287CF60, geometry-state descriptor +0x40 verified at RVA 0x0287D1AB).");
@@ -539,7 +565,9 @@ namespace csah::render
             *techniqueRestoreCell ==
                 reinterpret_cast<void*>(&hookRestoreTechnique) &&
             *geometrySetupCell ==
-                reinterpret_cast<void*>(&hookSetupGeometry);
+                reinterpret_cast<void*>(&hookSetupGeometry) &&
+            readable(geometryRestoreCell,sizeof(*geometryRestoreCell)) &&
+            *geometryRestoreCell==reinterpret_cast<void*>(&hookRestoreGeometry);
         if (!owned && hookInstalled) {
             installed.store(false, std::memory_order_release);
             const auto failures = validationFailures.fetch_add(
@@ -576,6 +604,11 @@ namespace csah::render
         setDescriptorConsumer(kSurfaceClassificationConsumer, enabled);
     }
 
+    void setDFPrePassLodBlendingEnabled(bool enabled) noexcept
+    {
+        setDescriptorConsumer(kLodBlendingConsumer,enabled);
+    }
+
     void setDFPrePassAuthoredPbrEnabled(bool enabled) noexcept
     {
         authoredPbrEnabled.store(enabled, std::memory_order_release);
@@ -599,7 +632,9 @@ namespace csah::render
                 *techniqueRestoreCell ==
                     reinterpret_cast<void*>(&hookRestoreTechnique) &&
                 *geometrySetupCell ==
-                    reinterpret_cast<void*>(&hookSetupGeometry),
+                    reinterpret_cast<void*>(&hookSetupGeometry) &&
+                readable(geometryRestoreCell,sizeof(*geometryRestoreCell)) &&
+                *geometryRestoreCell==reinterpret_cast<void*>(&hookRestoreGeometry),
             .setupCalls = geometrySetupCalls.load(std::memory_order_relaxed),
             .validationFailures =
                 validationFailures.load(std::memory_order_relaxed),

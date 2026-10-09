@@ -1449,6 +1449,10 @@ def verify(root: Path) -> None:
             ):
                 if candidate[key] != original[key]:
                     fail(f"{label} replacement {key} differs from vanilla")
+            if re.search(r"dcl_resource_.*\bt55\b", vanilla_assembly):
+                fail(f"{label} original shader occupies the private LOD parameter slot")
+            if re.search(r"dcl_resource_.*\bt55\b", candidate_assembly) and "dcl_resource_buffer (float,float,float,float) t55" not in candidate_assembly:
+                fail(f"{label} LOD parameter transport changed")
             validate_frame_reflection(candidate_assembly)
 
     print(f"Linear Lighting shader contracts verified: {len(contracts)}")

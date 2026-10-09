@@ -22,7 +22,7 @@
 //   uint isDirLightLinear;             // Offset:    4 Size:     4 [unused]
 //   float dirLightMult;                // Offset:    8 Size:     4 [unused]
 //   float lightGamma;                  // Offset:   12 Size:     4 [unused]
-//   float colorGamma;                  // Offset:   16 Size:     4
+//   float colorGamma;                  // Offset:   16 Size:     4 [unused]
 //   float emitColorGamma;              // Offset:   20 Size:     4
 //   float glowmapGamma;                // Offset:   24 Size:     4 [unused]
 //   float ambientGamma;                // Offset:   28 Size:     4 [unused]
@@ -302,10 +302,7 @@ sqrt o2.z, r0.w
 mov_sat o2.w, cb2[8].x
 mad_sat r0.w, -cb12[50].x, r2.w, l(1.000000)
 movc r0.w, r3.z, l(1.000000), r0.w
-log r1.xyz, |r0.xyzx|
-mul r1.xyz, r1.xyzx, cb5[1].xxxx
-exp r1.xyz, r1.xyzx
-mul r1.xyz, r1.xyzx, cb5[3].wwww
+mul r1.xyz, r0.xyzx, cb5[3].wwww
 movc r0.xyz, cb5[0].xxxx, r1.xyzx, r0.xyzx
 mul o0.xyz, r0.xyzx, r0.wwww
 max r0.x, cb8[0].x, l(0.000010)
@@ -337,4 +334,4 @@ mov o0.w, cb2[0].z
 mul o3.z, cb2[0].w, l(0.010000)
 mov o3.w, l(1.000000)
 ret 
-// Approximately 162 instruction slots used
+// Approximately 159 instruction slots used
