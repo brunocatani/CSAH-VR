@@ -1,17 +1,17 @@
-// FO4VR stereo environment update. The shader projects one shared
-// world-space cube into both halves of the exact packed DFComposite
-// radiance/depth pair, then retains bounded validity-weighted history both
-// inside and outside the current stereo frusta. Visible-direction blending
-// prevents once-per-capture radiance steps while preserving scene response.
-
+// Shared stereo capture with deterministic nearest-surface reprojection.
+// Depth/owner/resolve passes adapt the DynamicCubemapF4 1.3.1 approach (GPL-3.0).
 Texture2D<float3> ReflectionFreeRadiance : register(t0);
 Texture2D<float> SceneDepth : register(t1);
 TextureCube<float3> PreviousEnvironment : register(t2);
 TextureCube<float> PreviousValidity : register(t3);
 TextureCube<float4> PreviousPosition : register(t4);
+TextureCube<float4> PreviousSky : register(t5);
 RWTexture2DArray<float3> EnvironmentMip : register(u0);
 RWTexture2DArray<float> EnvironmentValidity : register(u1);
 RWTexture2DArray<float4> EnvironmentPosition : register(u2);
+RWTexture2DArray<float4> SkyHistory : register(u3);
+RWTexture2DArray<uint> NearestDepth : register(u4);
+RWTexture2DArray<uint> NearestOwner : register(u5);
 SamplerState LinearClampSampler : register(s0);
 
 cbuffer EnvironmentUpdateConstants : register(b11)
@@ -19,7 +19,7 @@ cbuffer EnvironmentUpdateConstants : register(b11)
     uint2 SourceExtent;
     uint TargetExtent;
     uint HistoryAvailable;
-    float HistoryDecay;
+    uint UpdatePass;
     float HistoryBlend;
     uint2 Reserved;
     float3 PreviousProbeOrigin;
@@ -259,42 +259,40 @@ bool SampleEye(
     return true;
 }
 
-float3 ReprojectHistoryDirection(
-    float3 worldDirection,
-    float3 currentProbeOrigin)
+uint3 CubeCoordinate(float3 direction)
 {
-    if (PreviousProbeOriginValid == 0u)
+    const float3 a = abs(direction);
+    uint face;
+    float2 uv;
+    if (a.x >= a.y && a.x >= a.z)
     {
-        return worldDirection;
+        face = direction.x >= 0.0f ? 0u : 1u;
+        uv = float2(direction.x >= 0.0f ? -direction.z : direction.z, -direction.y) / a.x;
     }
-
-    const float4 initialHit = PreviousPosition.SampleLevel(
-        LinearClampSampler,
-        worldDirection,
-        0.0f);
-    const float3 previousProbeToHit =
-        initialHit.xyz - PreviousProbeOrigin;
-    const float radius = length(previousProbeToHit);
-    const float3 previousProbeToCurrent =
-        currentProbeOrigin - PreviousProbeOrigin;
-    const float currentDistanceSquared = dot(
-        previousProbeToCurrent,
-        previousProbeToCurrent);
-    const float projection = dot(
-        previousProbeToCurrent,
-        worldDirection);
-    const float discriminant = projection * projection -
-        (currentDistanceSquared - radius * radius);
-    if (!(initialHit.w > PositionEpsilon && radius > MinimumCaptureDistance &&
-          currentDistanceSquared < radius * radius &&
-          discriminant > PositionEpsilon))
+    else if (a.y >= a.z)
     {
-        return worldDirection;
+        face = direction.y >= 0.0f ? 2u : 3u;
+        uv = float2(direction.x, direction.y >= 0.0f ? direction.z : -direction.z) / a.y;
     }
+    else
+    {
+        face = direction.z >= 0.0f ? 4u : 5u;
+        uv = float2(direction.z >= 0.0f ? direction.x : -direction.x, -direction.y) / a.z;
+    }
+    return uint3(min(uint2(saturate(uv * 0.5f + 0.5f) * TargetExtent), TargetExtent - 1u), face);
+}
 
-    const float travel = -projection + sqrt(discriminant);
-    return normalize(
-        previousProbeToCurrent + worldDirection * travel);
+uint LinearIndex(uint3 coordinate)
+{
+    return (coordinate.z * TargetExtent + coordinate.y) * TargetExtent + coordinate.x;
+}
+
+float3 DirectionFromIndex(uint index)
+{
+    const uint3 coordinate = uint3(index % TargetExtent,
+        (index / TargetExtent) % TargetExtent, index / (TargetExtent * TargetExtent));
+    return CubeDirection(coordinate.z,
+        (float2(coordinate.xy) + 0.5f) * (2.0f / TargetExtent) - 1.0f);
 }
 
 [numthreads(8, 8, 1)]
@@ -352,120 +350,100 @@ void main(
     cameraCenter = cameraCount > 0.0f ?
         cameraCenter / cameraCount : 0.0f;
 
+    // A teleport must not import either geometry or sky from the old location.
+    const bool retainHistory = HistoryAvailable != 0u &&
+        PreviousProbeOriginValid != 0u && cameraCount > 0.0f &&
+        distance(cameraCenter, PreviousProbeOrigin) <= 2048.0f;
+
+    if (UpdatePass < 2u)
+    {
+        if (!retainHistory) return;
+        const float4 hit = PreviousPosition.SampleLevel(LinearClampSampler, worldDirection, 0.0f);
+        const float validity = PreviousValidity.SampleLevel(LinearClampSampler, worldDirection, 0.0f);
+        const float3 translated = hit.xyz - cameraCenter;
+        const float hitDistance = length(translated);
+        if (!(hit.w > PositionEpsilon && validity > PositionEpsilon &&
+            all(isfinite(hit)) && isfinite(hitDistance) &&
+            hitDistance >= MinimumCaptureDistance && hitDistance < MaximumCaptureDistance)) return;
+        const uint3 target = CubeCoordinate(translated);
+        const uint depthKey = asuint(hitDistance);
+        if (UpdatePass == 0u) InterlockedMin(NearestDepth[target], depthKey);
+        else if (NearestDepth[target] == depthKey)
+            InterlockedMin(NearestOwner[target], LinearIndex(dispatchId));
+        return;
+    }
+
+    float4 sky = retainHistory ? PreviousSky.SampleLevel(
+        LinearClampSampler, worldDirection, 0.0f) : 0.0f;
+    float3 previousRadiance = 0.0f;
+    float previousValidity = 0.0f;
+    float4 previousPosition = 0.0f;
+    const uint owner = NearestOwner[dispatchId];
+    if (retainHistory && owner < TargetExtent * TargetExtent * 6u)
+    {
+        const float3 sourceDirection = DirectionFromIndex(owner);
+        previousRadiance = PreviousEnvironment.SampleLevel(LinearClampSampler, sourceDirection, 0.0f);
+        previousValidity = saturate(PreviousValidity.SampleLevel(LinearClampSampler, sourceDirection, 0.0f));
+        previousPosition = PreviousPosition.SampleLevel(LinearClampSampler, sourceDirection, 0.0f);
+    }
+
     float3 accumulated = 0.0f;
     float totalWeight = 0.0f;
     float3 accumulatedPosition = 0.0f;
     float totalPositionWeight = 0.0f;
+    float3 observedSky = 0.0f;
+    float skyWeight = 0.0f;
     [unroll]
     for (uint eye = 0u; eye < 2u; ++eye)
     {
-        float3 eyeRadiance;
-        float eyeWeight;
-        float3 eyePosition;
-        float eyePositionWeight;
-        if (SampleEye(
-                worldDirection,
-                eye,
-                eyeRadiance,
-                eyeWeight,
-                eyePosition,
-                eyePositionWeight))
+        float3 radiance, position;
+        float weight, positionWeight;
+        if (SampleEye(worldDirection, eye, radiance, weight, position, positionWeight))
         {
-            accumulated += eyeRadiance * eyeWeight;
-            totalWeight += eyeWeight;
-            accumulatedPosition += eyePosition * eyePositionWeight;
-            totalPositionWeight += eyePositionWeight;
-        }
-    }
-
-    const float currentValidity = saturate(totalWeight);
-    const float3 normalizedRadiance = totalWeight > 0.0f ?
-        accumulated / totalWeight : 0.0f;
-    const float3 historyDirection = HistoryAvailable != 0u ?
-        ReprojectHistoryDirection(worldDirection, cameraCenter) :
-        worldDirection;
-    const float previousValidity = HistoryAvailable != 0u ?
-        saturate(PreviousValidity.SampleLevel(
-            LinearClampSampler, historyDirection, 0.0f)) : 0.0f;
-    const float4 previousPosition = HistoryAvailable != 0u ?
-        PreviousPosition.SampleLevel(
-            LinearClampSampler, historyDirection, 0.0f) : 0.0f;
-    float positionHistoryConfidence = 1.0f;
-    if (previousPosition.w > 0.0f)
-    {
-        positionHistoryConfidence = 0.0f;
-        if (cameraCount > 0.0f && all(previousPosition.xyz ==
-                previousPosition.xyz))
-        {
-            const float3 translated = previousPosition.xyz - cameraCenter;
-            const float translatedDistance = length(translated);
-            if (translatedDistance > MinimumCaptureDistance &&
-                translatedDistance < MaximumCaptureDistance)
+            if (positionWeight > 0.0f)
             {
-                const float angularAgreement = dot(
-                    translated / translatedDistance,
-                    worldDirection);
-                positionHistoryConfidence = smoothstep(
-                    0.985f,
-                    0.9995f,
-                    angularAgreement);
+                accumulated += radiance * weight;
+                totalWeight += weight;
+                accumulatedPosition += position * positionWeight;
+                totalPositionWeight += positionWeight;
+            }
+            else if (max(radiance.r, max(radiance.g, radiance.b)) > 0.0001f)
+            {
+                // A clear but unresolved background is not an observation of black sky.
+                observedSky += radiance * weight;
+                skyWeight += weight;
             }
         }
     }
-    float retainedValidity = previousValidity * saturate(HistoryDecay) *
-        positionHistoryConfidence;
-    float3 previousRadiance = retainedValidity > 0.0f ?
-        max(0.0f, PreviousEnvironment.SampleLevel(
-            LinearClampSampler, historyDirection, 0.0f)) : 0.0f;
-    bool inferredHistory = false;
-    if (HistoryAvailable != 0u && retainedValidity < 0.02f &&
-        currentValidity <= 0.0f)
-    {
-        // The coarse prior mip provides a bounded neighbourhood inference.
-        // Its deliberately low confidence preserves the localized vanilla
-        // cubemap as the dominant fallback for never-observed directions.
-        const float inferredValidity = saturate(
-            PreviousValidity.SampleLevel(
-                LinearClampSampler, historyDirection, 3.0f)) *
-            saturate(HistoryDecay) * 0.15f;
-        if (inferredValidity > retainedValidity)
-        {
-            retainedValidity = inferredValidity;
-            previousRadiance = max(0.0f,
-                PreviousEnvironment.SampleLevel(
-                    LinearClampSampler, historyDirection, 3.0f));
-            inferredHistory = true;
-        }
-    }
-    const float combinedValidity = saturate(
-        currentValidity + retainedValidity * (1.0f - currentValidity));
-    const float historyBlend = saturate(HistoryBlend);
-    const float historyWeight = retainedValidity *
-        (currentValidity > 0.0f ? historyBlend : 1.0f);
-    const float currentWeight = currentValidity *
-        (historyWeight > 0.0f ? 1.0f - historyBlend : 1.0f);
-    const float totalBlendWeight = currentWeight + historyWeight;
-    const float3 blendedRadiance = totalBlendWeight > 0.0f ?
-        (normalizedRadiance * currentWeight +
-            previousRadiance * historyWeight) / totalBlendWeight : 0.0f;
-    const float3 combinedPremultiplied =
-        blendedRadiance * combinedValidity;
-    // Store premultiplied radiance so cube filtering across validity edges
-    // cannot darken or amplify the normalized published result.
-    EnvironmentMip[dispatchId] = max(0.0f, combinedPremultiplied);
-    EnvironmentValidity[dispatchId] = combinedValidity;
+    if (skyWeight > 0.0f)
+        sky = float4(observedSky / skyWeight, saturate(skyWeight));
+    SkyHistory[dispatchId] = sky;
 
-    float4 publishedPosition = 0.0f;
-    if (totalPositionWeight > 0.0f)
+    float3 radiance = previousRadiance;
+    float validity = previousValidity;
+    float4 position = previousPosition;
+    if (totalWeight > 0.0f)
     {
-        publishedPosition = float4(
-            accumulatedPosition / totalPositionWeight,
-            saturate(totalPositionWeight));
+        const float3 current = accumulated / totalWeight;
+        const float3 currentPosition = accumulatedPosition / totalPositionWeight;
+        // A newly visible surface must replace an occluded surface immediately.
+        const float hitDistance = distance(currentPosition, cameraCenter);
+        const bool sameSurface = previousPosition.w > 0.0f &&
+            distance(currentPosition, previousPosition.xyz) <= max(2.0f, hitDistance * 0.02f);
+        const float historyWeight = sameSurface ? saturate(HistoryBlend) * previousValidity : 0.0f;
+        radiance = lerp(current, previousRadiance, historyWeight);
+        validity = max(saturate(totalWeight), previousValidity * (sameSurface ? 1.0f : 0.0f));
+        position = float4(currentPosition, saturate(totalPositionWeight));
     }
-    else if (currentValidity <= 0.0f && retainedValidity > 0.0f &&
-        previousPosition.w > 0.0f && !inferredHistory)
+    else if (skyWeight > 0.0f || previousValidity <= 0.0f)
     {
-        publishedPosition = previousPosition;
+        // Observed sky replaces old geometry. Unseen holes use retained sky only;
+        // the consumer supplies the native cubemap when neither has been observed.
+        radiance = sky.rgb;
+        validity = sky.a;
+        position = 0.0f;
     }
-    EnvironmentPosition[dispatchId] = publishedPosition;
+    EnvironmentMip[dispatchId] = max(0.0f, radiance * validity);
+    EnvironmentValidity[dispatchId] = saturate(validity);
+    EnvironmentPosition[dispatchId] = position;
 }

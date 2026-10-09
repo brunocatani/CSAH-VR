@@ -19,7 +19,7 @@ namespace csah::ibl
 
     // Render-thread-only transaction for the bindings added to exact
     // DFComposite replacement shaders. Construction captures and validates
-    // the complete t29..t36/b5 state; destruction restores that state exactly.
+    // the complete t29..t37/b5 state; destruction restores that state exactly.
     // Null views are intentional for the reflection-free duplicate, whose
     // explicit zero-weight b5 keeps both material paths disabled.
     class ScopedMaterialBindings final
@@ -33,6 +33,7 @@ namespace csah::ibl
         static constexpr UINT kPositionSlot = 34;
         static constexpr UINT kPreviousPositionSlot = 35;
         static constexpr UINT kMaterialPropertiesSlot = 36;
+        static constexpr UINT kStyleSlot = 37;
         static constexpr UINT kPbrMaterialSlot = 45;
         static constexpr UINT kSurfaceClassSlot = 47;
         static constexpr UINT kConstantSlot = 5;
@@ -50,7 +51,8 @@ namespace csah::ibl
             ID3D11ShaderResourceView* materialProperties,
             ID3D11ShaderResourceView* pbrMaterial,
             ID3D11ShaderResourceView* surfaceClass,
-            ID3D11Buffer* constants) noexcept;
+            ID3D11Buffer* constants,
+            ID3D11ShaderResourceView* style = nullptr) noexcept;
         ~ScopedMaterialBindings();
 
         ScopedMaterialBindings(const ScopedMaterialBindings&) = delete;
@@ -71,7 +73,7 @@ namespace csah::ibl
         Microsoft::WRL::ComPtr<ID3D11DeviceContext> context_;
         std::array<
             Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>,
-            8>
+            9>
             previousResources_{};
         Microsoft::WRL::ComPtr<ID3D11Buffer> previousConstants_;
         std::array<

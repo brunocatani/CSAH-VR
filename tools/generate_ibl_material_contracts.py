@@ -56,6 +56,7 @@ PREVIOUS_PUBLISHED_POSITION_SLOT = 35
 MATERIAL_PROPERTIES_SLOT = 36
 AUTHORED_PBR_MATERIAL_SLOT = 45
 SURFACE_CLASS_SLOT = 47
+CUBEMAP_STYLE_SLOT = 37
 SCENE_DEPTH_SLOT = 7
 NATIVE_OCCLUSION_SLOT = 9
 SCENE_CONSTANT_SLOT = 12
@@ -514,6 +515,7 @@ def template_contract(
             OPERAND_RESOURCE,
             AUTHORED_PBR_MATERIAL_SLOT,
         ),
+        declaration_for_slot(words, OPCODE_DCL_RESOURCE, OPERAND_RESOURCE, CUBEMAP_STYLE_SLOT),
         declaration_for_slot(
             words,
             OPCODE_DCL_RESOURCE,
@@ -818,6 +820,7 @@ def patch_shader(
         PREVIOUS_PUBLISHED_POSITION_SLOT,
         MATERIAL_PROPERTIES_SLOT,
         AUTHORED_PBR_MATERIAL_SLOT,
+        CUBEMAP_STYLE_SLOT,
     } & occupied_resources:
         raise ContractError(
             "DFComposite unexpectedly owns an injected material slot"
@@ -1160,6 +1163,7 @@ def validate_candidate(
         PREVIOUS_PUBLISHED_POSITION_SLOT,
         MATERIAL_PROPERTIES_SLOT,
         AUTHORED_PBR_MATERIAL_SLOT,
+        CUBEMAP_STYLE_SLOT,
         SURFACE_CLASS_SLOT,
     } != original_textures or not {
         DFLIGHT_ALBEDO_SLOT,
@@ -1171,6 +1175,7 @@ def validate_candidate(
         PREVIOUS_PUBLISHED_POSITION_SLOT,
         MATERIAL_PROPERTIES_SLOT,
         AUTHORED_PBR_MATERIAL_SLOT,
+        CUBEMAP_STYLE_SLOT,
         SURFACE_CLASS_SLOT,
     }.issubset(candidate_textures):
         raise ContractError(f"{name} changed the texture contract")

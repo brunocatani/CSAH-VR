@@ -57,10 +57,10 @@ namespace csah::ibl
             "generated IBL material replacements must match the capture set");
 
         constexpr std::uint64_t kRuntimePollCadenceMilliseconds = 250;
-        constexpr std::uint64_t kEnvironmentCaptureCadenceMilliseconds = 1000;
+        constexpr std::uint64_t kEnvironmentCaptureCadenceMilliseconds = 33;
         constexpr std::uint64_t kWorldCaptureProbeSettleMilliseconds = 5000;
         constexpr std::uint64_t kMaterialEnvironmentTransitionMilliseconds =
-            250;
+            16;
         constexpr std::uint64_t
             kMaterialEnvironmentTransitionCadenceMilliseconds = 8;
         constexpr UINT kCaptureShaderResourceCount = 16;
@@ -1169,6 +1169,7 @@ namespace csah::ibl
             return {};
         }
 
+        auto* style = dynamicActive ? materialStyle_.prepare(context) : nullptr;
         ScopedMaterialBindings scope(
             context,
             albedo,
@@ -1181,7 +1182,8 @@ namespace csah::ibl
             materialProperties,
             pbrMaterial,
             surfaceClass,
-            constants);
+            constants,
+            style);
         if (!scope.active()) {
             materialBindingFailures_.fetch_add(1, std::memory_order_relaxed);
             materialConsumptionFailed_ = true;
@@ -1462,7 +1464,11 @@ namespace csah::ibl
             return {};
         }
 
-        constexpr std::array<float, 4> clearColor{};
+        // A masked/unwritten pixel is not a black-surface observation. The HDR
+        // sentinel exceeds the updater's finite-radiance range; real black
+        // pixels written by the duplicate draw remain valid observations.
+        const float unwritten = productionRequested ? 1.0e10F : 0.0F;
+        const std::array<float, 4> clearColor{ unwritten, unwritten, unwritten, 0.0F };
         context->ClearRenderTargetView(
             reflectionFreeCaptureResources_.scratchRenderTarget(),
             clearColor.data());
@@ -1587,13 +1593,16 @@ namespace csah::ibl
                     reflectionFreeCaptureResources_.scratchShaderResource(),
                     depth.Get(),
                     sceneConstants.Get(),
-                    useHistory)) {
+                    useHistory,
+                    !useHistory || GetTickCount64() >= nextDiffuseFitMilliseconds_)) {
+                if (!useHistory || GetTickCount64() >= nextDiffuseFitMilliseconds_)
+                    nextDiffuseFitMilliseconds_ = GetTickCount64() + 1000;
                 updateMaterialEnvironmentTransition(GetTickCount64());
                 pendingEnvironmentUpdateSessionId_ =
                     activeCaptureProbeSessionId_;
                 const auto update = environmentUpdater_.snapshot();
                 if (update.dispatches == 1 ||
-                    (update.dispatches % 30) == 0) {
+                    (update.dispatches % 300) == 0) {
                     logging::info(
                         "Dynamic Cubemaps stereo generation {} dispatched into the private radiance/validity/position back chain with position-aware history={} and bounded scene-linear GGX filtering; publication awaits nonblocking validation.",
                         update.generation,
@@ -1796,6 +1805,11 @@ namespace csah::ibl
             return false;
         }
 
+        const auto styleShader = loadEmbeddedShader(IDR_IBL_MATERIAL_STYLE_CS);
+        if (!materialStyle_.initialize(device_.Get(), styleShader.data, styleShader.size)) {
+            logging::error("Cubemap authored-style compute shader could not be initialized.");
+            return false;
+        }
         std::array<
             ComPtr<ID3D11PixelShader>,
             kCaptureProbeContracts.size()>
@@ -2185,12 +2199,12 @@ namespace csah::ibl
         if (!environmentAcquisitionEnabled()) {
             return;
         }
-        if (now < nextCadenceTickMilliseconds_) {
-            return;
+        if (now >= nextCadenceTickMilliseconds_) {
+            nextCadenceTickMilliseconds_ = now + kRuntimePollCadenceMilliseconds;
+            cadenceTicks_.fetch_add(1, std::memory_order_relaxed);
+            consumeSceneRadianceProbeReadbacks();
         }
-        nextCadenceTickMilliseconds_ = now + kRuntimePollCadenceMilliseconds;
-        cadenceTicks_.fetch_add(1, std::memory_order_relaxed);
-        consumeSceneRadianceProbeReadbacks();
+        // Poll publication at render cadence, independently of diagnostic readbacks.
         const auto environmentReadback =
             environmentUpdater_.consumeUpdate(context, environmentProvider_);
         if (environmentReadback ==
@@ -2200,12 +2214,12 @@ namespace csah::ibl
                 pendingEnvironmentUpdateSessionId_;
             pendingEnvironmentUpdateSessionId_ = 0;
             beginMaterialEnvironmentTransition(now);
-            const auto publicationAction = chooseDiffusePublicationAction(
+            const auto publicationAction = update.diffuseUpdated ? chooseDiffusePublicationAction(
                 update.diffuseSHState,
                 publishedUsable_.load(std::memory_order_relaxed),
                 publishedDiffuseSessionId_.load(
                     std::memory_order_relaxed),
-                publishedEnvironmentSessionId_);
+                publishedEnvironmentSessionId_) : DiffusePublicationAction::retain;
             if (publicationAction == DiffusePublicationAction::publish) {
                 publishUsable(
                     update.diffuseSH,
@@ -2245,14 +2259,14 @@ namespace csah::ibl
                     1,
                     std::memory_order_relaxed);
             } else if (
-                publicationAction == DiffusePublicationAction::retain) {
+                update.diffuseUpdated && publicationAction == DiffusePublicationAction::retain) {
                 diffuseFitsRejected_.fetch_add(
                     1,
                     std::memory_order_relaxed);
             }
             if (lastLoggedEnvironmentUpdateGeneration_ == 0 ||
                 update.generation >=
-                    lastLoggedEnvironmentUpdateGeneration_ + 30) {
+                    lastLoggedEnvironmentUpdateGeneration_ + 300) {
                 lastLoggedEnvironmentUpdateGeneration_ =
                     update.generation;
                 logging::info(
@@ -2503,6 +2517,8 @@ namespace csah::ibl
         }
         environmentProvider_.reset();
         environmentUpdater_.reset();
+        materialStyle_.reset();
+        nextDiffuseFitMilliseconds_ = 0;
         reflectionFreeCaptureResources_.reset();
         reflectionFreeDrawTiming_.reset();
         for (auto& replacement : materialReplacementShaders_) {

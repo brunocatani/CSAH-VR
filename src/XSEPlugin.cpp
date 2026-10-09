@@ -124,6 +124,7 @@ namespace
             csah::volumetric_lighting::Runtime::get()
                 .onGameDataReady();
             csah::pbr::Runtime::get().onGameDataReady();
+            csah::ibl::Runtime::get().loadMaterialReference();
             (void)csah::render::
                 validateD3D11ShaderHooks("GameDataReady");
             (void)csah::render::

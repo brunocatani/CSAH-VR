@@ -22,8 +22,7 @@ namespace csah::ibl
         constexpr UINT kThreadGroupExtent = 8;
         constexpr float kNonBlackThreshold = 1.0e-5f;
         constexpr float kCoveredThreshold = 1.0e-4f;
-        constexpr float kHistoryDecay = 0.98F;
-        constexpr float kVisibleDirectionHistoryBlend = 0.8F;
+        constexpr float kVisibleDirectionHistoryBlend = 0.75F;
         constexpr float kMaximumCaptureDistance = 2000000.0F;
 
         [[nodiscard]] bool finiteOrigin(const Float3& origin) noexcept
@@ -250,6 +249,20 @@ namespace csah::ibl
             return false;
         }
 
+        for (auto& sky : candidate.sky) {
+            if (!createCapturedCube(device, extent, DXGI_FORMAT_R32G32B32A32_FLOAT,
+                    sky.texture, sky.view, sky.output)) {
+                recordFailure();
+                return false;
+            }
+        }
+        for (auto* ownership : { &candidate.nearestDepth, &candidate.nearestOwner }) {
+            if (!createCapturedCube(device, extent, DXGI_FORMAT_R32_UINT,
+                    ownership->texture, ownership->view, ownership->output)) {
+                recordFailure();
+                return false;
+            }
+        }
         D3D11_QUERY_DESC queryDescription{ D3D11_QUERY_EVENT, 0 };
         if (FAILED(device->CreateQuery(
                 &queryDescription,
@@ -258,6 +271,7 @@ namespace csah::ibl
             return false;
         }
 
+        skyFront_ = 0;
         resources_ = std::move(candidate);
         summary_ = {};
         summary_.initialized = true;
@@ -271,6 +285,7 @@ namespace csah::ibl
 
     void EnvironmentUpdater::reset() noexcept
     {
+        skyFront_ = 0;
         resources_ = {};
         summary_ = {};
         gpuTiming_.reset();
@@ -397,7 +412,8 @@ namespace csah::ibl
         ID3D11ShaderResourceView* reflectionFreeRadiance,
         ID3D11ShaderResourceView* sceneDepth,
         ID3D11Buffer* sceneConstants,
-        bool usePublishedHistory) noexcept
+        bool usePublishedHistory,
+        bool fitDiffuse) noexcept
     {
         D3D11_TEXTURE2D_DESC sourceDescription{};
         if (!validateInputs(
@@ -422,9 +438,9 @@ namespace csah::ibl
             context,
             {
                 .firstShaderResource = 0,
-                .shaderResourceCount = 5,
+                .shaderResourceCount = 6,
                 .firstUnorderedAccess = 0,
-                .unorderedAccessCount = 3,
+                .unorderedAccessCount = 6,
                 .firstSampler = 0,
                 .samplerCount = 1,
                 .firstConstantBuffer = 11,
@@ -451,17 +467,21 @@ namespace csah::ibl
         }
         auto timing = gpuTiming_.begin();
 
-        std::array<ID3D11ShaderResourceView*, 5> captureSources{
+        std::array<ID3D11ShaderResourceView*, 6> captureSources{
             reflectionFreeRadiance,
             sceneDepth,
             usePublishedHistory ? provider.publishedEnvironment() : nullptr,
             usePublishedHistory ? provider.publishedValidity() : nullptr,
             usePublishedHistory ? provider.publishedPosition() : nullptr,
+            usePublishedHistory ? resources_.sky[skyFront_].view.Get() : nullptr,
         };
-        std::array<ID3D11UnorderedAccessView*, 3> captureDestinations{
+        std::array<ID3D11UnorderedAccessView*, 6> captureDestinations{
             resources_.capturedRadianceOutput.Get(),
             resources_.capturedValidityOutput.Get(),
             provider.writablePosition(),
+            resources_.sky[1 - skyFront_].output.Get(),
+            resources_.nearestDepth.output.Get(),
+            resources_.nearestOwner.output.Get(),
         };
         if (!captureDestinations[2]) {
             provider.abortUpdate();
@@ -474,12 +494,12 @@ namespace csah::ibl
         };
         const auto previousProbeOrigin = usePublishedHistory ?
             provider.publishedProbeOrigin() : EnvironmentProbeOrigin{};
-        const UpdateConstants updateConstants{
+        UpdateConstants updateConstants{
             sourceDescription.Width,
             sourceDescription.Height,
             resources_.extent,
             usePublishedHistory ? 1U : 0U,
-            kHistoryDecay,
+            0U,
             kVisibleDirectionHistoryBlend,
             {},
             previousProbeOrigin.position,
@@ -508,20 +528,27 @@ namespace csah::ibl
             11,
             static_cast<UINT>(captureConstants.size()),
             captureConstants.data());
-        context->Dispatch(
-            (resources_.extent + kThreadGroupExtent - 1) /
-                kThreadGroupExtent,
-            (resources_.extent + kThreadGroupExtent - 1) /
-                kThreadGroupExtent,
-            kEnvironmentCubeFaceCount);
+        constexpr std::array<UINT, 4> unowned{ UINT_MAX, UINT_MAX, UINT_MAX, UINT_MAX };
+        context->ClearUnorderedAccessViewUint(resources_.nearestDepth.output.Get(), unowned.data());
+        context->ClearUnorderedAccessViewUint(resources_.nearestOwner.output.Get(), unowned.data());
+        // Separate dispatches establish depth ownership before any colour is written.
+        for (std::uint32_t pass = usePublishedHistory ? 0U : 2U; pass < 3U; ++pass) {
+            updateConstants.updatePass = pass;
+            context->UpdateSubresource(resources_.captureConstants.Get(), 0,
+                nullptr, &updateConstants, 0, 0);
+            context->Dispatch(
+                (resources_.extent + kThreadGroupExtent - 1) / kThreadGroupExtent,
+                (resources_.extent + kThreadGroupExtent - 1) / kThreadGroupExtent,
+                kEnvironmentCubeFaceCount);
+        }
 
-        std::array<ID3D11UnorderedAccessView*, 3> nullDestinations{};
+        std::array<ID3D11UnorderedAccessView*, 6> nullDestinations{};
         context->CSSetUnorderedAccessViews(
             0,
             static_cast<UINT>(nullDestinations.size()),
             nullDestinations.data(),
             nullptr);
-        std::array<ID3D11ShaderResourceView*, 5> nullSources{};
+        std::array<ID3D11ShaderResourceView*, 6> nullSources{};
         context->CSSetShaderResources(
             0,
             static_cast<UINT>(nullSources.size()),
@@ -646,6 +673,7 @@ namespace csah::ibl
             sceneConstants);
         context->End(resources_.completionEvent.Get());
 
+        pendingDiffuseFit_ = fitDiffuse;
         summary_.pending = true;
         summary_.historyUsed = usePublishedHistory;
         summary_.generation = provider.snapshot().activeUpdateGeneration;
@@ -677,7 +705,7 @@ namespace csah::ibl
             &complete,
             sizeof(complete),
             D3D11_ASYNC_GETDATA_DONOTFLUSH);
-        if (queryResult == S_FALSE || complete != TRUE) {
+        if (queryResult == S_FALSE || (SUCCEEDED(queryResult) && complete != TRUE)) {
             return EnvironmentUpdateConsumeResult::pending;
         }
         if (FAILED(queryResult)) {
@@ -840,7 +868,7 @@ namespace csah::ibl
                     faceValidity[face] +=
                         static_cast<double>(validity) * solidAngleWeight;
                     faceSolidAngle[face] += solidAngleWeight;
-                    accumulateDiffuseSHFit(
+                    if (pendingDiffuseFit_) accumulateDiffuseSHFit(
                         diffuseFit,
                         environmentCubeDirection(
                             static_cast<EnvironmentCubeFace>(face),
@@ -856,14 +884,16 @@ namespace csah::ibl
         }
 
         const auto totalSamples = faceSampleCount * kEnvironmentCubeFaceCount;
-        validGeneration = validGeneration && covered > 0;
+        // Empty but valid coverage is meaningful after a teleport or session
+        // reset: publish it so consumers use native cubemaps, not the old room.
+        validGeneration = validGeneration && summary_.probeOrigin.valid;
         validationCpuMilliseconds_ +=
             std::chrono::duration<double, std::milli>(
                 std::chrono::steady_clock::now() - validationStart)
                 .count();
         ++validationCpuSamples_;
         if (!firstValidationTimingLogged_ ||
-            validationCpuSamples_ >= 30) {
+            validationCpuSamples_ >= 300) {
             logging::info(
                 "Feature timing Image Based Lighting validation: CPU map, cube validation, and diffuse SH fit={:.3f} ms over {} samples.",
                 validationCpuMilliseconds_ /
@@ -901,15 +931,16 @@ namespace csah::ibl
         summary_.nonBlackSamples = nonBlack;
         summary_.coveredSamples = covered;
         summary_.sampleCount = totalSamples;
-        summary_.diffuseSHCoverage = diffuseSHFitCoverage(diffuseFit);
-        summary_.diffuseSH = {};
-        summary_.diffuseSHState = solveDiffuseSHFit(
-                                      diffuseFit,
-                                      summary_.diffuseSH) ?
-            classifyDiffuseSH(summary_.diffuseSH) :
-            DiffuseSHState::invalid;
+        summary_.diffuseUpdated = pendingDiffuseFit_;
+        if (pendingDiffuseFit_) {
+            summary_.diffuseSHCoverage = diffuseSHFitCoverage(diffuseFit);
+            summary_.diffuseSH = {};
+            summary_.diffuseSHState = solveDiffuseSHFit(diffuseFit, summary_.diffuseSH) ?
+                classifyDiffuseSH(summary_.diffuseSH) : DiffuseSHState::invalid;
+        }
         summary_.pending = false;
         ++summary_.completedReadbacks;
+        skyFront_ = 1 - skyFront_;
         ++summary_.publishedUpdates;
         return EnvironmentUpdateConsumeResult::completed;
     }

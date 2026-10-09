@@ -27,6 +27,7 @@ namespace csah::ibl
         bool initialized{};
         bool pending{};
         bool historyUsed{};
+        bool diffuseUpdated{};
         std::uint64_t dispatches{};
         std::uint64_t publishedUpdates{};
         std::uint64_t completedReadbacks{};
@@ -68,7 +69,8 @@ namespace csah::ibl
             ID3D11ShaderResourceView* reflectionFreeRadiance,
             ID3D11ShaderResourceView* sceneDepth,
             ID3D11Buffer* sceneConstants,
-            bool usePublishedHistory) noexcept;
+            bool usePublishedHistory,
+            bool fitDiffuse = true) noexcept;
 
         [[nodiscard]] EnvironmentUpdateConsumeResult consumeUpdate(
             ID3D11DeviceContext* context,
@@ -80,6 +82,13 @@ namespace csah::ibl
         }
 
     private:
+        struct HistoryCube
+        {
+            Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
+            Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> view;
+            Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView> output;
+        };
+
         struct Resources
         {
             Microsoft::WRL::ComPtr<ID3D11Device> device;
@@ -102,6 +111,9 @@ namespace csah::ibl
             Microsoft::WRL::ComPtr<ID3D11Texture2D> stagingValidity;
             Microsoft::WRL::ComPtr<ID3D11Buffer> stagingSceneConstants;
             Microsoft::WRL::ComPtr<ID3D11Query> completionEvent;
+            std::array<HistoryCube, 2> sky;
+            HistoryCube nearestDepth;
+            HistoryCube nearestOwner;
             std::uint32_t extent{};
             UINT sceneConstantsByteWidth{};
         };
@@ -112,7 +124,7 @@ namespace csah::ibl
             std::uint32_t sourceHeight{};
             std::uint32_t targetExtent{};
             std::uint32_t historyAvailable{};
-            float historyDecay{};
+            std::uint32_t updatePass{};
             float historyBlend{};
             std::array<std::uint32_t, 2> reserved{};
             Float3 previousProbeOrigin{};
@@ -143,6 +155,8 @@ namespace csah::ibl
             ID3D11Buffer* sceneConstants) noexcept;
         void recordFailure() noexcept;
 
+        std::uint32_t skyFront_{};
+        bool pendingDiffuseFit_{};
         Resources resources_{};
         EnvironmentUpdateSummary summary_{};
         render::GpuTimingProfiler gpuTiming_;

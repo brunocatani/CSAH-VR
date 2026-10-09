@@ -150,11 +150,12 @@ namespace
     }
 
     [[nodiscard]] ComPtr<ID3D11ShaderResourceView> createPackedDepth(
-        ID3D11Device& device)
+        ID3D11Device& device,
+        std::uint32_t depthBits = 0x007FFFFFU)
     {
         constexpr UINT width = 32;
         constexpr UINT height = 16;
-        constexpr std::uint32_t halfDepth = 0x007FFFFFU;
+        const std::uint32_t halfDepth = depthBits;
         std::array<std::uint32_t, width * height> pixels{};
         pixels.fill(halfDepth);
         D3D11_TEXTURE2D_DESC description{};
@@ -191,9 +192,10 @@ namespace
 
     [[nodiscard]] ComPtr<ID3D11Buffer> createSceneConstants(
         ID3D11Device& device,
-        float forwardSign = 1.0F)
+        float forwardSign = 1.0F, float originX = 0.0F)
     {
         std::array<Float4, 85> rows{};
+        rows[59].x = rows[60].x = originX;
         // Match the updater's ordinary view/projection inputs. The retired
         // compressed projection rows at 63..70 are not consumed by the shader.
         rows[0] = { forwardSign, 0.0f, 0.0f, 0.0f };
@@ -299,6 +301,47 @@ namespace
         const auto decoded =
             csah::ibl::decodeR11G11B10Float(packed);
         return { decoded.red, decoded.green, decoded.blue };
+    }
+
+    void finish(Device& d3d, EnvironmentUpdater& updater, EnvironmentProvider& provider)
+    {
+        d3d.context->Flush();
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+        for (;;) {
+            const auto result = updater.consumeUpdate(d3d.context.Get(), provider);
+            if (result == EnvironmentUpdateConsumeResult::completed) return;
+            require(result == EnvironmentUpdateConsumeResult::pending, "GPU history update failed");
+            require(std::chrono::steady_clock::now() < deadline, "GPU history update timed out");
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+    }
+
+    void seedCollision(Device& d3d, EnvironmentProvider& provider, bool tied)
+    {
+        require(provider.beginUpdate(), "could not seed geometry history");
+        const auto shape = provider.snapshot();
+        const std::array<float, 4> zero{};
+        for (UINT mip = 0; mip < shape.mipCount; ++mip) {
+            d3d.context->ClearUnorderedAccessViewFloat(provider.writableMip(mip), zero.data());
+            d3d.context->ClearUnorderedAccessViewFloat(provider.writableValidityMip(mip), zero.data());
+            for (UINT face = 0; face < 6; ++face)
+                require(provider.markSubresourceComplete(static_cast<csah::ibl::EnvironmentCubeFace>(face), mip), "seed coverage failed");
+        }
+        d3d.context->ClearUnorderedAccessViewFloat(provider.writablePosition(), zero.data());
+        const auto count = shape.extent * shape.extent;
+        std::vector<std::uint32_t> colors(count);
+        std::vector<float> validity(count);
+        std::vector<Float4> positions(count);
+        // Two source texels move onto the same destination. Far blue must not
+        // overwrite near red; a depth tie must always choose the smaller index.
+        colors[0] = kHalfRed; colors[1] = kHalfBlue;
+        validity[0] = validity[1] = 1;
+        positions[0] = {16, 0, 64, 1};
+        positions[1] = {16, 0, tied ? 64.0F : 128.0F, 1};
+        d3d.context->UpdateSubresource(provider.writableTexture(), 0, nullptr, colors.data(), shape.extent * 4, 0);
+        d3d.context->UpdateSubresource(provider.writableValidityTexture(), 0, nullptr, validity.data(), shape.extent * 4, 0);
+        d3d.context->UpdateSubresource(provider.writablePositionTexture(), 0, nullptr, positions.data(), shape.extent * sizeof(Float4), 0);
+        require(provider.publishUpdate({{}, true}), "could not publish seed");
     }
 
     void run(const std::filesystem::path& root)
@@ -537,6 +580,62 @@ namespace
         require(
             provider.snapshot().publishedGeneration == 3,
             "stabilized radiance/validity pair was not atomically published");
+
+        const auto skyDepth = createPackedDepth(*d3d.device.Get(), 0x00FFFFFFU);
+        const auto emptyRadiance = createPackedRadiance(*d3d.device.Get(), 0, 0);
+        const auto translated = createSceneConstants(*d3d.device.Get(), 1, 16);
+        for (bool tied : {false, true}) {
+            seedCollision(d3d, provider, tied);
+            require(updater.dispatchUpdate(d3d.context.Get(), provider,
+                emptyRadiance.Get(), skyDepth.Get(), translated.Get(), true), "collision reprojection failed");
+            finish(d3d, updater, provider);
+            const auto center = readPublishedFaceCenter(*d3d.device.Get(), *d3d.context.Get(), provider.publishedEnvironment(), 4);
+            require(center.x > 0.9F && center.z < 0.01F,
+                tied ? "depth tie did not choose deterministic owner" : "far surface overwrote nearest surface");
+        }
+
+        // A separately retained sky survives temporary geometry and fills a
+        // disocclusion after movement. A zero unresolved sky must not erase it.
+        const auto redRadiance = createPackedRadiance(*d3d.device.Get(), kHalfRed, kHalfRed);
+        require(updater.dispatchUpdate(d3d.context.Get(), provider, redRadiance.Get(), skyDepth.Get(), constants.Get(), false), "sky capture failed");
+        finish(d3d, updater, provider);
+        require(updater.dispatchUpdate(d3d.context.Get(), provider, greenRadiance.Get(), depth.Get(), constants.Get(), true), "foreground capture failed");
+        finish(d3d, updater, provider);
+        const auto moved = createSceneConstants(*d3d.device.Get(), 1, 1000);
+        require(updater.dispatchUpdate(d3d.context.Get(), provider, emptyRadiance.Get(), skyDepth.Get(), moved.Get(), true), "sky disocclusion failed");
+        finish(d3d, updater, provider);
+        const auto retainedSky = readPublishedFaceCenter(*d3d.device.Get(), *d3d.context.Get(), provider.publishedEnvironment(), 4);
+        require(retainedSky.x > 0.9F && retainedSky.y < 0.01F, "geometry destroyed separate sky history");
+        // No observations while turning away must not age out valid sky.
+        for (int frame = 0; frame < 12; ++frame) {
+            require(updater.dispatchUpdate(d3d.context.Get(), provider, emptyRadiance.Get(), skyDepth.Get(), moved.Get(), true), "unseen history update failed");
+            finish(d3d, updater, provider);
+        }
+        const auto persistentSky = readPublishedFaceCenter(*d3d.device.Get(), *d3d.context.Get(), provider.publishedEnvironment(), 4);
+        require(persistentSky.x == retainedSky.x, "unseen sky history decayed");
+
+        constexpr std::uint32_t infinityPixel = (31U << 6) | ((31U << 6) << 11) | ((31U << 5) << 22);
+        const auto unwritten = createPackedRadiance(*d3d.device.Get(), infinityPixel, infinityPixel);
+        require(updater.dispatchUpdate(d3d.context.Get(), provider, unwritten.Get(), depth.Get(), moved.Get(), true), "unwritten-mask dispatch failed");
+        finish(d3d, updater, provider);
+        const auto masked = readPublishedFaceCenter(*d3d.device.Get(), *d3d.context.Get(), provider.publishedEnvironment(), 4);
+        require(masked.x == persistentSky.x, "unwritten pixels contaminated history");
+        require(updater.dispatchUpdate(d3d.context.Get(), provider, emptyRadiance.Get(), depth.Get(), moved.Get(), true), "real black-surface dispatch failed");
+        finish(d3d, updater, provider);
+        const auto darkSurface = readPublishedFaceCenter(*d3d.device.Get(), *d3d.context.Get(), provider.publishedEnvironment(), 4);
+        require(darkSurface.x == 0 && updater.snapshot().coveredSamples > 0, "real black geometry was discarded");
+
+        const auto teleported = createSceneConstants(*d3d.device.Get(), 1, 5000);
+        require(updater.dispatchUpdate(d3d.context.Get(), provider, greenRadiance.Get(), skyDepth.Get(), teleported.Get(), true), "teleport update failed");
+        finish(d3d, updater, provider);
+        const auto resetSky = readPublishedFaceCenter(*d3d.device.Get(), *d3d.context.Get(), provider.publishedEnvironment(), 4);
+        require(resetSky.y > 0.9F && resetSky.x < 0.01F, "teleport retained the old location's sky");
+        const auto emptyLocation = createSceneConstants(*d3d.device.Get(), 1, 9000);
+        require(updater.dispatchUpdate(d3d.context.Get(), provider, emptyRadiance.Get(), skyDepth.Get(), emptyLocation.Get(), true), "empty teleport dispatch failed");
+        finish(d3d, updater, provider);
+        require(updater.snapshot().coveredSamples == 0, "empty new location retained old coverage");
+        std::cout << "nearest-depth reprojection, owner ties, sky disocclusion, persistent unseen history and teleport reset passed\n";
+
     }
 }
 

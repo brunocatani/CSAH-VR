@@ -4,6 +4,7 @@
 #include "Features/ibl/IblEnvironmentProvider.h"
 #include "Features/ibl/IblEnvironmentUpdater.h"
 #include "Features/ibl/IblMaterialBindingScope.h"
+#include "Features/ibl/IblMaterialStyle.h"
 #include "Features/ibl/IblProjectionModel.h"
 #include "Features/ibl/IblReflectionFreeCapture.h"
 #include "Features/ibl/IblSceneRadianceProbeModel.h"
@@ -138,6 +139,7 @@ namespace csah::ibl
         // diagnostic capture. This lifetime is deliberately independent of
         // the Linear Lighting qualification window.
         void beginWorldCaptureProbeSession() noexcept;
+        void loadMaterialReference() noexcept { materialStyle_.loadReference(); }
 
         // Creation-time identity registration is bounded and retains only
         // exact local-FXP matches. Draw-time lookup is allocation-free.
@@ -318,6 +320,8 @@ namespace csah::ibl
         Microsoft::WRL::ComPtr<ID3D11DeviceContext> context_;
         EnvironmentProvider environmentProvider_;
         EnvironmentUpdater environmentUpdater_;
+        MaterialStyle materialStyle_;
+        std::uint64_t nextDiffuseFitMilliseconds_{};
         ReflectionFreeCaptureResources reflectionFreeCaptureResources_;
         render::GpuTimingProfiler reflectionFreeDrawTiming_;
         std::array<

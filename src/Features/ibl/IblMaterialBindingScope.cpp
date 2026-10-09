@@ -50,7 +50,8 @@ namespace csah::ibl
         ID3D11ShaderResourceView* materialProperties,
         ID3D11ShaderResourceView* pbrMaterial,
         ID3D11ShaderResourceView* surfaceClass,
-        ID3D11Buffer* constants) noexcept
+        ID3D11Buffer* constants,
+        ID3D11ShaderResourceView* style) noexcept
     {
         if (!context) {
             return;
@@ -64,6 +65,7 @@ namespace csah::ibl
         context->GetDevice(&device);
         if (!device || !sameDevice(device.Get(), constants) ||
             (albedo && !sameDevice(device.Get(), albedo)) ||
+            (style && !sameDevice(device.Get(), style)) ||
             (radiance && !sameDevice(device.Get(), radiance)) ||
             (validity && !sameDevice(device.Get(), validity)) ||
             (previousRadiance &&
@@ -82,7 +84,7 @@ namespace csah::ibl
         }
 
         context_ = context;
-        std::array<ID3D11ShaderResourceView*, 8> previousResources{};
+        std::array<ID3D11ShaderResourceView*, 9> previousResources{};
         context_->PSGetShaderResources(
             kAlbedoSlot,
             static_cast<UINT>(previousResources.size()),
@@ -114,7 +116,7 @@ namespace csah::ibl
         }
         pbrResourcesCaptured_ = true;
 
-        std::array<ID3D11ShaderResourceView*, 8> resources{
+        std::array<ID3D11ShaderResourceView*, 9> resources{
             albedo,
             radiance,
             validity,
@@ -123,6 +125,7 @@ namespace csah::ibl
             position,
             previousPosition,
             materialProperties,
+            style,
         };
         context_->PSSetShaderResources(
             kAlbedoSlot,
@@ -138,7 +141,7 @@ namespace csah::ibl
             1,
             &surfaceClass);
 
-        std::array<ID3D11ShaderResourceView*, 8> appliedResources{};
+        std::array<ID3D11ShaderResourceView*, 9> appliedResources{};
         context_->PSGetShaderResources(
             kAlbedoSlot,
             static_cast<UINT>(appliedResources.size()),
@@ -156,6 +159,7 @@ namespace csah::ibl
             appliedResources[5] == position &&
             appliedResources[6] == previousPosition &&
             appliedResources[7] == materialProperties &&
+            appliedResources[8] == style &&
             appliedConstants == constants;
         std::array<ID3D11ShaderResourceView*, 2> appliedPbrResources{};
         context_->PSGetShaderResources(
@@ -248,7 +252,7 @@ namespace csah::ibl
         if (!context_ || !captured_) {
             return false;
         }
-        std::array<ID3D11ShaderResourceView*, 8> resources{
+        std::array<ID3D11ShaderResourceView*, 9> resources{
             previousResources_[0].Get(),
             previousResources_[1].Get(),
             previousResources_[2].Get(),
@@ -257,6 +261,7 @@ namespace csah::ibl
             previousResources_[5].Get(),
             previousResources_[6].Get(),
             previousResources_[7].Get(),
+            previousResources_[8].Get(),
         };
         auto* constants = previousConstants_.Get();
         context_->PSSetShaderResources(
@@ -277,7 +282,7 @@ namespace csah::ibl
                 &previousSurfaceClass);
         }
 
-        std::array<ID3D11ShaderResourceView*, 8> restoredResources{};
+        std::array<ID3D11ShaderResourceView*, 9> restoredResources{};
         context_->PSGetShaderResources(
             kAlbedoSlot,
             static_cast<UINT>(restoredResources.size()),
@@ -296,6 +301,7 @@ namespace csah::ibl
             restoredResources[5] == resources[5] &&
             restoredResources[6] == resources[6] &&
             restoredResources[7] == resources[7] &&
+            restoredResources[8] == resources[8] &&
             restoredConstants == constants;
         std::array<ID3D11ShaderResourceView*, 2> restoredPbrResources{};
         if (pbrResourcesCaptured_) {

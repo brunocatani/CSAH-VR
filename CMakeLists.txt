@@ -811,6 +811,8 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
   "${IBL_REFLECTION_FREE_CAPTURE_HEADER}"
   "${IBL_MATERIAL_BINDING_SCOPE_SOURCE}"
   "${IBL_MATERIAL_BINDING_SCOPE_HEADER}"
+  "${SOURCE_DIR}/Features/ibl/IblMaterialStyle.cpp"
+  "${SOURCE_DIR}/Features/ibl/IblMaterialStyle.h"
   "${IBL_MATERIAL_CONTRACT_GENERATOR}"
   "${IBL_MATERIAL_DXBC_TRANSFORM}"
   "${IBL_MATERIAL_GENERATED_CONTRACTS}"
@@ -2233,6 +2235,8 @@ add_library(${PROJECT_NAME} SHARED
   "${IBL_REFLECTION_FREE_CAPTURE_HEADER}"
   "${IBL_MATERIAL_BINDING_SCOPE_SOURCE}"
   "${IBL_MATERIAL_BINDING_SCOPE_HEADER}"
+  "${SOURCE_DIR}/Features/ibl/IblMaterialStyle.cpp"
+  "${SOURCE_DIR}/Features/ibl/IblMaterialStyle.h"
   "${IBL_MATERIAL_CONTRACT_GENERATOR}"
   "${IBL_MATERIAL_DXBC_TRANSFORM}"
   "${IBL_MATERIAL_GENERATED_CONTRACTS}"
@@ -3222,6 +3226,12 @@ if(BUILD_CSAH_TESTS)
     CSAHIblMaterialShaderBytecodeTests PRIVATE d3d11)
   add_test(NAME CSAH.IblMaterialShaderBytecode
     COMMAND CSAHIblMaterialShaderBytecodeTests "${ROOT_DIR}")
+
+  add_executable(CSAHIblMaterialStyleTests "${ROOT_DIR}/tests/IblMaterialStyleTests.cpp")
+  target_compile_features(CSAHIblMaterialStyleTests PRIVATE cxx_std_23)
+  target_compile_definitions(CSAHIblMaterialStyleTests PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_link_libraries(CSAHIblMaterialStyleTests PRIVATE d3d11)
+  add_test(NAME CSAH.IblMaterialStyle COMMAND CSAHIblMaterialStyleTests "${ROOT_DIR}")
 
   add_executable(CSAHIblProviderTests
     "${ROOT_DIR}/tests/IblProviderTests.cpp"

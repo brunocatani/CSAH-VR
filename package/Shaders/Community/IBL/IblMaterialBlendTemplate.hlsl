@@ -11,6 +11,7 @@ TextureCube<float> PreviousPublishedValidity : register(t33);
 TextureCube<float4> PublishedPosition : register(t34);
 TextureCube<float4> PreviousPublishedPosition : register(t35);
 Texture2D<float4> GBufferMaterial : register(t36);
+Texture2D<float4> CubemapStyle : register(t37);
 Texture2D<float4> AuthoredPbrMaterial : register(t45);
 Texture2D<float> SurfaceClass : register(t47);
 Texture2D<float> SceneDepth : register(t7);
@@ -337,7 +338,22 @@ PixelOutput PSMain(PixelInput input)
                 validity,
                 saturate(EnvironmentTransitionWeight));
         }
-        float weight = saturate(validity * IblWeight);
+        uint styleWidth, styleHeight;
+        CubemapStyle.GetDimensions(styleWidth, styleHeight);
+        const uint cube = (uint)max(input.DirectionAndArray.w, 0.0f);
+        const bool styleValid = styleWidth == 2u && cube < styleHeight;
+        const float4 tint = CubemapStyle.Load(int3(0, cube, 0));
+        const float intensity = CubemapStyle.Load(int3(1, cube, 0)).x;
+        if (tint.w >= 0.0f)
+        {
+            const float3 weights = float3(0.2126f, 0.7152f, 0.0722f);
+            const float luminance = dot(published, weights);
+            float3 colored = published * tint.rgb;
+            colored *= luminance / max(dot(colored, weights), 0.0001f);
+            published = lerp(luminance.xxx, colored, saturate(tint.w)) * intensity;
+        }
+        const float styleWeight = styleValid && tint.w > -1.5f ? 1.0f : 0.0f;
+        float weight = saturate(validity * IblWeight) * styleWeight;
         vanilla.xyz = lerp(vanilla.xyz, published, weight);
     }
 

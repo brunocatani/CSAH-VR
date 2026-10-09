@@ -197,6 +197,15 @@ int main()
         auto enabledConstants = createConstants(primary.device.Get(), 1.0F);
         auto disabledConstants = createConstants(primary.device.Get(), 0.0F);
         auto foreignRadiance = createCube(foreign.device.Get());
+        auto previousStyle = createCube(primary.device.Get());
+        auto publishedStyle = createCube(primary.device.Get());
+        auto* stylePointer = previousStyle.Get();
+        primary.context->PSSetShaderResources(37, 1, &stylePointer);
+        const auto requireStyle = [&](ID3D11ShaderResourceView* expected) {
+            ComPtr<ID3D11ShaderResourceView> actual;
+            primary.context->PSGetShaderResources(37, 1, &actual);
+            require(actual.Get() == expected, "cubemap style slot was not restored exactly");
+        };
 
         std::array<ID3D11ShaderResourceView*, 8> previousResources{
             previousAlbedo.Get(),
@@ -241,8 +250,9 @@ int main()
                 publishedMaterialProperties.Get(),
                 publishedPbrMaterial.Get(),
                 publishedSurfaceClass.Get(),
-                enabledConstants.Get());
+                enabledConstants.Get(), publishedStyle.Get());
             require(scope.active(), "published material scope was rejected");
+            requireStyle(publishedStyle.Get());
             requireBindings(
                 primary.context.Get(),
                 publishedAlbedo.Get(),
@@ -258,6 +268,7 @@ int main()
                 enabledConstants.Get(),
                 "published material bindings were not applied exactly");
             require(scope.restore(), "published material scope did not restore");
+            requireStyle(previousStyle.Get());
         }
         requireBindings(
             primary.context.Get(),

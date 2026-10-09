@@ -967,6 +967,7 @@ IDR_LINEAR_LIGHTING_WATER_00020204_PS RCDATA "../package/Shaders/Community/Water
 IDR_LINEAR_LIGHTING_VLS_COMPOSITE_PS RCDATA "../package/Shaders/Community/VLSCompositeLinearLighting/VLSComposite_ImageSpace098.dxbc"
 IDR_IBL_ENVIRONMENT_UPDATE_CS RCDATA "../package/Shaders/Community/IBL/UpdateEnvironmentCS.dxbc"
 IDR_IBL_ENVIRONMENT_FILTER_CS RCDATA "../package/Shaders/Community/IBL/FilterEnvironmentCS.dxbc"
+IDR_IBL_MATERIAL_STYLE_CS RCDATA "../package/Shaders/Community/IBL/MaterialStyleCS.dxbc"
 IDR_IBL_MATERIAL_00_PS RCDATA "../package/Shaders/Community/IBLMaterial/DFComposite_00_05f5cabf.dxbc"
 IDR_IBL_MATERIAL_01_PS RCDATA "../package/Shaders/Community/IBLMaterial/DFComposite_01_05fa2982.dxbc"
 IDR_IBL_MATERIAL_02_PS RCDATA "../package/Shaders/Community/IBLMaterial/DFComposite_02_127c7bb7.dxbc"
