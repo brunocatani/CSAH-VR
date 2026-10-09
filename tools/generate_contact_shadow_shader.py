@@ -1249,10 +1249,10 @@ def sun_template_contract(template: bytes):
         if opcode not in (OPCODE_DCL_RESOURCE,OPCODE_DCL_SAMPLER): continue
         operand=executable_operands(words,start,end)[0]
         slot=operand.immediate_indices[0]
-        if opcode==OPCODE_DCL_RESOURCE and slot in (52,53,54,65,66):
+        if opcode==OPCODE_DCL_RESOURCE and slot in (52,53,54,65,66,76,77):
             declarations.append(words[start:end]);resources.add(slot)
         elif opcode==OPCODE_DCL_SAMPLER and slot==15: declarations.append(words[start:end])
-    if resources!={52,53,54,65,66} or len(declarations)!=6: raise ContractError("Directional sky/water resource footprint changed")
+    if resources!={52,53,54,65,66,76,77} or len(declarations)!=8: raise ContractError("Directional sky/water resource footprint changed")
     temps, _, body = shader_declarations_and_body(words)
     if (words[body[-1][0]] & 0x7FF) != OPCODE_RET: raise ContractError("Skylighting sun return changed")
     return declarations, [words[a:b] for a,b in body[:-1]], words[temps[0] + 1]
@@ -1376,7 +1376,7 @@ def patch_shader(
         )
     original_samplers={executable_operands(words,a,b)[0].immediate_indices[0] for a,b in instructions(words) if words[a]&0x7ff==OPCODE_DCL_SAMPLER}
     if 15 in original_samplers: raise ContractError("Native directional shader owns water sampler s15")
-    if original_resource_slots & {52, 53, 54, 65, 66}:
+    if original_resource_slots & {52, 53, 54, 65, 66, 76, 77}:
         raise ContractError("native directional shader owns a private Skylighting resource slot")
     first_scratch = original_temps
     visibility_scratch = first_scratch + template_temps

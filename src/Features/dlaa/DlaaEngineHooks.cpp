@@ -1,3 +1,4 @@
+#include "Features/terrain_shadows/TerrainShadowRuntime.h"
 #include "Features/dlaa/DlaaEngineHooks.h"
 
 #include "Features/dlaa/DlaaRuntime.h"
@@ -269,6 +270,7 @@ namespace csah::dlaa
             if (manager == executableImage + kDynamicResolutionManagerRva) {
                 auto* graphics = executableImage + kGraphicsStateRva;
                 screen_space_gi::Runtime::get().beginFrame();
+                terrain_shadows::Runtime::get().beginFrame();
                 Runtime::get().onPreRender(
                     manager,
                     reinterpret_cast<float*>(graphics + kJitterXOffset),

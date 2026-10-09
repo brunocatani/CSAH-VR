@@ -248,6 +248,7 @@
       "id": "tuning",
       "label": "Tuning",
       "pages": [
+        {"id": "terrain-shadows", "label": "Terrain Shadows", "groups": [{"id": "terrain-shadow-settings", "label": "Terrain Shadows", "controls": [{"id": "terrain-shadows-bEnabled", "type": "toggle", "label": "Terrain Shadows", "default": false, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "TerrainShadows", "key": "bEnabled"}, "help": "Distant terrain shadows from generated worldspace heightmaps. Missing maps preserve native sunlight."}, {"id": "terrain-shadows-fStrength", "type": "slider", "label": "Shadow Strength", "default": 1, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "TerrainShadows", "key": "fStrength"}, "min": 0, "max": 1, "step": 0.05}]}]},
         {
           "id": "water-effects", "label": "Water",
           "groups": [{ "id": "water-parallax", "label": "Water Surface",

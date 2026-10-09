@@ -1,3 +1,4 @@
+#include "Features/terrain_shadows/TerrainShadowRuntime.h"
 #include "Features/water_effects/WaterEffectsRuntime.h"
 #include "Features/screen_space_gi/ScreenSpaceGIRuntime.h"
 #include "settings/SharedSettingsRuntime.h"
@@ -120,6 +121,7 @@ namespace csah::shared_settings
                 .terrainVariation = terrain_variation::loadSettings(path),
                 .screenSpaceGI = screen_space_gi::loadSettings(path),
                 .waterEffects = water_effects::loadSettings(path),
+                .terrainShadows = terrain_shadows::loadSettings(path),
                 .cloudShadows = cloud_shadows::loadSettings(path),
                 .volumetricLighting =
                     volumetric_lighting::loadSettings(path),
@@ -187,6 +189,7 @@ namespace csah::shared_settings
                 subsurface_scattering::Runtime::get().applySettings(
                     next.subsurfaceScattering);
             }
+            if(changes.terrainShadows) terrain_shadows::Runtime::get().applySettings(next.terrainShadows);
             if(changes.waterEffects) water_effects::Runtime::get().applySettings(next.waterEffects);
             if(changes.screenSpaceGI) screen_space_gi::Runtime::get().applySettings(next.screenSpaceGI);
             if(changes.terrainVariation) terrain_variation::Runtime::get().applySettings(next.terrainVariation);

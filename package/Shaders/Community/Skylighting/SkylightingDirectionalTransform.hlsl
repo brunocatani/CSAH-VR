@@ -7,6 +7,7 @@ cbuffer NativeCamera : register(b12) { float4 Camera[61]; };
 cbuffer BasicWetnessSettings : register(b9) { float4 BasicWetnessParams; float4 BasicWetnessMaterialParams; };
 #include "SkylightingReceiver.hlsli"
 #include "../WaterEffects/WaterCaustics.hlsli"
+#include "../TerrainShadows/TerrainShadows.hlsli"
 
 struct PixelInput
 {
@@ -55,6 +56,15 @@ DirectionalOutput PSMain(PixelInput input)
         if(depth>0 && depth<1 && width>0 && height>0) {
             float3 world=ReconstructRelativeWorldPosition(input.Position.xy/float2(width,height),depth,input.Eye)+ProbeWorldOrigin.xyz;
             output.caustics=float4(WaterCausticMultiplier(world),1);
+        }
+    }
+    uint terrainRows;TerrainShadowParameters.GetDimensions(terrainRows);
+    if(terrainRows>=2) {
+        uint width,height;NativeDepth.GetDimensions(width,height);
+        float depth=NativeDepth.Load(int3(int2(input.Position.xy),0));
+        if(depth>.01 && depth<1 && width>0 && height>0) {
+            float3 world=ReconstructRelativeWorldPosition(input.Position.xy/float2(width,height),depth,input.Eye)+ProbeWorldOrigin.xyz;
+            output.caustics.xyz*=TerrainVisibility(world);
         }
     }
     return output;

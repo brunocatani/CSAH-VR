@@ -74,12 +74,13 @@ foreach(tabIndex RANGE 0 ${lastTab})
   endforeach()
 endforeach()
 
-if(NOT controlCount EQUAL 165)
+if(NOT controlCount EQUAL 167)
   message(FATAL_ERROR
-    "CSAH PALM settings coverage changed: expected 165 controls, found ${controlCount}")
+    "CSAH PALM settings coverage changed: expected 167 controls, found ${controlCount}")
 endif()
 
 foreach(required IN ITEMS
+    terrain-shadows-bEnabled terrain-shadows-fStrength
     community-shaders linear-lighting native-darkness ibl dynamic-cubemaps diffuse-ibl skylighting sky-sync
     bloom physical-glare bloom-threshold bloom-intensity bloom-radius
     glare-threshold glare-intensity glare-fft glare-padding
@@ -136,6 +137,7 @@ foreach(required IN ITEMS
     "terrain_variation::Runtime::get().applySettings"
     "screen_space_gi::Runtime::get().applySettings"
     "water_effects::Runtime::get().applySettings"
+    "terrain_shadows::Runtime::get().applySettings"
     "pbr::Runtime::get().applySettings"
     "volumetric_lighting::Runtime::get().start"
     "bloom_glare::Runtime::get().applySettings"
@@ -164,6 +166,7 @@ foreach(required IN ITEMS
     "terrain_variation::Runtime::get().applySettings"
     "screen_space_gi::Runtime::get().applySettings"
     "water_effects::Runtime::get().applySettings"
+    "terrain_shadows::Runtime::get().applySettings"
     "pbr::Runtime::get().applySettings"
     "cloud_shadows::Runtime::get().applySettings"
     "volumetric_lighting::Runtime::get().applySettings"

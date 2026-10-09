@@ -157,6 +157,7 @@ int main(int argumentCount, char** arguments)
     verifyLive([](Snapshot& value) { value.terrainVariation.enabled=true; }, "Terrain variation live settings diff");
     verifyLive([](Snapshot& value) { value.screenSpaceGI.enabled=true; }, "Screen Space GI live settings diff");
     verifyLive([](Snapshot& value) { value.waterEffects.enabled=true; }, "Water effects live settings diff");
+    verifyLive([](Snapshot& value) { value.terrainShadows.enabled=true; }, "Terrain shadow live settings diff");
     auto native = baseline;
     native.nativeShadows.directionalShadowDistance += 250.0f;
     const auto nativeChanges = diff(baseline, native);

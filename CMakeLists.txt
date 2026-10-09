@@ -1687,6 +1687,7 @@ add_custom_command(
     "${SKYLIGHTING_RECEIVER_SHADER_SOURCE}"
     "${SKYLIGHTING_DIRECTIONAL_SHADER_SOURCE}"
     "${ROOT_DIR}/package/Shaders/Community/WaterEffects/WaterCaustics.hlsli"
+    "${ROOT_DIR}/package/Shaders/Community/TerrainShadows/TerrainShadows.hlsli"
     "${CONTACT_SHADOW_HAIR_SHADER_SOURCE}"
     "${CONTACT_SHADOW_WETNESS_SHADER_SOURCE}"
     "${PBR_DIRECTIONAL_SHADER_SOURCE}"
@@ -2287,6 +2288,15 @@ add_custom_command(OUTPUT "${WATER_CAUSTICS_HEADER}"
   VERBATIM)
 add_custom_target(WaterEffectsAssets DEPENDS "${WATER_CAUSTICS_HEADER}")
 
+set(TERRAIN_SHADOW_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated/TerrainShadows")
+set(TERRAIN_SHADOW_HEADER "${TERRAIN_SHADOW_GENERATED_DIR}/TerrainShadowUpdate.h")
+add_custom_command(OUTPUT "${TERRAIN_SHADOW_HEADER}"
+  COMMAND "${CMAKE_COMMAND}" -E make_directory "${TERRAIN_SHADOW_GENERATED_DIR}"
+  COMMAND "${CSAH_FXC_EXECUTABLE}" /nologo /T cs_5_0 /E main /O3 /Ges /WX
+    /Vn kTerrainShadowUpdate /Fh "${TERRAIN_SHADOW_HEADER}"
+    "${ROOT_DIR}/package/Shaders/Community/TerrainShadows/ShadowUpdateCS.hlsl"
+  DEPENDS "${ROOT_DIR}/package/Shaders/Community/TerrainShadows/ShadowUpdateCS.hlsl" VERBATIM)
+add_custom_target(TerrainShadowShaders DEPENDS "${TERRAIN_SHADOW_HEADER}")
 set(SSGI_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated/ScreenSpaceGI")
 set(SSGI_GENERATED_HEADER "${SSGI_GENERATED_DIR}/ScreenSpaceGIShaders.h")
 file(GLOB SSGI_SHADER_SOURCES CONFIGURE_DEPENDS "${ROOT_DIR}/package/Shaders/Community/ScreenSpaceGI/*.hlsl" "${ROOT_DIR}/package/Shaders/Community/ScreenSpaceGI/*.hlsli")
@@ -2300,6 +2310,8 @@ add_custom_target(ScreenSpaceGIShaders DEPENDS "${SSGI_GENERATED_HEADER}")
 
 add_library(${PROJECT_NAME} SHARED
   "${SOURCE_DIR}/Features/water_effects/WaterEffectsRuntime.cpp"
+  "${SOURCE_DIR}/Features/terrain_shadows/TerrainShadowRuntime.cpp"
+  "${SOURCE_DIR}/Features/terrain_shadows/TerrainShadowSettings.cpp"
   "${SOURCE_DIR}/Features/water_effects/WaterWorldData.cpp"
   "${SOURCE_DIR}/Features/water_effects/WaterWorldData.h"
   "${SOURCE_DIR}/Features/water_effects/WaterEffectsRuntime.h"
@@ -2581,6 +2593,7 @@ add_library(${PROJECT_NAME} SHARED
 add_dependencies(${PROJECT_NAME}
   WaterEffectsAssets
   ScreenSpaceGIShaders
+  TerrainShadowShaders
   VanillaFixesShaders
   UpscalingShaders
   VanillaReflectionPatchTool
@@ -2641,6 +2654,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
   "${VOLUMETRIC_GENERATED_DIR}"
   "${SKYLIGHTING_GENERATED_DIR}"
   "${SSGI_GENERATED_DIR}"
+  "${TERRAIN_SHADOW_GENERATED_DIR}"
   "${WATER_EFFECTS_GENERATED_DIR}"
   "${FILMIC_TONEMAPPING_GENERATED_DIR}"
   "${BLOOM_GLARE_GENERATED_DIR}"
@@ -3419,6 +3433,13 @@ if(BUILD_CSAH_TESTS)
   add_test(NAME CSAH.IblEnvironmentUpdater
     COMMAND CSAHIblEnvironmentUpdaterTests "${ROOT_DIR}")
 
+  add_executable(CSAHTerrainShadowTests "${ROOT_DIR}/tests/TerrainShadowTests.cpp")
+  target_compile_features(CSAHTerrainShadowTests PRIVATE cxx_std_23)
+  target_compile_definitions(CSAHTerrainShadowTests PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_link_libraries(CSAHTerrainShadowTests PRIVATE d3d11 d3dcompiler)
+  add_test(NAME CSAH.TerrainShadows COMMAND CSAHTerrainShadowTests "${ROOT_DIR}")
+  add_test(NAME CSAH.TerrainHeightmaps COMMAND "${Python3_EXECUTABLE}"
+    "${ROOT_DIR}/tests/TerrainHeightmapTests.py" "${CMAKE_BINARY_DIR}/test-output/terrain")
   add_executable(CSAHWaterCausticsTests "${ROOT_DIR}/tests/WaterCausticsTests.cpp"
     "${SOURCE_DIR}/Features/water_effects/WaterEffectsRuntime.cpp" "${SOURCE_DIR}/Features/water_effects/WaterWorldData.cpp")
   add_dependencies(CSAHWaterCausticsTests WaterEffectsAssets ContactShadowShader)

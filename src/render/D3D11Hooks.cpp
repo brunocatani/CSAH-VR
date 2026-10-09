@@ -1,3 +1,4 @@
+#include "Features/terrain_shadows/TerrainShadowRuntime.h"
 #include "Features/water_effects/WaterEffectsRuntime.h"
 #include "Features/screen_space_gi/ScreenSpaceGIRuntime.h"
 #include "render/D3D11Hooks.h"
@@ -2494,6 +2495,7 @@ namespace csah::render
                 return;
             }
             auto& runtime = contact_shadows::Runtime::get();
+            const auto terrainShadows=terrain_shadows::Runtime::get().scopeDraw(context);
             const auto caustics=water_effects::Runtime::get().scopeCaustics(context);
             const auto bindings = runtime.scopeDraw(
                 context,
@@ -3301,7 +3303,7 @@ namespace csah::render
                     wrappedGrassFeatureActive || hairSpecularFeatureActive ||
                     subsurfaceScatteringFeatureActive ||
                     basicWetnessFeatureActive || cloudShadowFeatureActive ||
-                    (skylighting::Runtime::get().requested() || water_effects::Runtime::get().causticsRequested()));
+                    (skylighting::Runtime::get().requested() || water_effects::Runtime::get().causticsRequested() || terrain_shadows::Runtime::get().requested()));
             const auto materialCompositorActive =
                 dflightCompositorActive || pbrFeatureActive;
             if (contactShadowRuntime.tracksOriginal(shader) &&
@@ -3368,7 +3370,7 @@ namespace csah::render
                             subsurfaceScatteringFeatureActive ||
                             basicWetnessFeatureActive ||
                             cloudShadowFeatureActive || pbrFeatureActive ||
-                            (skylighting::Runtime::get().requested() || water_effects::Runtime::get().causticsRequested()));
+                            (skylighting::Runtime::get().requested() || water_effects::Runtime::get().causticsRequested() || terrain_shadows::Runtime::get().requested()));
             }
             const auto descriptorPending = pendingDFPrePassDescriptor.active;
             const auto activeDescriptor = activeDFPrePassDescriptor();
@@ -4745,6 +4747,7 @@ namespace csah::render
             lod_blending::Runtime::get().onDeviceCreated(*device, *immediateContext);
             terrain_variation::Runtime::get().onDeviceCreated(*device, *immediateContext);
             water_effects::Runtime::get().onDeviceCreated(*device, *immediateContext);
+            terrain_shadows::Runtime::get().onDeviceCreated(*device,*immediateContext);
             screen_space_gi::Runtime::get().onDeviceCreated(*device, *immediateContext);
             basic_wetness::Runtime::get().onDeviceCreated(
                 *device,
