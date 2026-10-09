@@ -62,9 +62,9 @@ foreach(required IN ITEMS
     "rawMaskView_"
     "rawMaskOutput_"
     "csah_contact_shadow_resolve"
-    "shaderResourceCount = 3"
+    "shaderResourceCount = 4"
     "ClearUnorderedAccessViewFloat"
-    "const std::array<ID3D11ShaderResourceView*, 3> resolveInputs"
+    "const std::array<ID3D11ShaderResourceView*, 4> resolveInputs"
     "ScopedComputeState restore"
     "recordDrawFallback"
     "selectPixelShader"
@@ -99,7 +99,7 @@ endforeach()
 
 foreach(required IN ITEMS
     "Texture2D<float> SceneDepth : register(t0)"
-    "Texture2D<float> RawContactShadow : register(t1)"
+    "Texture2D<float2> RawContactShadow : register(t1)"
     "TextureCube<float> CloudOcclusion : register(t2)"
     "RWTexture2D<unorm float2> ResolvedShadowMask : register(u0)"
     "SamplerState CloudSampler : register(s0)"
@@ -107,11 +107,11 @@ foreach(required IN ITEMS
     "NativeStereo : register(b8)"
     "NativeCamera : register(b12)"
     "ContactShadowSettings : register(b13)"
-    "const float rawVisibility"
+    "const float2 rawVisibility"
     "const float viewDepth = abs(surface.z)"
     "1.0f - smoothstep(0.0f, fadeDistance, viewDepth)"
     "saturate(ContactParams0.x) * distanceScale"
-    "float2(contactVisibility, cloudVisibility)"
+    "facing ? contactVisibility.x : contactVisibility.y"
     "[numthreads(8, 8, 1)]")
   string(FIND "${resolveShaderSource}" "${required}" found)
   if(found EQUAL -1)
@@ -175,7 +175,7 @@ endforeach()
 foreach(required IN ITEMS
     "Texture2D<float> SceneDepth : register(t0)"
     "StructuredBuffer<DispatchRecord> DispatchRecords : register(t1)"
-    "RWTexture2D<unorm float> ContactShadowMask : register(u0)"
+    "RWTexture2D<unorm float2> ContactShadowMask : register(u0)"
     "ContactShadowSettings : register(b13)"
     "NativeDFLight : register(b2)"
     "NativeStereo : register(b8)"
@@ -203,7 +203,7 @@ foreach(required IN ITEMS
     "clamp(ContactParams0.w, 2.0f, 8.0f)"
     "SharedDepthDomain[sharedIndex] != sampleDomain[0]"
     "shadowValue = saturate(shadowValue * 4.0f - 3.0f)"
-    "const float visibility = dot(shadowValue, 0.25f)"
+    "const float2 visibility = float2(dot(shadowValue, 0.25f), dot(backShadowValue, 0.25f))"
     "record.eye * eyeWidth"
     "[numthreads(64, 1, 1)]")
   string(FIND "${maskShaderSource}" "${required}" found)

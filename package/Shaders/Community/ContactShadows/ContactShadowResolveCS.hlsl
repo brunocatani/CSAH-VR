@@ -1,6 +1,7 @@
 Texture2D<float> SceneDepth : register(t0);
-Texture2D<float> RawContactShadow : register(t1);
+Texture2D<float2> RawContactShadow : register(t1);
 TextureCube<float> CloudOcclusion : register(t2);
+Texture2D<float4> SceneNormal : register(t3);
 RWTexture2D<unorm float2> ResolvedShadowMask : register(u0);
 SamplerState CloudSampler : register(s0);
 
@@ -105,11 +106,11 @@ void CSMain(uint3 dispatchThread : SV_DispatchThreadID)
     const float3 towardLight = normalize(DFLight[eye + 1u].xyz);
     const float cloudVisibility = CloudVisibility(surface, towardLight);
 
-    float contactVisibility = 1.0f;
+    float2 contactVisibility = 1.0f.xx;
     const bool contactEnabled =
         ContactParams2.z > 0.5f && ContactParams0.x > 0.0f;
     if (contactEnabled) {
-        const float rawVisibility = saturate(
+        const float2 rawVisibility = saturate(
             RawContactShadow.Load(int3(pixel, 0)));
         const float viewDepth = abs(surface.z);
         const float fadeDistance = max(ContactParams2.x, 1.0f);
@@ -121,6 +122,12 @@ void CSMain(uint3 dispatchThread : SV_DispatchThreadID)
             saturate(ContactParams0.x) * distanceScale);
     }
 
-    ResolvedShadowMask[pixel] =
-        float2(contactVisibility, cloudVisibility);
+    const float2 encoded = SceneNormal.Load(int3(pixel, 0)).xy * 4.0f - 2.0f;
+    const float lengthSquared = dot(encoded, encoded);
+    const float3 normal = float3(encoded * sqrt(max(1.0f - lengthSquared * 0.25f, 0.0f)),
+        -(1.0f - lengthSquared * 0.5f));
+    const bool facing = dot(normal, towardLight) >= 0.0f;
+    ResolvedShadowMask[pixel] = cloudVisibility * float2(
+        facing ? contactVisibility.x : 1.0f,
+        facing ? contactVisibility.x : contactVisibility.y);
 }

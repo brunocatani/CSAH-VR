@@ -25,7 +25,7 @@ struct DispatchRecord
 };
 
 StructuredBuffer<DispatchRecord> DispatchRecords : register(t1);
-RWTexture2D<unorm float> ContactShadowMask : register(u0);
+RWTexture2D<unorm float2> ContactShadowMask : register(u0);
 
 cbuffer NativeDFLight : register(b2)
 {
@@ -64,6 +64,11 @@ static const float kNearDepthValue = 0.0f;
 
 groupshared float SharedDepth[kReadCount * kWaveSize];
 groupshared uint SharedDepthDomain[kReadCount * kWaveSize];
+
+float2 ContactWindowDistance(float scaledReceiver, float scaledSample, float depthSign)
+{
+    return abs(scaledReceiver.xx + float2(-depthSign, depthSign) - scaledSample);
+}
 
 float4 NativeClip(float2 packedUv, float depth, uint eye)
 {
@@ -315,7 +320,9 @@ void CSMain(
         pixelDistance + direction,
         1.0f / surfaceThickness) *
         pixelDistance / depthThicknessScale[0];
-    startDepth = startDepth * depthScale - depthSign;
+    // Paired Bend windows: transmission starts across the assumed surface
+    // thickness, preventing the visible front surface from shadowing its back.
+    const float scaledStartDepth = startDepth * depthScale;
 
     const uint2 packedWritePixel = uint2(
         (uint)writePixel.x + record.eye * eyeWidth,
@@ -365,6 +372,7 @@ void CSMain(
 
     const uint firstSharedSample = groupThreadID + 1u;
     float4 shadowValue = 1.0f;
+    float4 backShadowValue = 1.0f;
     [loop]
     for (uint sampleIndex = 0u;
          sampleIndex < kMaximumSampleCount;
@@ -376,17 +384,23 @@ void CSMain(
         if (SharedDepthDomain[sharedIndex] != sampleDomain[0]) {
             continue;
         }
-        const float depthDelta = abs(
-            startDepth - SharedDepth[sharedIndex] * depthScale);
+        const float sampleDepth = SharedDepth[sharedIndex] * depthScale;
+        const float2 distances = ContactWindowDistance(scaledStartDepth, sampleDepth, depthSign);
+        const float depthDelta = distances.x;
+        const float backDepthDelta = distances.y;
         const uint lane = sampleIndex & 3u;
         if (lane == 0u) {
             shadowValue.x = min(shadowValue.x, depthDelta);
+            backShadowValue.x = min(backShadowValue.x, backDepthDelta);
         } else if (lane == 1u) {
             shadowValue.y = min(shadowValue.y, depthDelta);
+            backShadowValue.y = min(backShadowValue.y, backDepthDelta);
         } else if (lane == 2u) {
             shadowValue.z = min(shadowValue.z, depthDelta);
+            backShadowValue.z = min(backShadowValue.z, backDepthDelta);
         } else {
             shadowValue.w = min(shadowValue.w, depthDelta);
+            backShadowValue.w = min(backShadowValue.w, backDepthDelta);
         }
     }
 
@@ -394,6 +408,7 @@ void CSMain(
     // four interleaved minima to suppress one-pixel depth noise without a
     // detached screen-space dilation pass.
     shadowValue = saturate(shadowValue * 4.0f - 3.0f);
-    const float visibility = dot(shadowValue, 0.25f);
+    backShadowValue = saturate(backShadowValue * 4.0f - 3.0f);
+    const float2 visibility = float2(dot(shadowValue, 0.25f), dot(backShadowValue, 0.25f));
     ContactShadowMask[packedWritePixel] = visibility;
 }

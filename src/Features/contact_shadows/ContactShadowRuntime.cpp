@@ -738,13 +738,13 @@ namespace csah::contact_shadows
         Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> nextView;
         Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView> nextOutput;
         if (!createTarget(
-                "raw mask",
-                DXGI_FORMAT_R8_UNORM,
+                "raw front/back mask",
+                DXGI_FORMAT_R8G8_UNORM,
                 nextRawTexture,
                 nextRawView,
                 nextRawOutput) ||
             !createTarget(
-                "resolved contact/cloud mask",
+                "resolved direct/transmission mask",
                 DXGI_FORMAT_R8G8_UNORM,
                 nextTexture,
                 nextView,
@@ -763,7 +763,7 @@ namespace csah::contact_shadows
         maskHeight_ = source.Height;
         maskRebuilds_.fetch_add(1, std::memory_order_relaxed);
         logging::info(
-            "Contact Shadows raw R8 and independent contact/cloud RG8 stereo masks allocated at {}x{}.",
+            "Contact Shadows paired front/back and resolved direct/transmission RG8 stereo masks allocated at {}x{}.",
             maskWidth_,
             maskHeight_);
         return true;
@@ -800,11 +800,12 @@ namespace csah::contact_shadows
             return true;
         }
 
-        Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> depth;
+        Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> depth, normal;
         Microsoft::WRL::ComPtr<ID3D11Buffer> dflight;
         Microsoft::WRL::ComPtr<ID3D11Buffer> stereo;
         Microsoft::WRL::ComPtr<ID3D11Buffer> camera;
         context->PSGetShaderResources(kDepthSlot, 1, depth.GetAddressOf());
+        context->PSGetShaderResources(1, 1, normal.GetAddressOf());
         context->PSGetConstantBuffers(
             kDFLightConstantSlot,
             1,
@@ -817,7 +818,7 @@ namespace csah::contact_shadows
             kCameraConstantSlot,
             1,
             camera.GetAddressOf());
-        const auto maskResourcesReady = depth && dflight && stereo && camera &&
+        const auto maskResourcesReady = depth && normal && dflight && stereo && camera &&
             ensureMaskResources(depth.Get());
         if (!maskResourcesReady) {
             if (!firstDispatchFailureLogged_.exchange(
@@ -841,7 +842,7 @@ namespace csah::contact_shadows
             context,
             {
                 .firstShaderResource = 0,
-                .shaderResourceCount = 3,
+                .shaderResourceCount = 4,
                 .firstUnorderedAccess = 0,
                 .unorderedAccessCount = 2,
                 .firstSampler = kCloudSamplerSlot,
@@ -969,10 +970,11 @@ namespace csah::contact_shadows
             static_cast<UINT>(noOutputs.size()),
             noOutputs.data(),
             nullptr);
-        const std::array<ID3D11ShaderResourceView*, 3> resolveInputs{
+        const std::array<ID3D11ShaderResourceView*, 4> resolveInputs{
             depthView,
             rawMaskView_.Get(),
             cloud,
+            normal.Get(),
         };
         context->CSSetShader(resolveCompute_.Get(), nullptr, 0);
         context->CSSetShaderResources(
