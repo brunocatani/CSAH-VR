@@ -60,6 +60,24 @@ namespace csah::render
         bool valid{};
     };
 
+    [[nodiscard]] inline CameraMatrix cropClipMatrix(const CameraMatrix& matrix,
+        float left, float top, float width, float height) noexcept
+    {
+        if (!std::isfinite(left) || !std::isfinite(top) || !std::isfinite(width) || !std::isfinite(height) ||
+            left < 0 || top < 0 || width <= 0 || height <= 0 || left + width > 1.000001F || top + height > 1.000001F)
+            return {};
+        auto result = matrix;
+        const auto xBias = (1.0F - 2.0F * left - width) / width;
+        const auto yBias = (2.0F * top + height - 1.0F) / height;
+        const auto combine = [](const CameraVector& row, const CameraVector& w, float scale, float bias) {
+            return CameraVector{row.x * scale + w.x * bias, row.y * scale + w.y * bias,
+                row.z * scale + w.z * bias, row.w * scale + w.w * bias};
+        };
+        result[0] = combine(matrix[0], matrix[3], 1.0F / width, xBias);
+        result[1] = combine(matrix[1], matrix[3], 1.0F / height, yBias);
+        return result;
+    }
+
     [[nodiscard]] inline ProjectionPlanes projectionPlanes(const CameraMatrix& projection) noexcept
     {
         const auto& z = projection[2];

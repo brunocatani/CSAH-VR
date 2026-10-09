@@ -252,6 +252,7 @@ namespace csah::dlaa
                 mapped);
             if (SUCCEEDED(result) && mapped) {
                 Runtime::get().onMapSucceeded(
+                    context,
                     resource,
                     subresource,
                     mapType,
@@ -265,7 +266,7 @@ namespace csah::dlaa
             ID3D11Resource* resource,
             UINT subresource) noexcept
         {
-            Runtime::get().onBeforeUnmap(resource, subresource);
+            Runtime::get().onBeforeUnmap(context, resource, subresource);
             const auto original = originalUnmap;
             if (original) {
                 original(context, resource, subresource);

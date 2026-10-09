@@ -2,6 +2,7 @@
 
 #include "Features/dlaa/DlaaSettings.h"
 #include "Features/dlaa/Fo4VrFrameBuffer.h"
+#include "render/WorldCameraCapture.h"
 #include "Features/dlaa/StreamlineBackend.h"
 
 #include <d3d11.h>
@@ -66,13 +67,16 @@ namespace csah::dlaa
             const std::array<std::uint32_t, 4>& checksum) noexcept;
 
         void onMapSucceeded(
+            ID3D11DeviceContext* context,
             ID3D11Resource* resource,
             UINT subresource,
             D3D11_MAP mapType,
             const D3D11_MAPPED_SUBRESOURCE& mapped) noexcept;
         void onBeforeUnmap(
+            ID3D11DeviceContext* context,
             ID3D11Resource* resource,
             UINT subresource) noexcept;
+        void onWorldCompositeDraw(ID3D11DeviceContext* context) noexcept;
 
         void onPreRender(
             void* dynamicResolutionManager,
@@ -176,6 +180,7 @@ namespace csah::dlaa
 
         Runtime() = default;
         void captureCameraBinding() noexcept;
+        void applyQualificationSession() noexcept;
         void captureQualificationResources() noexcept;
         void queueQualificationProbe(
             const char* label,
@@ -228,6 +233,8 @@ namespace csah::dlaa
         Microsoft::WRL::ComPtr<ID3D11DeviceContext> context_;
         Microsoft::WRL::ComPtr<ID3D11Buffer> cameraBuffer_;
         Fo4VrFrameBuffer cameraFrame_{};
+        render::WorldCameraCapture worldCameraCapture_;
+        std::atomic_bool qualificationResetRequested_{};
         QualifiedResources qualifiedResources_{};
         std::array<EyeResources, 2> eyeResources_{};
         EvaluationGeometry evaluationGeometry_{};

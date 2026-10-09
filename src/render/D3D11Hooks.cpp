@@ -349,6 +349,8 @@ namespace csah::render
         thread_local ibl::Runtime::MaterialShaderBinding
             activeIblMaterialBinding{};
         thread_local ibl::CaptureProbePassState activeIblCaptureProbePass{};
+        thread_local bool activeWorldCameraComposite{};
+        thread_local ID3D11DeviceContext* activeWorldCameraContext{};
 
         class RecursionGuard final
         {
@@ -2077,6 +2079,7 @@ namespace csah::render
                 activeIblMaterialBinding ||
                 activeContactShadowBinding ||
                 activeFilmicTonemappingBinding ||
+                activeWorldCameraComposite ||
                 activeIblCaptureProbePass.lastEnvironmentContractPlusOne != 0 ||
                 qualificationSessionActive.load(std::memory_order_acquire);
         }
@@ -2258,6 +2261,8 @@ namespace csah::render
         void recordActiveIblCaptureProbe(
             ID3D11DeviceContext* context) noexcept
         {
+            if (activeWorldCameraComposite && activeWorldCameraContext == context)
+                dlaa::Runtime::get().onWorldCompositeDraw(context);
             if (activeIblCaptureProbePass.lastEnvironmentContractPlusOne == 0) {
                 return;
             }
@@ -3054,6 +3059,8 @@ namespace csah::render
             auto& iblRuntime = ibl::Runtime::get();
             const auto engineCaptureBinding =
                 iblRuntime.captureProbeBindingForShader(shader);
+            activeWorldCameraComposite = engineCaptureBinding.isDFComposite && classInstanceCount == 0;
+            activeWorldCameraContext = context;
             shader = vanilla_fixes::selectSslrPixelShaderForBinding(shader);
             shader = vanilla_fixes::
                 selectSurfaceAnchoredCubemapPixelShaderForBinding(shader);

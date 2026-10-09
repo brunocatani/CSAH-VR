@@ -456,6 +456,8 @@ namespace csah::dlaa
             std::memory_order_release);
         cameraBufferQualified_.store(false, std::memory_order_release);
         cameraBuffer_.Reset();
+        worldCameraCapture_.reset();
+        pendingCameraMap = {};
         cameraBufferIdentity_.store(nullptr, std::memory_order_release);
         qualificationProbes_ = {};
         clearRenderResources(false);
@@ -526,12 +528,18 @@ namespace csah::dlaa
 
     void Runtime::beginQualificationSession(const char* reason) noexcept
     {
-        bool hardResetOnLoad{ true };
-        {
-            std::scoped_lock lock(settingsMutex_);
-            hardResetOnLoad = pendingSettings_.hardResetOnLoad;
-        }
         qualificationSessions_.fetch_add(1, std::memory_order_relaxed);
+        qualificationResetRequested_.store(true, std::memory_order_release);
+        logging::info("DLAA qualification reset queued by {}.", reason ? reason : "unknown");
+    }
+
+    void Runtime::applyQualificationSession() noexcept
+    {
+        if (!qualificationResetRequested_.exchange(false, std::memory_order_acq_rel)) return;
+        const auto hardResetOnLoad = settings_.hardResetOnLoad;
+        worldCameraCapture_.reset();
+        pendingCameraMap = {};
+        cameraBufferQualified_.store(false, std::memory_order_release);
         restoreDynamicResolutionIfOwned();
         qualificationProbeAttempts_.store(0, std::memory_order_relaxed);
         qualificationCaptureRequested_.store(true, std::memory_order_release);
@@ -547,8 +555,7 @@ namespace csah::dlaa
             std::memory_order_relaxed);
         resetHistory_ = true;
         logging::info(
-            "DLAA qualification session requested by {}; output remains vanilla until the stereo resource contract is proven.",
-            reason ? reason : "unknown");
+            "DLAA qualification reset applied on the render thread; output remains vanilla until the stereo resource contract is proven.");
     }
 
     void Runtime::onPixelShaderCreated(
@@ -573,11 +580,13 @@ namespace csah::dlaa
     }
 
     void Runtime::onMapSucceeded(
+        ID3D11DeviceContext* context,
         ID3D11Resource* resource,
         UINT subresource,
         D3D11_MAP mapType,
         const D3D11_MAPPED_SUBRESOURCE& mapped) noexcept
     {
+        if (!context || context != context_.Get()) return;
         pendingCameraMap = {};
         if (!resource || !mapped.pData ||
             (mapType != D3D11_MAP_WRITE &&
@@ -622,9 +631,11 @@ namespace csah::dlaa
     }
 
     void Runtime::onBeforeUnmap(
+        ID3D11DeviceContext* context,
         ID3D11Resource* resource,
         UINT subresource) noexcept
     {
+        if (!context || context != context_.Get()) return;
         if (!pendingCameraMap.candidate ||
             pendingCameraMap.resource != resource ||
             pendingCameraMap.subresource != subresource ||
@@ -639,6 +650,7 @@ namespace csah::dlaa
         const auto pending = pendingCameraMap;
         pendingCameraMap = {};
         if (!validateCameraFrame(candidate)) {
+            worldCameraCapture_.reset();
             cameraValidationFailures_.fetch_add(1, std::memory_order_relaxed);
             if (!cameraBufferQualified_.load(std::memory_order_acquire) &&
                 !firstCameraValidationFailureLogged_.exchange(
@@ -669,25 +681,44 @@ namespace csah::dlaa
             }
             return;
         }
-        cameraFrame_ = candidate;
+        worldCameraCapture_.observe(static_cast<ID3D11Buffer*>(resource), candidate,
+            postRenderCalls_.load(std::memory_order_relaxed));
         mappedCameraFrames_.fetch_add(1, std::memory_order_relaxed);
-        lastValidCameraPostCall_.store(
-            postRenderCalls_.load(std::memory_order_relaxed),
-            std::memory_order_release);
+    }
+
+    void Runtime::onWorldCompositeDraw(ID3D11DeviceContext* context) noexcept
+    {
+        if (!context || context != context_.Get() || !qualifiedResources_) return;
+        Microsoft::WRL::ComPtr<ID3D11RenderTargetView> target;
+        context->OMGetRenderTargets(1, target.GetAddressOf(), nullptr);
+        if (!target) return;
+        D3D11_RENDER_TARGET_VIEW_DESC view{};
+        target->GetDesc(&view);
+        if (view.Format != DXGI_FORMAT_R11G11B10_FLOAT ||
+            view.ViewDimension != D3D11_RTV_DIMENSION_TEXTURE2D || view.Texture2D.MipSlice != 0) return;
+        Microsoft::WRL::ComPtr<ID3D11Resource> resource;
+        target->GetResource(resource.GetAddressOf());
+        Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
+        if (FAILED(resource.As(&texture))) return;
+        D3D11_TEXTURE2D_DESC description{};
+        texture->GetDesc(&description);
+        if (description.Width != qualifiedResources_.packedWidth || description.Height != qualifiedResources_.height ||
+            description.ArraySize != 1 || description.SampleDesc.Count != 1) return;
+        Microsoft::WRL::ComPtr<ID3D11Buffer> camera;
+        context->PSGetConstantBuffers(12, 1, camera.GetAddressOf());
+        const auto frame = postRenderCalls_.load(std::memory_order_relaxed);
+        if (!worldCameraCapture_.confirm(camera.Get(), frame, cameraFrame_)) {
+            cameraBufferQualified_.store(false, std::memory_order_release);
+            operational_.store(false, std::memory_order_release);
+            resetHistory_ = true;
+            return;
+        }
+        lastValidCameraPostCall_.store(frame, std::memory_order_release);
         cameraBufferQualified_.store(true, std::memory_order_release);
-        if (!firstCameraQualifiedLogged_.exchange(
-                true,
-                std::memory_order_relaxed)) {
-            logging::info(
-                "DLAA qualified the native stereo camera prefix (shader parameters48=({},{},{},{}), shader parameters50=({},{},{},{}); clip planes are projection-derived.",
-                candidate.shaderParameters48.x,
-                candidate.shaderParameters48.y,
-                candidate.shaderParameters48.z,
-                candidate.shaderParameters48.w,
-                candidate.shaderParameters50.x,
-                candidate.shaderParameters50.y,
-                candidate.shaderParameters50.z,
-                candidate.shaderParameters50.w);
+        if (!firstCameraQualifiedLogged_.exchange(true, std::memory_order_relaxed)) {
+            const auto planes = render::projectionPlanes(cameraFrame_.projection[0]);
+            logging::info("DLAA confirmed the stereo camera at the world composite ({}x{}, near={}, far={}, inverted={}).",
+                description.Width, description.Height, planes.nearPlane, planes.farPlane, planes.inverted);
         }
     }
 
@@ -729,6 +760,8 @@ namespace csah::dlaa
         if (!dynamicResolutionManager) {
             return;
         }
+        applyPendingSettings();
+        applyQualificationSession();
         auto* bytes = static_cast<std::byte*>(
             dynamicResolutionManager);
         float widthRatio{};
@@ -827,6 +860,7 @@ namespace csah::dlaa
                                   std::memory_order_relaxed) +
             1;
         applyPendingSettings();
+        applyQualificationSession();
         if (refreshRequested_.exchange(false, std::memory_order_acq_rel)) {
             hardResetTemporalState("explicit refresh");
         }
@@ -2838,8 +2872,15 @@ namespace csah::dlaa
                 }
                 return false;
             }
-            const auto projection = transposeForStreamline(
-                unjitteredProjection);
+            const auto crop = [&](const Matrix4& matrix) {
+                if (settings_.mode != Mode::centerDlaa) return matrix;
+                return render::cropClipMatrix(matrix,
+                    static_cast<float>(evaluationGeometry_.center.left) / qualifiedResources_.eyeWidth,
+                    static_cast<float>(evaluationGeometry_.center.top) / qualifiedResources_.height,
+                    static_cast<float>(evaluationGeometry_.inputWidth) / qualifiedResources_.eyeWidth,
+                    static_cast<float>(evaluationGeometry_.inputHeight) / qualifiedResources_.height);
+            };
+            const auto projection = transposeForStreamline(crop(unjitteredProjection));
             const auto verticalScale = std::abs(projection.values[5]);
             if (!std::isfinite(verticalScale) || verticalScale < 0.001f) {
                 operational_.store(false, std::memory_order_release);
@@ -2855,9 +2896,9 @@ namespace csah::dlaa
             frame.constants[eye] = {
                 .cameraViewToClip = projection,
                 .currentViewProjection = transposeForStreamline(
-                    cameraFrame_.viewProjectionUnjittered[eye]),
+                    crop(cameraFrame_.viewProjectionUnjittered[eye])),
                 .previousViewProjection = transposeForStreamline(
-                    cameraFrame_.previousViewProjectionUnjittered[eye]),
+                    crop(cameraFrame_.previousViewProjectionUnjittered[eye])),
                 .cameraRight = cameraRight,
                 .cameraUp = cameraUp,
                 .cameraForward = cameraForward,
@@ -2866,8 +2907,9 @@ namespace csah::dlaa
                 .cameraFar = planes.farPlane,
                 .cameraFovRadians = 2.0f * std::atan(1.0f / verticalScale),
                 .cameraAspectRatio =
-                    static_cast<float>(qualifiedResources_.eyeWidth) /
-                    static_cast<float>(qualifiedResources_.height),
+                    settings_.mode == Mode::centerDlaa ?
+                        static_cast<float>(evaluationGeometry_.inputWidth) / evaluationGeometry_.inputHeight :
+                        static_cast<float>(qualifiedResources_.eyeWidth) / qualifiedResources_.height,
                 .jitterPixelsX = jitterPixelsX,
                 .jitterPixelsY = jitterPixelsY,
                 .motionVectorScaleX =

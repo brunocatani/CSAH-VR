@@ -1,4 +1,5 @@
 #include "render/Fo4VrDepth.h"
+#include "render/WorldCameraCapture.h"
 
 #include <Windows.h>
 #include <d3d11.h>
@@ -37,6 +38,56 @@ namespace
         return {CameraVector{1 / p[0].x, 0, 0, -p[0].z / p[0].x},
             CameraVector{0, 1 / p[1].y, 0, -p[1].z / p[1].y},
             CameraVector{0, 0, 0, 1}, CameraVector{0, 0, 1 / p[2].w, -p[2].z / p[2].w}};
+    }
+
+    void temporalCameraTests(ID3D11Device* device)
+    {
+        // Independently project the four rays through an off-center crop.
+        // Both asymmetric eyes must reach exactly the new clip boundaries,
+        // while depth and homogeneous w remain unchanged.
+        for (UINT eye = 0; eye < 2; ++eye) {
+            auto p = projection(1, 50000);
+            p[0].z = eye ? 0.11F : -0.07F;
+            constexpr float left = 0.2F, top = 0.15F, width = 0.55F, height = 0.65F;
+            const auto cropped = csah::render::cropClipMatrix(p, left, top, width, height);
+            for (UINT corner = 0; corner < 4; ++corner) {
+                const auto u = left + (corner & 1u) * width;
+                const auto v = top + (corner >> 1u) * height;
+                constexpr float z = 40;
+                const auto x = ((2 * u - 1) - p[0].z) * z / p[0].x;
+                const auto y = ((1 - 2 * v) - p[1].z) * z / p[1].y;
+                const auto dot = [&](const CameraVector& row) { return row.x * x + row.y * y + row.z * z + row.w; };
+                const auto clipW = dot(cropped[3]);
+                require(std::abs(dot(cropped[0]) / clipW - ((corner & 1u) ? 1.0F : -1.0F)) < 1e-5F &&
+                    std::abs(dot(cropped[1]) / clipW - ((corner >> 1u) ? -1.0F : 1.0F)) < 1e-5F,
+                    "cropped asymmetric camera rays missed clip corners");
+                require(dot(cropped[2]) == dot(p[2]) && clipW == dot(p[3]), "crop changed depth convention");
+            }
+        }
+        D3D11_BUFFER_DESC description{};
+        description.ByteWidth = sizeof(csah::render::Fo4VrFrameBuffer);
+        description.Usage = D3D11_USAGE_DEFAULT;
+        description.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+        ComPtr<ID3D11Buffer> world, ui;
+        require(SUCCEEDED(device->CreateBuffer(&description, nullptr, &world)) &&
+            SUCCEEDED(device->CreateBuffer(&description, nullptr, &ui)), "camera identity buffers failed");
+        csah::render::WorldCameraCapture capture;
+        csah::render::Fo4VrFrameBuffer candidate{}, published{};
+        candidate.currentEyePosition[0].x = 123;
+        capture.observe(world.Get(), candidate, 10);
+        require(!capture.confirm(ui.Get(), 10, published) && !capture.confirm(world.Get(), 11, published),
+            "unrelated or stale camera was published");
+        require(capture.confirm(world.Get(), 10, published) && published.currentEyePosition[0].x == 123,
+            "world draw failed to publish its current camera");
+        candidate.currentEyePosition[0].x = 456;
+        capture.observe(ui.Get(), candidate, 10);
+        require(published.currentEyePosition[0].x == 123 && !capture.confirm(world.Get(), 10, published),
+            "later UI camera altered the world snapshot");
+        capture.observe(world.Get(), candidate, 11);
+        require(capture.confirm(world.Get(), 11, published) && published.currentEyePosition[0].x == 456,
+            "next world frame did not replace its camera");
+        capture.reset();
+        require(!capture.confirm(world.Get(), 11, published), "session reset retained a camera candidate");
     }
 
     void benchmark(ID3D11Device* device, ID3D11DeviceContext* context, ID3D11ComputeShader* shader)
@@ -185,6 +236,7 @@ namespace
         ComPtr<ID3D11DeviceContext> context;
         require(SUCCEEDED(D3D11CreateDevice(nullptr, hardware ? D3D_DRIVER_TYPE_HARDWARE : D3D_DRIVER_TYPE_WARP,
             nullptr, D3D11_CREATE_DEVICE_DEBUG, nullptr, 0, D3D11_SDK_VERSION, &device, nullptr, &context)), "D3D11 initialization failed");
+        temporalCameraTests(device.Get());
         ComPtr<ID3DBlob> bytecode, errors;
         const auto shaderPath = root / "package/Shaders/Community/Upscaling/PrepareDepthCS.hlsl";
         const auto compiled = D3DCompileFromFile(shaderPath.c_str(), nullptr, D3D_COMPILE_STANDARD_FILE_INCLUDE,
