@@ -3068,6 +3068,12 @@ if(BUILD_CSAH_TESTS)
       "-DPLUGIN_SOURCE=${PLUGIN_SOURCE}"
       -P "${NATIVE_SHADOW_VERIFY_SCRIPT}")
 
+  add_executable(CSAHContactShadowTransmissionTests "${ROOT_DIR}/tests/ContactShadowTransmissionTests.cpp")
+  target_compile_features(CSAHContactShadowTransmissionTests PRIVATE cxx_std_23)
+  target_compile_definitions(CSAHContactShadowTransmissionTests PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_link_libraries(CSAHContactShadowTransmissionTests PRIVATE d3d11 d3dcompiler)
+  add_test(NAME CSAH.ContactShadowTransmission COMMAND CSAHContactShadowTransmissionTests "${ROOT_DIR}")
+
   add_executable(CSAHContactShadowShaderBytecodeTests
     "${ROOT_DIR}/tests/ContactShadowShaderBytecodeTests.cpp")
   target_compile_features(
