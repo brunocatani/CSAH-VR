@@ -80,6 +80,8 @@ namespace csah::ibl
             ID3D11RenderTargetView* outputView) noexcept;
         [[nodiscard]] bool scratchMatches(
             ID3D11RenderTargetView* outputView) const noexcept;
+        [[nodiscard]] ID3D11DepthStencilState* readOnlyDepthState(
+            const D3D11_DEPTH_STENCIL_DESC& source) noexcept;
 
         [[nodiscard]] ID3D11Device* device() const noexcept
         {
@@ -122,6 +124,13 @@ namespace csah::ibl
         }
 
     private:
+        struct DepthState
+        {
+            D3D11_DEPTH_STENCIL_DESC description{};
+            Microsoft::WRL::ComPtr<ID3D11DepthStencilState> state;
+        };
+        std::array<DepthState, 8> depthStates_{};
+        std::size_t nextDepthState_{};
         Microsoft::WRL::ComPtr<ID3D11Device> device_;
         Microsoft::WRL::ComPtr<ID3D11Texture2D> blackEnvironmentTexture_;
         Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>

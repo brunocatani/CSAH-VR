@@ -3297,6 +3297,19 @@ if(BUILD_CSAH_TESTS)
   add_test(NAME CSAH.IblEnvironmentUpdater
     COMMAND CSAHIblEnvironmentUpdaterTests "${ROOT_DIR}")
 
+  add_executable(CSAHSkylightingResourceTests
+    "${ROOT_DIR}/tests/SkylightingResourceTests.cpp"
+    "${SKYLIGHTING_RUNTIME_SOURCE}"
+    "${IBL_COMPUTE_STATE_SCOPE_SOURCE}"
+    "${GPU_TIMING_PROFILER_SOURCE}")
+  add_dependencies(CSAHSkylightingResourceTests SkylightingShaders)
+  target_compile_features(CSAHSkylightingResourceTests PRIVATE cxx_std_23)
+  target_compile_definitions(CSAHSkylightingResourceTests PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_include_directories(CSAHSkylightingResourceTests PRIVATE "${SOURCE_DIR}" "${SKYLIGHTING_GENERATED_DIR}")
+  target_precompile_headers(CSAHSkylightingResourceTests PRIVATE "${SOURCE_DIR}/PCH.h")
+  target_link_libraries(CSAHSkylightingResourceTests PRIVATE CommonLibF4::CommonLibF4 d3d11 shell32 spdlog::spdlog)
+  add_test(NAME CSAH.SkylightingResources COMMAND CSAHSkylightingResourceTests)
+
   add_executable(CSAHIblSettingsTests
     "${ROOT_DIR}/tests/IblSettingsTests.cpp"
     "${IBL_SETTINGS_STORE_SOURCE}"

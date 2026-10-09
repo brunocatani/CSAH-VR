@@ -100,7 +100,7 @@ namespace csah::ibl
             Microsoft::WRL::ComPtr<ID3D11ComputeShader> reductionShader;
             Microsoft::WRL::ComPtr<ID3D11SamplerState> sampler;
             Microsoft::WRL::ComPtr<ID3D11Buffer> captureConstants;
-            Microsoft::WRL::ComPtr<ID3D11Buffer> filterConstants;
+            std::array<Microsoft::WRL::ComPtr<ID3D11Buffer>, kEnvironmentMaximumMipCount> filterConstants;
             Microsoft::WRL::ComPtr<ID3D11Texture2D> capturedRadiance;
             Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>
                 capturedRadianceView;

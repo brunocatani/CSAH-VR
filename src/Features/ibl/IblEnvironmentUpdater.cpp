@@ -201,6 +201,22 @@ namespace csah::ibl
         Resources candidate{};
         candidate.device = device;
         candidate.extent = extent;
+        // Extent and roughness are immutable for the lifetime of this set.
+        // Bind one small buffer per mip instead of uploading it every update.
+        const auto mipCount = static_cast<std::uint32_t>(std::bit_width(extent));
+        for (UINT mip = 0; mip < mipCount; ++mip) {
+            const FilterConstants constants{std::max(1U, extent >> mip), mip, mipCount,
+                static_cast<float>(mip) / static_cast<float>(mipCount - 1)};
+            D3D11_BUFFER_DESC description{};
+            description.ByteWidth = sizeof(constants);
+            description.Usage = D3D11_USAGE_IMMUTABLE;
+            description.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+            D3D11_SUBRESOURCE_DATA initial{&constants, 0, 0};
+            if (FAILED(device->CreateBuffer(&description, &initial, &candidate.filterConstants[mip]))) {
+                recordFailure();
+                return false;
+            }
+        }
         if (FAILED(device->CreateComputeShader(
                 captureShaderBytecode,
                 captureShaderBytecodeSize,
@@ -230,10 +246,6 @@ namespace csah::ibl
                 device,
                 sizeof(UpdateConstants),
                 candidate.captureConstants) ||
-            !createConstantBuffer(
-                device,
-                sizeof(FilterConstants),
-                candidate.filterConstants) ||
             !createCapturedCube(
                 device,
                 extent,
@@ -583,8 +595,6 @@ namespace csah::ibl
             0,
             static_cast<UINT>(filterSources.size()),
             filterSources.data());
-        auto* filterConstants = resources_.filterConstants.Get();
-        context->CSSetConstantBuffers(11, 1, &filterConstants);
 
         const auto providerSnapshot = provider.snapshot();
         bool completed = true;
@@ -594,22 +604,8 @@ namespace csah::ibl
             const auto targetExtent = std::max(
                 1U,
                 providerSnapshot.extent >> mipLevel);
-            const FilterConstants constants{
-                targetExtent,
-                mipLevel,
-                providerSnapshot.mipCount,
-                providerSnapshot.mipCount > 1 ?
-                    static_cast<float>(mipLevel) /
-                        static_cast<float>(providerSnapshot.mipCount - 1) :
-                    0.0f,
-            };
-            context->UpdateSubresource(
-                resources_.filterConstants.Get(),
-                0,
-                nullptr,
-                &constants,
-                0,
-                0);
+            auto* filterConstants = resources_.filterConstants[mipLevel].Get();
+            context->CSSetConstantBuffers(11, 1, &filterConstants);
             std::array<ID3D11UnorderedAccessView*, 2> destinations{
                 provider.writableMip(mipLevel),
                 provider.writableValidityMip(mipLevel),

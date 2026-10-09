@@ -8,7 +8,14 @@
 #undef MAX_PATH
 #undef near
 #undef far
-#include <RE/Fallout.h>
+#include <RE/Bethesda/BSTArray.h>
+#include <RE/Bethesda/BSLock.h>
+#include <RE/Bethesda/BSGraphics.h>
+#include <RE/Bethesda/BSInputEventUser.h>
+#include <RE/Bethesda/PlayerCharacter.h>
+#include <RE/Bethesda/TESCamera.h>
+#include <RE/Bethesda/TESForms.h>
+#include <RE/NetImmerse/NiNode.h>
 #pragma pop_macro("far")
 #pragma pop_macro("near")
 #pragma pop_macro("MAX_PATH")
@@ -476,15 +483,39 @@ namespace csah::skylighting
         ID3D11DeviceContext* immediateContext) noexcept
     {
         gpuResourcesReady_.store(false, std::memory_order_release);
+        resourceCreationAttempted_ = false;
+        nearProbes_ = {};
+        farProbes_ = {};
+        privateDepthTexture_.Reset();
+        privateDepthView_.Reset();
+        privateDepthResource_.Reset();
+        privateDepthDescription_ = {};
+        privateDepthViewDescription_ = {};
+        diagnosticBuffer_.Reset();
+        diagnosticOutput_.Reset();
+        diagnosticStaging_.Reset();
+        diagnosticCompletion_.Reset();
+        ambientDiagnosticBuffer_.Reset();
+        ambientDiagnosticOutput_.Reset();
+        ambientDiagnosticStaging_.Reset();
+        ambientDiagnosticCompletion_.Reset();
+        updateShader_.Reset();
+        comparisonSampler_.Reset();
+        constantsBuffer_.Reset();
+        constants_ = {};
+        probeDataValid_.store(false, std::memory_order_release);
+        privateDepthReady_.store(false, std::memory_order_release);
+        exteriorActive_.store(false, std::memory_order_release);
+
         gpuTiming_.reset();
         ambientDrawGpuTiming_.reset();
+        device_ = device;
+        context_ = immediateContext;
         if (!device || !immediateContext) {
             logging::error(
                 "Skylighting rejected a missing D3D11 device or immediate context.");
             return;
         }
-        device_ = device;
-        context_ = immediateContext;
         activeQuality_ = sanitizeQuality(
             requestedQuality_.load(std::memory_order_relaxed));
         nearProbes_.dimensions = dimensionsFor(activeQuality_);
@@ -516,15 +547,26 @@ namespace csah::skylighting
             false,
             std::memory_order_relaxed);
 
+        if (requested()) (void)ensureGpuResources();
+    }
+
+    bool Runtime::ensureGpuResources() noexcept
+    {
+        if (gpuResourcesReady_.load(std::memory_order_acquire)) return true;
+        if (resourceCreationAttempted_ || !device_ || !context_) return false;
+        // The render-thread callback owns first-use allocation. A disabled
+        // startup allocates no probe volumes; failures retain the existing
+        // one-attempt-per-device policy instead of retrying every frame.
+        resourceCreationAttempted_ = true;
         if (!createProbeResources()) {
             logging::error(
                 "Skylighting GPU resource creation failed; native rendering remains unchanged.");
-            return;
+            return false;
         }
         clearProbeResources();
         if (!gpuTiming_.initialize(
-                device,
-                immediateContext,
+                device_.Get(),
+                context_.Get(),
                 "Skylighting",
                 { "native capture", "probe update", nullptr, nullptr },
                 2,
@@ -535,8 +577,8 @@ namespace csah::skylighting
                 "Skylighting could not allocate image-neutral GPU timing queries; rendering remains active without performance telemetry.");
         }
         if (!ambientDrawGpuTiming_.initialize(
-                device,
-                immediateContext,
+                device_.Get(),
+                context_.Get(),
                 "Skylighting ambient draw",
                 { "DFLight ambient replacement", nullptr, nullptr,
                     nullptr },
@@ -559,6 +601,7 @@ namespace csah::skylighting
             farProbes_.dimensions.height,
             farProbes_.dimensions.depth,
             kFarCaptureDistance);
+        return true;
     }
 
     bool Runtime::createProbeLevelResources(
@@ -1154,13 +1197,9 @@ namespace csah::skylighting
             safeSliceCount,
             0,
         };
-        context_->UpdateSubresource(
-            constantsBuffer_.Get(),
-            0,
-            nullptr,
-            &constants_,
-            0,
-            0);
+        // Publish the final response and slice window together. The capture
+        // caller used to upload the same buffer immediately before this one.
+        publishConstants(true);
         const auto collectDiagnostic =
             levelIndex == 0 && constants_.response.w > 0.5f;
         if (collectDiagnostic) {
@@ -1417,8 +1456,7 @@ namespace csah::skylighting
         consumeDiagnosticReadback();
         consumeAmbientDiagnosticReadback();
         const auto featureRequested = requested();
-        const auto resourcesReady =
-            gpuResourcesReady_.load(std::memory_order_acquire);
+        const auto resourcesReady = featureRequested && ensureGpuResources();
         const auto hookOwned =
             nativeHookOwned_.load(std::memory_order_acquire);
         if (!featureRequested || !resourcesReady || !hookOwned ||
@@ -1697,7 +1735,6 @@ namespace csah::skylighting
                 targetLevel.dimensions.depth;
         }
         exteriorActive_.store(true, std::memory_order_release);
-        publishConstants(true);
         dispatchProbeUpdate(
             targetLevel,
             updateFarLevel ? 1u : 0u,

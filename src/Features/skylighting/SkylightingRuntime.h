@@ -184,6 +184,7 @@ namespace csah::skylighting
             ProbeResources& level,
             Dimensions dimensions) noexcept;
         [[nodiscard]] bool createProbeResources() noexcept;
+        [[nodiscard]] bool ensureGpuResources() noexcept;
         [[nodiscard]] bool ensurePrivateDepth(
             ID3D11DepthStencilView* source) noexcept;
         void clearProbeResources() noexcept;
@@ -244,6 +245,7 @@ namespace csah::skylighting
         bool ambientDiagnosticSubmitted_{};
         bool ambientDiagnosticPending_{};
         bool ambientDiagnosticLogged_{};
+        bool resourceCreationAttempted_{};
 
         std::atomic_bool enabled_{ true };
         std::atomic_uint32_t requestedQuality_{

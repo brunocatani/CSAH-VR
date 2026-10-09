@@ -176,6 +176,8 @@ namespace csah::ibl
 
     void ReflectionFreeCaptureResources::reset() noexcept
     {
+        depthStates_ = {};
+        nextDepthState_ = 0;
         scratchShaderResource_.Reset();
         scratchRenderTarget_.Reset();
         scratchTexture_.Reset();
@@ -186,6 +188,35 @@ namespace csah::ibl
         blackEnvironmentSrv_.Reset();
         blackEnvironmentTexture_.Reset();
         device_.Reset();
+    }
+
+    ID3D11DepthStencilState* ReflectionFreeCaptureResources::readOnlyDepthState(
+        const D3D11_DEPTH_STENCIL_DESC& source) noexcept
+    {
+        if (!device_) return nullptr;
+        auto description = source;
+        description.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ZERO;
+        description.StencilWriteMask = 0;
+        const auto sameFace = [](const auto& a, const auto& b) {
+            return a.StencilFailOp == b.StencilFailOp &&
+                a.StencilDepthFailOp == b.StencilDepthFailOp &&
+                a.StencilPassOp == b.StencilPassOp && a.StencilFunc == b.StencilFunc;
+        };
+        for (const auto& entry : depthStates_) {
+            const auto& saved = entry.description;
+            if (entry.state && saved.DepthEnable == description.DepthEnable &&
+                saved.DepthFunc == description.DepthFunc &&
+                saved.StencilEnable == description.StencilEnable &&
+                saved.StencilReadMask == description.StencilReadMask &&
+                sameFace(saved.FrontFace, description.FrontFace) &&
+                sameFace(saved.BackFace, description.BackFace)) return entry.state.Get();
+        }
+        Microsoft::WRL::ComPtr<ID3D11DepthStencilState> state;
+        if (FAILED(device_->CreateDepthStencilState(&description, &state))) return nullptr;
+        auto& entry = depthStates_[nextDepthState_++ % depthStates_.size()];
+        entry.description = description;
+        entry.state = std::move(state);
+        return entry.state.Get();
     }
 
     bool ReflectionFreeCaptureResources::scratchMatches(
@@ -398,14 +429,8 @@ namespace csah::ibl
             depthStencilDescription.BackFace =
                 depthStencilDescription.FrontFace;
         }
-        depthStencilDescription.DepthWriteMask =
-            D3D11_DEPTH_WRITE_MASK_ZERO;
-        depthStencilDescription.StencilWriteMask = 0;
-        ComPtr<ID3D11Device> device;
-        context_->GetDevice(&device);
-        if (!device || FAILED(device->CreateDepthStencilState(
-                &depthStencilDescription,
-                &captureDepthStencilState_))) {
+        captureDepthStencilState_ = resources.readOnlyDepthState(depthStencilDescription);
+        if (!captureDepthStencilState_) {
             rejection_ = ReflectionFreeCaptureRejection::
                 depthStencilStateCreation;
             context_ = nullptr;
