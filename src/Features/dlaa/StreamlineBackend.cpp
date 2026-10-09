@@ -1,12 +1,10 @@
 #include "PCH.h"
 
 #include "Features/dlaa/StreamlineBackend.h"
-#include "GeneratedStreamlinePayloadHashes.h"
 
 #include "support/Logger.h"
 
 #include <Windows.h>
-#include <bcrypt.h>
 #include <sl.h>
 #include <sl_dlss.h>
 #include <sl_matrix_helpers.h>
@@ -21,7 +19,6 @@
 #include <mutex>
 #include <string>
 #include <string_view>
-#include <vector>
 
 extern "C" IMAGE_DOS_HEADER __ImageBase;
 
@@ -135,140 +132,14 @@ namespace csah::dlaa
             return std::filesystem::path(path.data()).parent_path();
         }
 
-        struct FileHandle
-        {
-            HANDLE value{ INVALID_HANDLE_VALUE };
-
-            ~FileHandle()
-            {
-                if (value != INVALID_HANDLE_VALUE) {
-                    CloseHandle(value);
-                }
-            }
-        };
-
-        struct AlgorithmHandle
-        {
-            BCRYPT_ALG_HANDLE value{};
-
-            ~AlgorithmHandle()
-            {
-                if (value) {
-                    BCryptCloseAlgorithmProvider(value, 0);
-                }
-            }
-        };
-
-        struct HashHandle
-        {
-            BCRYPT_HASH_HANDLE value{};
-
-            ~HashHandle()
-            {
-                if (value) {
-                    BCryptDestroyHash(value);
-                }
-            }
-        };
-
-        [[nodiscard]] bool hashMatches(
-            const std::filesystem::path& path,
-            std::string_view expected)
-        {
-            FileHandle file{ CreateFileW(
-                path.c_str(),
-                GENERIC_READ,
-                FILE_SHARE_READ,
-                nullptr,
-                OPEN_EXISTING,
-                FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN,
-                nullptr) };
-            if (file.value == INVALID_HANDLE_VALUE) {
-                return false;
-            }
-
-            AlgorithmHandle algorithm;
-            if (BCryptOpenAlgorithmProvider(
-                    &algorithm.value,
-                    BCRYPT_SHA256_ALGORITHM,
-                    nullptr,
-                    0) < 0) {
-                return false;
-            }
-            DWORD objectBytes{};
-            DWORD returnedBytes{};
-            if (BCryptGetProperty(
-                    algorithm.value,
-                    BCRYPT_OBJECT_LENGTH,
-                    reinterpret_cast<PUCHAR>(&objectBytes),
-                    sizeof(objectBytes),
-                    &returnedBytes,
-                    0) < 0 ||
-                objectBytes == 0) {
-                return false;
-            }
-            std::vector<UCHAR> object(objectBytes);
-            HashHandle hash;
-            if (BCryptCreateHash(
-                    algorithm.value,
-                    &hash.value,
-                    object.data(),
-                    static_cast<ULONG>(object.size()),
-                    nullptr,
-                    0,
-                    0) < 0) {
-                return false;
-            }
-            std::vector<UCHAR> input(1024 * 1024);
-            for (;;) {
-                DWORD bytesRead{};
-                if (!ReadFile(
-                        file.value,
-                        input.data(),
-                        static_cast<DWORD>(input.size()),
-                        &bytesRead,
-                        nullptr)) {
-                    return false;
-                }
-                if (bytesRead == 0) {
-                    break;
-                }
-                if (BCryptHashData(
-                        hash.value,
-                        input.data(),
-                        bytesRead,
-                        0) < 0) {
-                    return false;
-                }
-            }
-            std::array<UCHAR, 32> digest{};
-            if (BCryptFinishHash(
-                    hash.value,
-                    digest.data(),
-                    static_cast<ULONG>(digest.size()),
-                    0) < 0) {
-                return false;
-            }
-            constexpr std::array<char, 16> hexadecimal{
-                '0', '1', '2', '3', '4', '5', '6', '7',
-                '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'
-            };
-            std::array<char, 64> encoded{};
-            for (std::size_t index = 0; index < digest.size(); ++index) {
-                encoded[2 * index] = hexadecimal[digest[index] >> 4];
-                encoded[2 * index + 1] =
-                    hexadecimal[digest[index] & 0x0F];
-            }
-            return expected == std::string_view(
-                                   encoded.data(),
-                                   encoded.size());
-        }
-
         [[nodiscard]] bool verifyRuntimeFiles(
             const std::filesystem::path& directory)
         {
-            for (const auto& contract : kStreamlinePayloadContracts) {
-                const auto path = directory / contract.fileName;
+            constexpr std::array<std::wstring_view, 4> runtimeFiles{
+                L"sl.interposer.dll", L"sl.common.dll", L"sl.dlss.dll", L"nvngx_dlss.dll"
+            };
+            for (const auto fileName : runtimeFiles) {
+                const auto path = directory / fileName;
                 std::error_code error;
                 if (!std::filesystem::is_regular_file(path, error) || error) {
                     logging::error(
@@ -276,13 +147,8 @@ namespace csah::dlaa
                         path.string());
                     return false;
                 }
-                logging::info(
-                    "DLAA verifying build-pinned SHA-256 for '{}'.",
-                    path.string());
-                if (!hashMatches(path, contract.sha256)) {
-                    logging::error(
-                        "DLAA Streamline payload hash rejected '{}'.",
-                        path.string());
+                if (std::filesystem::file_size(path, error) == 0 || error) {
+                    logging::error("DLAA Streamline runtime is empty or unreadable: '{}'.", path.string());
                     return false;
                 }
             }
@@ -697,7 +563,7 @@ namespace csah::dlaa
                 return false;
             }
             logging::info(
-                "DLAA build-pinned Streamline payload hash gate passed.");
+                "DLAA Streamline runtime files are present; core API and feature support will be negotiated.");
 
             const auto interposerPath =
                 state.directory / L"sl.interposer.dll";

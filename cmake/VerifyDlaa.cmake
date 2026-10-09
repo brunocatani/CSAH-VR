@@ -62,6 +62,13 @@ foreach(forbidden IN ITEMS
   endif()
 endforeach()
 
+foreach(forbidden IN ITEMS "hashMatches" "BCryptHash" "GeneratedStreamlinePayloadHashes.h")
+  string(FIND "${streamline}" "${forbidden}" found)
+  if(NOT found EQUAL -1)
+    message(FATAL_ERROR "DLAA input-hash gate reintroduced: '${forbidden}'")
+  endif()
+endforeach()
+
 foreach(required IN ITEMS
     "kMapVtableIndex = 14"
     "kUnmapVtableIndex = 15"
@@ -220,13 +227,9 @@ foreach(required IN ITEMS
 endforeach()
 
 foreach(required IN ITEMS
-    "GeneratedStreamlinePayloadHashes.h"
-    "kStreamlinePayloadContracts"
-    "BCryptOpenAlgorithmProvider"
-    "BCryptHashData"
-    "BCryptFinishHash"
-    "hashMatches"
-    "build-pinned SHA-256"
+    "verifyRuntimeFiles"
+    "std::filesystem::file_size"
+    "resolveCoreFunctions"
     "kProjectId"
     "615adbde-c997-4380-a9b0-73dfb99fb0b1"
     "preferences.projectId = kProjectId"

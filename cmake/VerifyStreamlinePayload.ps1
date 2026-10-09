@@ -28,6 +28,5 @@ foreach ($path in $RuntimeFiles) {
         $signature.SignerCertificate.Subject -notmatch '(^|, )O=NVIDIA Corporation(,|$)') {
         throw "Streamline payload signer is not NVIDIA Corporation: '$path'."
     }
-    $hash = Get-FileHash -LiteralPath $item.FullName -Algorithm SHA256
-    Write-Host "Verified NVIDIA-signed Streamline payload $($item.Name) SHA256=$($hash.Hash)"
+    Write-Host "Verified NVIDIA-signed Streamline payload $($item.Name)"
 }

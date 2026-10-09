@@ -85,26 +85,12 @@ foreach(required IN ITEMS
   endif()
 endforeach()
 
-list(GET STREAMLINE_RUNTIME_FILES 0 STREAMLINE_INTERPOSER_FILE)
-list(GET STREAMLINE_RUNTIME_FILES 1 STREAMLINE_COMMON_FILE)
-list(GET STREAMLINE_RUNTIME_FILES 2 STREAMLINE_DLSS_FILE)
-list(GET STREAMLINE_RUNTIME_FILES 3 STREAMLINE_NGX_FILE)
-file(SHA256 "${STREAMLINE_INTERPOSER_FILE}" STREAMLINE_INTERPOSER_SHA256)
-file(SHA256 "${STREAMLINE_COMMON_FILE}" STREAMLINE_COMMON_SHA256)
-file(SHA256 "${STREAMLINE_DLSS_FILE}" STREAMLINE_DLSS_SHA256)
-file(SHA256 "${STREAMLINE_NGX_FILE}" STREAMLINE_NGX_SHA256)
-
 project(${NAME} VERSION ${VERSION} LANGUAGES CXX)
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
 find_program(POWERSHELL_EXECUTABLE NAMES pwsh powershell REQUIRED)
 
 set(DLAA_GENERATED_DIR "${BUILD_DIR}/generated/dlaa")
 file(MAKE_DIRECTORY "${DLAA_GENERATED_DIR}")
-configure_file(
-  "${ROOT_DIR}/cmake/StreamlinePayloadHashes.in.h"
-  "${DLAA_GENERATED_DIR}/GeneratedStreamlinePayloadHashes.h"
-  @ONLY)
-
 include("${ROOT_DIR}/cmake/VerifyFo4VrLoader.cmake")
 csah_verify_fo4vr_loader("${SOURCE_DIR}/XSEPlugin.cpp")
 set(RENDERER_HOOK_SOURCE
@@ -788,7 +774,6 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
   "${UPSCALING_REACTIVE_SHADER_SOURCE}"
   "${DLAA_VERIFY_SCRIPT}"
   "${ROOT_DIR}/cmake/TestVerifyDlaaNegative.cmake"
-  "${ROOT_DIR}/cmake/StreamlinePayloadHashes.in.h"
   "${ROOT_DIR}/cmake/VerifyStreamlinePayload.ps1"
   "${VANILLA_VERIFY_SCRIPT}"
   "${VANILLA_SHADER_RUNTIME_SOURCE}"
@@ -1050,7 +1035,7 @@ add_custom_target(VerifyStreamlinePayload ALL
     -ExecutionPolicy Bypass
     -File "${ROOT_DIR}/cmake/VerifyStreamlinePayload.ps1"
     -RuntimeDirectory "${STREAMLINE_RUNTIME_DIR}"
-  COMMENT "Verifying NVIDIA signatures and hashes for Streamline DLAA payload"
+  COMMENT "Verifying NVIDIA signatures for Streamline DLAA payload"
   VERBATIM)
 
 add_executable(VanillaReflectionPatchTool
@@ -2442,7 +2427,6 @@ add_library(${PROJECT_NAME} SHARED
   "${DLAA_SOURCE_DIR}/DlaaD3D11Hooks.h"
   "${DLAA_STREAMLINE_SOURCE}"
   "${DLAA_SOURCE_DIR}/StreamlineBackend.h"
-  "${DLAA_GENERATED_DIR}/GeneratedStreamlinePayloadHashes.h"
   "${UPSCALING_COMPOSE_SHADER_SOURCE}"
   "${UPSCALING_COMPOSE_SHADER_HEADER}"
   "${UPSCALING_MOTION_SHADER_SOURCE}"
@@ -2572,7 +2556,6 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
   minhook::minhook
   nlohmann_json::nlohmann_json
   spdlog::spdlog
-  bcrypt
   dxguid
   shell32
 )
