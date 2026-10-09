@@ -2234,6 +2234,8 @@ add_library(${PROJECT_NAME} SHARED
   "${IBL_COMPUTE_STATE_SCOPE_HEADER}"
   "${GPU_TIMING_PROFILER_SOURCE}"
   "${GPU_TIMING_PROFILER_HEADER}"
+  "${SOURCE_DIR}/diagnostics/RenderDocCapture.cpp"
+  "${SOURCE_DIR}/diagnostics/RenderDocCapture.h"
   "${IBL_PROJECTION_MODEL}"
   "${IBL_CAPTURE_PROBE_MODEL}"
   "${IBL_SCENE_RADIANCE_PROBE_MODEL}"
@@ -2559,7 +2561,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
 # exposes game folders. The original notice text is preserved verbatim.
 set(CSAH_NOTICES_DIR "${BUILD_DIR}/generated/notices")
 file(MAKE_DIRECTORY "${CSAH_NOTICES_DIR}")
-set(CSAH_NOTICE_FILES "${ROOT_DIR}/LICENSE"
+set(CSAH_NOTICE_FILES "${ROOT_DIR}/LICENSE" "${ROOT_DIR}/extern/RenderDoc/LICENSE"
   "${COMMON_LIB_F4VR_PATH_SELECTED}/LICENSE" ${STREAMLINE_LICENSE_FILES})
 foreach(package IN ITEMS fmt minhook nlohmann-json rapidcsv rsm-mmio spdlog xbyak)
   list(APPEND CSAH_NOTICE_FILES
@@ -2759,7 +2761,7 @@ if(BUILD_CSAH_TESTS)
     CSAHSharedSettingsRuntimeTests PRIVATE
     /sdl /utf-8 /permissive- /Zc:__cplusplus /Zc:preprocessor /W4)
   add_test(NAME CSAH.SharedSettingsRuntime
-    COMMAND CSAHSharedSettingsRuntimeTests)
+    COMMAND CSAHSharedSettingsRuntimeTests "${CMAKE_BINARY_DIR}/test-output/settings")
 
   add_executable(CSAHFixedShaderBindingLookupTests
     "${ROOT_DIR}/tests/FixedShaderBindingLookupTests.cpp")
@@ -3194,7 +3196,7 @@ if(BUILD_CSAH_TESTS)
     /sdl /utf-8 /permissive- /Zc:__cplusplus /Zc:preprocessor /W4)
   target_link_libraries(
     CSAHIblReflectionFreeCaptureTests PRIVATE
-    d3d11 d3dcompiler spdlog::spdlog)
+    d3d11 d3dcompiler dxguid spdlog::spdlog)
   add_test(NAME CSAH.IblReflectionFreeCapture
     COMMAND CSAHIblReflectionFreeCaptureTests)
 
@@ -3262,7 +3264,7 @@ if(BUILD_CSAH_TESTS)
     CSAHIblProviderTests PRIVATE
     /sdl /utf-8 /permissive- /Zc:__cplusplus /Zc:preprocessor /W4)
   target_link_libraries(
-    CSAHIblProviderTests PRIVATE d3d11 d3dcompiler)
+    CSAHIblProviderTests PRIVATE d3d11 d3dcompiler dxguid)
   add_test(NAME CSAH.IblProvider
     COMMAND CSAHIblProviderTests)
 
@@ -3293,7 +3295,7 @@ if(BUILD_CSAH_TESTS)
     CSAHIblEnvironmentUpdaterTests PRIVATE "${SOURCE_DIR}/PCH.h")
   target_link_libraries(
     CSAHIblEnvironmentUpdaterTests PRIVATE
-    CommonLibF4::CommonLibF4 d3d11 shell32 spdlog::spdlog)
+    CommonLibF4::CommonLibF4 d3d11 dxguid shell32 spdlog::spdlog)
   add_test(NAME CSAH.IblEnvironmentUpdater
     COMMAND CSAHIblEnvironmentUpdaterTests "${ROOT_DIR}")
 
@@ -3307,8 +3309,25 @@ if(BUILD_CSAH_TESTS)
   target_compile_definitions(CSAHSkylightingResourceTests PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
   target_include_directories(CSAHSkylightingResourceTests PRIVATE "${SOURCE_DIR}" "${SKYLIGHTING_GENERATED_DIR}")
   target_precompile_headers(CSAHSkylightingResourceTests PRIVATE "${SOURCE_DIR}/PCH.h")
-  target_link_libraries(CSAHSkylightingResourceTests PRIVATE CommonLibF4::CommonLibF4 d3d11 shell32 spdlog::spdlog)
+  target_link_libraries(CSAHSkylightingResourceTests PRIVATE CommonLibF4::CommonLibF4 d3d11 dxguid shell32 spdlog::spdlog)
   add_test(NAME CSAH.SkylightingResources COMMAND CSAHSkylightingResourceTests)
+
+  add_executable(CSAHRenderDocCaptureTests
+    "${ROOT_DIR}/tests/RenderDocCaptureTests.cpp"
+    "${SOURCE_DIR}/diagnostics/RenderDocCapture.cpp")
+  target_compile_features(CSAHRenderDocCaptureTests PRIVATE cxx_std_23)
+  target_compile_definitions(CSAHRenderDocCaptureTests PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_include_directories(CSAHRenderDocCaptureTests PRIVATE "${SOURCE_DIR}" "${ROOT_DIR}/extern/RenderDoc")
+  target_precompile_headers(CSAHRenderDocCaptureTests PRIVATE "${SOURCE_DIR}/PCH.h")
+  target_link_libraries(CSAHRenderDocCaptureTests PRIVATE CommonLibF4::CommonLibF4 d3d11 dxguid shell32 spdlog::spdlog)
+  if(EXISTS "$ENV{ProgramFiles}/RenderDoc/renderdoc.dll")
+    add_test(NAME CSAH.RenderDocCapture COMMAND CSAHRenderDocCaptureTests
+      "${CMAKE_BINARY_DIR}/test-output/renderdoc" "$ENV{ProgramFiles}/RenderDoc/renderdoc.dll")
+    file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/test-output")
+    set_tests_properties(CSAH.RenderDocCapture PROPERTIES
+      ENVIRONMENT "TEMP=${CMAKE_BINARY_DIR}/test-output;TMP=${CMAKE_BINARY_DIR}/test-output"
+      TIMEOUT 30)
+  endif()
 
   add_executable(CSAHIblSettingsTests
     "${ROOT_DIR}/tests/IblSettingsTests.cpp"

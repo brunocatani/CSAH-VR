@@ -35,6 +35,7 @@
 #include "Features/wrapped_grass/WrappedGrassRuntime.h"
 #include "Features/wrapped_grass/WrappedGrassSettingsStore.h"
 #include "render/GpuTimingProfiler.h"
+#include "diagnostics/RenderDocCapture.h"
 #include "settings/DiagnosticsSettings.h"
 #include "settings/MasterSettings.h"
 #include "support/Logger.h"
@@ -123,11 +124,20 @@ namespace csah::shared_settings
 
         void applyLiveChanges(
             const ChangeSet& changes,
-            const Snapshot& next) noexcept
+            Snapshot& next,
+            const Snapshot& previous,
+            const std::filesystem::path& configPath) noexcept
         {
             if (changes.diagnostics) {
                 render::GpuTimingProfiler::setOnDemandGroups(
                     next.diagnostics.gpuProfilingGroups);
+                if (next.diagnostics.captureFrame && !previous.diagnostics.captureFrame) {
+                    (void)diagnostics::requestRenderDocCapture(next.diagnostics.captureDirectory.data());
+                    if (WritePrivateProfileStringW(L"Diagnostics", L"bCaptureFrame", L"0", configPath.c_str()))
+                        next.diagnostics.captureFrame = false;
+                    else
+                        logging::warn("RenderDoc request was consumed, but bCaptureFrame could not be cleared in the INI.");
+                }
             }
             if (changes.linearLighting) {
                 linear_lighting::Runtime::get().queueSettings(
@@ -225,6 +235,13 @@ namespace csah::shared_settings
                 active_ = loadSnapshot(configPath_);
                 render::GpuTimingProfiler::setOnDemandGroups(
                     active_.diagnostics.gpuProfilingGroups);
+                if (active_.diagnostics.captureFrame) {
+                    (void)diagnostics::requestRenderDocCapture(active_.diagnostics.captureDirectory.data());
+                    if (WritePrivateProfileStringW(L"Diagnostics", L"bCaptureFrame", L"0", configPath_.c_str()))
+                        active_.diagnostics.captureFrame = false;
+                    else
+                        logging::warn("RenderDoc startup request was consumed, but bCaptureFrame could not be cleared in the INI.");
+                }
                 accepted_ = readSignature(configPath_);
 
                 try {
@@ -296,7 +313,7 @@ namespace csah::shared_settings
                         return;
                     }
 
-                    const auto next = loadSnapshot(configPath_);
+                    auto next = loadSnapshot(configPath_);
                     const auto stable = readSignature(configPath_);
                     if (!stable || *stable != *observed) {
                         pending_ = stable;
@@ -314,7 +331,7 @@ namespace csah::shared_settings
 
                     const bool activeVanillaFixesGate =
                         active_.vanillaFixes.enabled;
-                    applyLiveChanges(changes, next);
+                    applyLiveChanges(changes, next, active_, configPath_);
                     active_ = next;
                     if (changes.vanillaFixesGate) {
                         // Keep the process-effective startup gate as the

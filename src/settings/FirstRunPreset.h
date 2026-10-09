@@ -270,6 +270,10 @@ namespace csah::settings_path
         "; 15=Vanilla Cubemap Only.\r\n"
         "iDirectionalLightingMode=0\r\n"
         "; Continuous image-neutral performance telemetry. Hot-reloaded.\r\n"
-        "; 0=Off, 1=Contact Shadows, 2=Skylighting, 3=Both.\r\n"
-        "iGpuProfilingMode=0\r\n";
+        "; 0=Off, 1=Contact Shadows, 2=Skylighting, 3=Both, 4=IBL, 7=All.\r\n"
+        "iGpuProfilingMode=0\r\n"
+        "; Manual one-frame capture with RenderDoc already attached.\r\n"
+        "bCaptureFrame=0\r\n"
+        "; Absolute output directory required before requesting a capture.\r\n"
+        "sCaptureDirectory=\r\n";
 }

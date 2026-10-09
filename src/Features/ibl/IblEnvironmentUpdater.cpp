@@ -1,6 +1,7 @@
 #include "Features/ibl/IblEnvironmentUpdater.h"
 
 #include "render/ComputeStateScope.h"
+#include "render/DebugResourceName.h"
 #include "support/Logger.h"
 
 #include <algorithm>
@@ -301,6 +302,13 @@ namespace csah::ibl
             return false;
         }
 
+        render::nameResource(candidate.capturedRadiance.Get(), "CSAH / Cubemaps / Captured radiance");
+        render::nameResource(candidate.capturedValidity.Get(), "CSAH / Cubemaps / Captured coverage");
+        render::nameResource(candidate.sky[0].texture.Get(), "CSAH / Cubemaps / Sky history A");
+        render::nameResource(candidate.sky[1].texture.Get(), "CSAH / Cubemaps / Sky history B");
+        render::nameResource(candidate.nearestDepth.texture.Get(), "CSAH / Cubemaps / Reprojected depth");
+        render::nameResource(candidate.nearestOwner.texture.Get(), "CSAH / Cubemaps / Reprojected owners");
+        render::nameResource(candidate.reductionResult.Get(), "CSAH / Cubemaps / Validation and SH summary");
         skyFront_ = 0;
         resources_ = std::move(candidate);
         summary_ = {};

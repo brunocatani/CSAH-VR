@@ -79,6 +79,7 @@ namespace csah::render
             std::uint32_t pointCount{};
             bool recording{};
             bool pending{};
+            std::uint64_t collectionRevision{};
         };
 
         void mark(Scope& scope) noexcept;
@@ -99,6 +100,8 @@ namespace csah::render
         std::size_t writeIndex_{};
         std::uint64_t beginAttempts_{};
         std::uint64_t completedSamples_{};
+        // Bounded recent-sample window for diagnosing spikes during A/B runs.
+        std::array<double, 1024> totalSampleMilliseconds_{};
         double accumulatedCpuMilliseconds_{};
         std::uint64_t completedCpuSamples_{};
         std::chrono::steady_clock::time_point nextReport_{};

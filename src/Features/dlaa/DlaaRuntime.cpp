@@ -1,4 +1,5 @@
 #include "Features/dlaa/DlaaRuntime.h"
+#include "diagnostics/RenderDocCapture.h"
 
 #include "GeneratedUpscalingComposeShader.h"
 #include "GeneratedUpscalingMotionRepairShader.h"
@@ -712,6 +713,7 @@ namespace csah::dlaa
         float* jitterX,
         float* jitterY) noexcept
     {
+        diagnostics::processRenderDocCapture();
         const auto call = preRenderCalls_.fetch_add(
                               1,
                               std::memory_order_relaxed) +

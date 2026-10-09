@@ -1,4 +1,5 @@
 #include "Features/ibl/IblEnvironmentProvider.h"
+#include "render/DebugResourceName.h"
 
 #include <bit>
 #include <utility>
@@ -166,6 +167,12 @@ namespace csah::ibl
             }
         }
 
+        render::nameResource(candidate.chains[0].radiance.texture.Get(), "CSAH / Cubemaps / Radiance A");
+        render::nameResource(candidate.chains[1].radiance.texture.Get(), "CSAH / Cubemaps / Radiance B");
+        render::nameResource(candidate.chains[0].validity.texture.Get(), "CSAH / Cubemaps / Coverage A");
+        render::nameResource(candidate.chains[1].validity.texture.Get(), "CSAH / Cubemaps / Coverage B");
+        render::nameResource(candidate.chains[0].position.texture.Get(), "CSAH / Cubemaps / Position A");
+        render::nameResource(candidate.chains[1].position.texture.Get(), "CSAH / Cubemaps / Position B");
         resources_ = std::move(candidate);
         coverage_.reset();
         state_ = EnvironmentProviderState::ready;

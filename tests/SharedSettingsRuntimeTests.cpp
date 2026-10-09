@@ -2,6 +2,8 @@
 
 #include <cstdlib>
 #include <iostream>
+#include <filesystem>
+#include <fstream>
 
 namespace
 {
@@ -15,12 +17,29 @@ namespace
     }
 }
 
-int main()
+int main(int argumentCount, char** arguments)
 {
     using csah::shared_settings::Snapshot;
     using csah::shared_settings::diff;
 
     const Snapshot baseline{};
+    require(!baseline.diagnostics.captureFrame, "manual capture must default off");
+    if (argumentCount == 2) {
+        const auto directory = std::filesystem::absolute(arguments[1]);
+        std::filesystem::create_directories(directory);
+        const auto file = directory / "diagnostics-settings.ini";
+        {
+            std::ofstream output(file);
+            output << "[Diagnostics]\niGpuProfilingMode=4\nbCaptureFrame=1\nsCaptureDirectory=F:/fixture/captures\n";
+        }
+        auto loaded = csah::diagnostics_settings::load(file);
+        require(loaded.gpuProfilingGroups == 4 && loaded.captureFrame, "IBL profiling or manual capture request was lost");
+        require(std::wstring_view(loaded.captureDirectory.data()) == L"F:/fixture/captures", "capture path changed");
+        require(WritePrivateProfileStringW(L"Diagnostics", L"iGpuProfilingMode", L"7", file.c_str()), "test settings write failed");
+        require(csah::diagnostics_settings::load(file).gpuProfilingGroups == 7, "all-feature profiling unavailable");
+        require(WritePrivateProfileStringW(L"Diagnostics", L"iGpuProfilingMode", L"99", file.c_str()), "test invalid settings write failed");
+        require(csah::diagnostics_settings::load(file).gpuProfilingGroups == 0, "invalid profiling selection must fail closed");
+    }
     require(!baseline.cloudShadows.enabled && !baseline.hairSpecular.enabled &&
             !baseline.wrappedGrass.enabled && !baseline.subsurfaceScattering.enabled &&
             !baseline.volumetricLighting.enabled,

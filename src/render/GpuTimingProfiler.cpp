@@ -17,7 +17,8 @@ namespace csah::render
             static_cast<std::uint32_t>(
                 GpuTimingProfiler::Group::ContactShadows) |
             static_cast<std::uint32_t>(
-                GpuTimingProfiler::Group::Skylighting);
+                GpuTimingProfiler::Group::Skylighting) |
+            static_cast<std::uint32_t>(GpuTimingProfiler::Group::General);
         std::atomic_uint32_t onDemandGroups{};
         std::atomic_uint64_t collectionRequestRevision{};
     }
@@ -197,6 +198,7 @@ namespace csah::render
         }
         slot.pointCount = 0;
         slot.recording = true;
+        slot.collectionRevision = collectionRequestRevision_;
         activeProfiler = this;
         context_->Begin(slot.disjoint.Get());
         context_->End(slot.timestamps[0].Get());
@@ -274,7 +276,8 @@ namespace csah::render
             }
             if (FAILED(disjointResult) || disjoint.Disjoint ||
                 disjoint.Frequency == 0 ||
-                slot.pointCount != segmentCount_ + 1) {
+                slot.pointCount != segmentCount_ + 1 ||
+                slot.collectionRevision != collectionRequestRevision_) {
                 discard(slot);
                 continue;
             }
@@ -324,6 +327,9 @@ namespace csah::render
                         timestamps[segment + 1] - timestamps[segment]) *
                     1000.0 / static_cast<double>(disjoint.Frequency);
             }
+            totalSampleMilliseconds_[completedSamples_ % totalSampleMilliseconds_.size()] =
+                static_cast<double>(timestamps[segmentCount_] - timestamps[0]) *
+                1000.0 / static_cast<double>(disjoint.Frequency);
             ++completedSamples_;
             discard(slot);
         }
@@ -373,6 +379,14 @@ namespace csah::render
             total += average[segment];
         }
         try {
+            const auto count = static_cast<std::size_t>((std::min)(
+                completedSamples_, static_cast<std::uint64_t>(totalSampleMilliseconds_.size())));
+            auto ordered = totalSampleMilliseconds_;
+            std::sort(ordered.begin(), ordered.begin() + count);
+            const auto p95 = (count * 95 + 99) / 100 - 1;
+            spdlog::info(
+                "Feature timing {} distribution: GPU min={:.3f} ms, median={:.3f} ms, p95={:.3f} ms, max={:.3f} ms over the latest {} completed samples.",
+                name_, ordered[0], ordered[count / 2], ordered[p95], ordered[count - 1], count);
             if (segmentCount_ == 1) {
                 spdlog::info(
                     "Feature timing {}: GPU {}={:.3f} ms, total={:.3f} ms over {} samples; CPU submit={:.3f} ms over {} calls. Timestamp queries use DONOTFLUSH.",

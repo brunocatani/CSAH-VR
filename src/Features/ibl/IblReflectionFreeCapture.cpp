@@ -1,4 +1,5 @@
 #include "Features/ibl/IblReflectionFreeCapture.h"
+#include "render/DebugResourceName.h"
 
 #include <d3d11_1.h>
 
@@ -267,6 +268,7 @@ namespace csah::ibl
             return false;
         }
 
+        render::nameResource(texture.Get(), "CSAH / Cubemaps / Reflection-free composite");
         scratchTexture_ = std::move(texture);
         scratchRenderTarget_ = std::move(renderTarget);
         scratchShaderResource_ = std::move(shaderResource);

@@ -26,6 +26,7 @@
 #include "Features/skylighting/SkylightingNativeHooks.h"
 #include "UpdateProbesCS.h"
 #include "render/ComputeStateScope.h"
+#include "render/DebugResourceName.h"
 #include "support/Logger.h"
 
 #include <Windows.h>
@@ -563,6 +564,10 @@ namespace csah::skylighting
                 "Skylighting GPU resource creation failed; native rendering remains unchanged.");
             return false;
         }
+        render::nameResource(nearProbes_.probeTexture.Get(), "CSAH / Skylighting / Near visibility");
+        render::nameResource(farProbes_.probeTexture.Get(), "CSAH / Skylighting / Far visibility");
+        render::nameResource(nearProbes_.accumulationTexture.Get(), "CSAH / Skylighting / Near accumulation");
+        render::nameResource(farProbes_.accumulationTexture.Get(), "CSAH / Skylighting / Far accumulation");
         clearProbeResources();
         if (!gpuTiming_.initialize(
                 device_.Get(),

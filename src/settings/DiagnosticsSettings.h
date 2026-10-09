@@ -3,6 +3,7 @@
 #include <Windows.h>
 
 #include <algorithm>
+#include <array>
 #include <cstdint>
 #include <filesystem>
 
@@ -14,6 +15,8 @@ namespace csah::diagnostics_settings
     struct Settings final
     {
         std::uint32_t gpuProfilingGroups{};
+        bool captureFrame{};
+        std::array<wchar_t, 1024> captureDirectory{};
 
         [[nodiscard]] bool operator==(
             const Settings&) const noexcept = default;
@@ -30,9 +33,14 @@ namespace csah::diagnostics_settings
             kGpuProfilingModeKey,
             0,
             path.c_str()));
-        return {
+        Settings result{
             .gpuProfilingGroups = static_cast<std::uint32_t>(
-                std::clamp(value, 0, 3)),
+                value >= 0 && value <= 7 ? value : 0),
+            .captureFrame = GetPrivateProfileIntW(kSection, L"bCaptureFrame", 0, path.c_str()) != 0,
         };
+        const auto length = GetPrivateProfileStringW(kSection, L"sCaptureDirectory", L"",
+            result.captureDirectory.data(), static_cast<DWORD>(result.captureDirectory.size()), path.c_str());
+        if (length >= result.captureDirectory.size() - 1) result.captureDirectory = {};
+        return result;
     }
 }
