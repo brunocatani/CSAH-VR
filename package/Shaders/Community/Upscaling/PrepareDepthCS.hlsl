@@ -2,6 +2,7 @@
 
 Texture2D<float> NativeDepth : register(t0);
 RWTexture2D<float> WorldProjectionDepth : register(u0);
+RWTexture2D<float> NativeProjectionDepth : register(u1);
 
 cbuffer DepthPreparationConstants : register(b0)
 {
@@ -13,7 +14,7 @@ cbuffer DepthPreparationConstants : register(b0)
     float FarDepth;
     uint RawProbe;
     uint FirstPersonProjectionAvailable;
-    uint Padding;
+    uint NativeDepthOutputEnabled;
 };
 
 [numthreads(8, 8, 1)]
@@ -33,6 +34,7 @@ void main(uint3 id : SV_DispatchThreadID)
         return;
     }
     const float nativeDepth = NativeDepth.Load(int3(SourceOrigin + id.xy, 0));
+    if (NativeDepthOutputEnabled != 0) NativeProjectionDepth[id.xy] = nativeDepth;
     float result = FarDepth;
     if (isfinite(nativeDepth) && nativeDepth > 0.0f && nativeDepth <= 1.0f)
     {

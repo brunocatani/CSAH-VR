@@ -117,6 +117,9 @@ namespace csah::dlaa
             Microsoft::WRL::ComPtr<ID3D11Texture2D> depthInput;
             Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> depthInputView;
             Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView> depthOutput;
+            Microsoft::WRL::ComPtr<ID3D11Texture2D> nativeDepth;
+            Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> nativeDepthView;
+            Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView> nativeDepthOutput;
             Microsoft::WRL::ComPtr<ID3D11Texture2D> motionInput;
             Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> motionInputView;
             Microsoft::WRL::ComPtr<ID3D11Texture2D> motionHistory;
@@ -212,6 +215,8 @@ namespace csah::dlaa
         void restoreDynamicResolutionIfOwned() noexcept;
         [[nodiscard]] bool validateCameraFrame(
             const Fo4VrFrameBuffer& frame) const noexcept;
+        [[nodiscard]] bool ensureDepthPublicationResources() noexcept;
+        void publishNativeDepth() noexcept;
 
         Settings settings_{};
         Microsoft::WRL::ComPtr<ID3D11Device> device_;
@@ -232,6 +237,14 @@ namespace csah::dlaa
         Microsoft::WRL::ComPtr<ID3D11ComputeShader> reactiveMaskShader_;
         Microsoft::WRL::ComPtr<ID3D11ComputeShader> depthPreparationShader_;
         Microsoft::WRL::ComPtr<ID3D11Buffer> depthPreparationConstants_;
+        Microsoft::WRL::ComPtr<ID3D11VertexShader> depthPublicationVertex_;
+        Microsoft::WRL::ComPtr<ID3D11PixelShader> depthPublicationPixel_;
+        Microsoft::WRL::ComPtr<ID3D11Buffer> depthPublicationConstants_;
+        Microsoft::WRL::ComPtr<ID3D11DepthStencilState> depthPublicationState_;
+        Microsoft::WRL::ComPtr<ID3D11RasterizerState> depthPublicationRaster_;
+        Microsoft::WRL::ComPtr<ID3D11DepthStencilView> depthPublicationTarget_;
+        Microsoft::WRL::ComPtr<ID3D11Texture2D> depthPublicationOwner_;
+        bool depthPublicationLogged_{};
         Microsoft::WRL::ComPtr<ID3D11Buffer> reactiveMaskConstants_;
         static constexpr std::size_t kTaaMaskViewCacheCount = 4;
         std::array<TaaMaskViewCacheEntry, kTaaMaskViewCacheCount>

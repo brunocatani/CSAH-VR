@@ -5,6 +5,9 @@
 #include "GeneratedUpscalingComposeShader.h"
 #include "GeneratedUpscalingMotionRepairShader.h"
 #include "GeneratedUpscalingDepthShader.h"
+#include "GeneratedUpscalingDepthVS.h"
+#include "GeneratedUpscalingDepthPS.h"
+#include "Features/volumetric_lighting/VolumetricStateScope.h"
 #include "render/Fo4VrDepth.h"
 #include "render/DebugResourceName.h"
 #include "GeneratedUpscalingReactiveMaskShader.h"
@@ -87,6 +90,54 @@ namespace csah::dlaa
         };
 
         static_assert(sizeof(ReactiveMaskConstants) == 16);
+
+        // A writable native DSV conflicts with any SRV of its resource,
+        // including bindings left outside the current shader's used slots.
+        // Retain only those aliases and restore them after the DSV is unbound.
+        class ScopedDepthAliases final
+        {
+        public:
+            ScopedDepthAliases(ID3D11DeviceContext* context, ID3D11Resource* depth) noexcept : context_(context)
+            {
+                constexpr std::array getters{
+                    &ID3D11DeviceContext::VSGetShaderResources, &ID3D11DeviceContext::PSGetShaderResources,
+                    &ID3D11DeviceContext::GSGetShaderResources, &ID3D11DeviceContext::HSGetShaderResources,
+                    &ID3D11DeviceContext::DSGetShaderResources, &ID3D11DeviceContext::CSGetShaderResources};
+                for (std::size_t stage = 0; stage < getters.size(); ++stage) {
+                    std::array<ID3D11ShaderResourceView*, D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT> views{};
+                    (context_->*getters[stage])(0, static_cast<UINT>(views.size()), views.data());
+                    for (UINT slot = 0; slot < views.size(); ++slot) {
+                        auto* view = views[slot];
+                        if (!view) continue;
+                        Microsoft::WRL::ComPtr<ID3D11Resource> resource;
+                        view->GetResource(&resource);
+                        if (resource.Get() == depth) {
+                            aliases_[stage][slot] = view;
+                            ID3D11ShaderResourceView* empty{};
+                            (context_->*setters_[stage])(slot, 1, &empty);
+                        } else view->Release();
+                    }
+                }
+            }
+            ~ScopedDepthAliases() noexcept
+            {
+                for (std::size_t stage = 0; stage < aliases_.size(); ++stage)
+                    for (UINT slot = 0; slot < aliases_[stage].size(); ++slot)
+                        if (auto* view = aliases_[stage][slot]) {
+                            (context_->*setters_[stage])(slot, 1, &view);
+                            view->Release();
+                        }
+            }
+            ScopedDepthAliases(const ScopedDepthAliases&) = delete;
+            ScopedDepthAliases& operator=(const ScopedDepthAliases&) = delete;
+        private:
+            inline static constexpr std::array setters_{
+                &ID3D11DeviceContext::VSSetShaderResources, &ID3D11DeviceContext::PSSetShaderResources,
+                &ID3D11DeviceContext::GSSetShaderResources, &ID3D11DeviceContext::HSSetShaderResources,
+                &ID3D11DeviceContext::DSSetShaderResources, &ID3D11DeviceContext::CSSetShaderResources};
+            ID3D11DeviceContext* context_{};
+            std::array<std::array<ID3D11ShaderResourceView*, D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT>, 6> aliases_{};
+        };
 
         class ScopedImageSpaceBindings final
         {
@@ -432,6 +483,11 @@ namespace csah::dlaa
         compositorConstants_.Reset();
         depthPreparationShader_.Reset();
         depthPreparationConstants_.Reset();
+        depthPublicationVertex_.Reset();
+        depthPublicationPixel_.Reset();
+        depthPublicationConstants_.Reset();
+        depthPublicationState_.Reset();
+        depthPublicationRaster_.Reset();
         motionRepairShader_.Reset();
         motionRepairConstants_.Reset();
         reactiveMaskShader_.Reset();
@@ -1539,6 +1595,7 @@ namespace csah::dlaa
 
     void Runtime::hardResetTemporalState(const char* reason) noexcept
     {
+        depthPublicationLogged_ = false;
         operational_.store(false, std::memory_order_release);
         nextResourceAttemptPostCall_ = 0;
         restoreDynamicResolutionIfOwned();
@@ -1742,6 +1799,95 @@ namespace csah::dlaa
         return true;
     }
 
+    bool Runtime::ensureDepthPublicationResources() noexcept
+    {
+        HRESULT result = S_OK;
+        if (!depthPublicationVertex_) result = device_->CreateVertexShader(
+            csah_upscaling_depth_vs, sizeof(csah_upscaling_depth_vs), nullptr, &depthPublicationVertex_);
+        if (SUCCEEDED(result) && !depthPublicationPixel_) result = device_->CreatePixelShader(
+            csah_upscaling_depth_ps, sizeof(csah_upscaling_depth_ps), nullptr, &depthPublicationPixel_);
+        if (SUCCEEDED(result) && !depthPublicationConstants_) {
+            D3D11_BUFFER_DESC description{};
+            description.ByteWidth = 16;
+            description.Usage = D3D11_USAGE_DEFAULT;
+            description.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+            result = device_->CreateBuffer(&description, nullptr, &depthPublicationConstants_);
+        }
+        if (SUCCEEDED(result) && !depthPublicationState_) {
+            D3D11_DEPTH_STENCIL_DESC description{};
+            description.DepthEnable = TRUE;
+            description.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ALL;
+            description.DepthFunc = D3D11_COMPARISON_ALWAYS;
+            description.FrontFace = description.BackFace = {
+                D3D11_STENCIL_OP_KEEP, D3D11_STENCIL_OP_KEEP,
+                D3D11_STENCIL_OP_KEEP, D3D11_COMPARISON_ALWAYS};
+            result = device_->CreateDepthStencilState(&description, &depthPublicationState_);
+        }
+        if (SUCCEEDED(result) && !depthPublicationRaster_) {
+            D3D11_RASTERIZER_DESC description{};
+            description.FillMode = D3D11_FILL_SOLID;
+            description.CullMode = D3D11_CULL_NONE;
+            description.DepthClipEnable = TRUE;
+            result = device_->CreateRasterizerState(&description, &depthPublicationRaster_);
+        }
+        if (SUCCEEDED(result) && depthPublicationOwner_ != qualifiedResources_.depth) {
+            D3D11_DEPTH_STENCIL_VIEW_DESC description{};
+            description.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
+            description.ViewDimension = D3D11_DSV_DIMENSION_TEXTURE2D;
+            description.Flags = D3D11_DSV_READ_ONLY_STENCIL;
+            Microsoft::WRL::ComPtr<ID3D11DepthStencilView> target;
+            result = device_->CreateDepthStencilView(qualifiedResources_.depth.Get(), &description, &target);
+            if (SUCCEEDED(result)) {
+                depthPublicationTarget_ = std::move(target);
+                depthPublicationOwner_ = qualifiedResources_.depth;
+            }
+        }
+        if (FAILED(result)) logging::error(
+            "Upscaling display-depth resource creation failed (HRESULT=0x{:08X}); the render-thread allocation retry remains active.",
+            static_cast<std::uint32_t>(result));
+        return SUCCEEDED(result);
+    }
+
+    void Runtime::publishNativeDepth() noexcept
+    {
+        // Late native draws retain a DSV to this texture and render display-
+        // resolution eye viewports. Updating the private NGX depth alone
+        // leaves their occlusion in the reduced-resolution layout. Publish
+        // raw native samples in place, retaining stencil and depth encoding.
+        ScopedDepthAliases aliases(context_.Get(), qualifiedResources_.depth.Get());
+        volumetric_lighting::StateScope restore(context_.Get());
+        const std::array<std::uint32_t, 4> extent{
+            qualifiedResources_.eyeWidth, qualifiedResources_.height,
+            evaluationGeometry_.inputWidth, evaluationGeometry_.inputHeight};
+        context_->UpdateSubresource(depthPublicationConstants_.Get(), 0, nullptr, extent.data(), 0, 0);
+        context_->SetPredication(nullptr, FALSE);
+        context_->IASetInputLayout(nullptr);
+        context_->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+        context_->HSSetShader(nullptr, nullptr, 0);
+        context_->DSSetShader(nullptr, nullptr, 0);
+        context_->GSSetShader(nullptr, nullptr, 0);
+        context_->VSSetShader(depthPublicationVertex_.Get(), nullptr, 0);
+        context_->PSSetShader(depthPublicationPixel_.Get(), nullptr, 0);
+        auto* constants = depthPublicationConstants_.Get();
+        context_->PSSetConstantBuffers(0, 1, &constants);
+        const std::array<ID3D11ShaderResourceView*, 2> sources{
+            eyeResources_[0].nativeDepthView.Get(), eyeResources_[1].nativeDepthView.Get()};
+        context_->PSSetShaderResources(0, 2, sources.data());
+        context_->OMSetRenderTargets(0, nullptr, depthPublicationTarget_.Get());
+        context_->OMSetDepthStencilState(depthPublicationState_.Get(), 0);
+        context_->OMSetBlendState(nullptr, nullptr, 0xFFFFFFFFu);
+        context_->RSSetState(depthPublicationRaster_.Get());
+        const D3D11_VIEWPORT viewport{0, 0, static_cast<float>(qualifiedResources_.packedWidth),
+            static_cast<float>(qualifiedResources_.height), 0, 1};
+        context_->RSSetViewports(1, &viewport);
+        context_->Draw(3, 0);
+        if (!std::exchange(depthPublicationLogged_, true)) logging::info(
+            "Upscaling published native stereo scene depth for late draws: {}x{} input per eye -> {}x{} display per eye; original depth texture={}, native depth ranges retained, stencil unchanged.",
+            evaluationGeometry_.inputWidth, evaluationGeometry_.inputHeight,
+            qualifiedResources_.eyeWidth, qualifiedResources_.height,
+            static_cast<const void*>(qualifiedResources_.depth.Get()));
+    }
+
     bool Runtime::ensureEyeResources(
         std::uint32_t inputWidth,
         std::uint32_t inputHeight,
@@ -1752,8 +1898,11 @@ namespace csah::dlaa
             inputHeight == 0 || outputWidth == 0 || outputHeight == 0) {
             return false;
         }
+        const auto publishDepth = isDlssMode(settings_.mode);
+        if (publishDepth && !ensureDepthPublicationResources()) return false;
         const auto ready = [=](const EyeResources& eye) noexcept {
             return eye.colorInput && eye.depthInput && eye.depthInputView && eye.depthOutput &&
+                (!publishDepth || (eye.nativeDepth && eye.nativeDepthView && eye.nativeDepthOutput)) &&
                 eye.motionInput && eye.motionInputView && eye.motionHistory &&
                 eye.motionHistoryView && eye.motionHistoryUav &&
                 eye.motionOutput && eye.motionOutputView &&
@@ -1875,6 +2024,10 @@ namespace csah::dlaa
                 !createInput(motionTemplate, eye.motionInput)) {
                 return false;
             }
+            if (publishDepth &&
+                (!createInput(depthTemplate, eye.nativeDepth, true) ||
+                 FAILED(device_->CreateShaderResourceView(eye.nativeDepth.Get(), nullptr, &eye.nativeDepthView)) ||
+                 FAILED(device_->CreateUnorderedAccessView(eye.nativeDepth.Get(), nullptr, &eye.nativeDepthOutput)))) return false;
             D3D11_SHADER_RESOURCE_VIEW_DESC depthViewDescription{};
             depthViewDescription.Format = DXGI_FORMAT_R32_FLOAT;
             depthViewDescription.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
@@ -2081,6 +2234,7 @@ namespace csah::dlaa
                     cameraFrame_.inverseFirstPersonProjection[eye]) : Float4{},
                 .farDepth = planes.inverted ? 0.0F : 1.0F,
                 .firstPersonProjectionAvailable = firstPersonAvailable ? 1U : 0U,
+                .nativeDepthOutputEnabled = destination.nativeDepthOutput ? 1U : 0U,
             };
             D3D11_MAPPED_SUBRESOURCE mappedDepth{};
             if (FAILED(context_->Map(depthPreparationConstants_.Get(), 0,
@@ -2093,16 +2247,17 @@ namespace csah::dlaa
             context_->Unmap(depthPreparationConstants_.Get(), 0);
             auto* depthBuffer = depthPreparationConstants_.Get();
             auto* depthSource = qualifiedResources_.depthView.Get();
-            auto* depthOutput = destination.depthOutput.Get();
+            std::array<ID3D11UnorderedAccessView*, 2> depthOutputs{
+                destination.depthOutput.Get(), destination.nativeDepthOutput.Get()};
             context_->CSSetShader(depthPreparationShader_.Get(), nullptr, 0);
             context_->CSSetConstantBuffers(0, 1, &depthBuffer);
             context_->CSSetShaderResources(0, 1, &depthSource);
-            context_->CSSetUnorderedAccessViews(0, 1, &depthOutput, nullptr);
+            context_->CSSetUnorderedAccessViews(0, 2, depthOutputs.data(), nullptr);
             context_->Dispatch((depthConstants.width + 7) / 8, (depthConstants.height + 7) / 8, 1);
             depthSource = nullptr;
-            depthOutput = nullptr;
+            depthOutputs.fill(nullptr);
             context_->CSSetShaderResources(0, 1, &depthSource);
-            context_->CSSetUnorderedAccessViews(0, 1, &depthOutput, nullptr);
+            context_->CSSetUnorderedAccessViews(0, 2, depthOutputs.data(), nullptr);
             context_->CopySubresourceRegion(
                 destination.motionInput.Get(),
                 0,
@@ -2869,6 +3024,7 @@ namespace csah::dlaa
                         nullptr);
                 }
             }
+            if (publicationSucceeded && isDlssMode(settings_.mode)) publishNativeDepth();
             if (!firstActiveColorComparisonQueued_.exchange(
                     true,
                     std::memory_order_relaxed)) {
@@ -2959,6 +3115,9 @@ namespace csah::dlaa
             releaseStreamlineDlaaResources();
         }
         qualifiedResources_ = {};
+        depthPublicationTarget_.Reset();
+        depthPublicationOwner_.Reset();
+        depthPublicationLogged_ = false;
         for (auto& eye : eyeResources_) {
             eye = {};
         }

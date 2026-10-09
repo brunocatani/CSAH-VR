@@ -1,5 +1,7 @@
 #include "Features/dlaa/DlaaRuntime.h"
 #include "D3D11AllocationFailure.h"
+#include "Features/volumetric_lighting/VolumetricStateScope.h"
+#include <d3dcompiler.h>
 #include <d3d11sdklayers.h>
 #include <filesystem>
 #include <fstream>
@@ -20,12 +22,21 @@ namespace
     float maximumJitterError{};
     unsigned verifiedInputModes{};
     bool stereoInputsCorrect{true};
+    bool publishedDepthCorrect{true};
+    bool panelOcclusionCorrect{true};
+    unsigned oldLayoutMismatchPixels{};
+    unsigned verifiedDepthModes{};
     bool verifyCapturedCamera{};
     bool capturedCameraCorrect{true};
     bool jitterPatternCorrect{true};
     unsigned jitterSample{};
     std::uint32_t nativeDepthAt(unsigned x, unsigned y)
-    { return std::uint32_t((0.2f + 0.004f*x + 0.001f*y)*16777215.0f); }
+    {
+        const auto value=(x%64>=16 && x%64<25 && y>=22 && y<42) ?
+            0.004f : 0.2f + 0.004f*x + 0.001f*y;
+        return std::uint32_t(value*16777215.0f);
+    }
+    std::uint32_t nativeStencilAt(unsigned x, unsigned y) { return ((x*5+y*7)&255u)<<24; }
     std::uint32_t nativeColorAt(unsigned x, unsigned y)
     { return 0x3c0u | (x<<11) | ((y*4u)<<22); }
     std::uint32_t nativeMotionAt(unsigned x, unsigned y)
@@ -89,7 +100,8 @@ namespace csah::dlaa
                     stereoInputsCorrect=stereoInputsCorrect && readable;
                     if (readable) for (unsigned y=0;y<h;++y) for (unsigned x=0;x<w;++x) {
                         const auto sx=eye*w+x;
-                        const auto expectedDepth=float(nativeDepthAt(sx,y))/16777215.0f*1.01f-0.01f;
+                        const auto rawDepth=float(nativeDepthAt(sx,y))/16777215.0f;
+                        const auto expectedDepth=rawDepth<=0.01f ? 1.0f : rawDepth*1.01f-0.01f;
                         const auto at=y*w+x;
                         stereoInputsCorrect=stereoInputsCorrect && color[at]==nativeColorAt(sx,y) &&
                             motion[at]==nativeMotionAt(sx,y) && std::abs(std::bit_cast<float>(depth[at])-expectedDepth)<0.000002f;
@@ -147,7 +159,7 @@ int main(int argc, char** argv)
         constexpr UINT width=128, height=64;
         std::vector<std::uint32_t> depthPixels(width*height),colorPixels(width*height),motionPixels(width*height);
         for (UINT y=0;y<height;++y) for (UINT x=0;x<width;++x) {
-            depthPixels[y*width+x]=nativeDepthAt(x,y);
+            depthPixels[y*width+x]=nativeDepthAt(x,y)|nativeStencilAt(x,y);
             colorPixels[y*width+x]=nativeColorAt(x,y);
             motionPixels[y*width+x]=nativeMotionAt(x,y);
         }
@@ -166,6 +178,8 @@ int main(int argc, char** argv)
         auto output=texture(DXGI_FORMAT_R8G8B8A8_UNORM,colorFlags); // No UAV flag is needed for copy destination.
         auto motion=texture(DXGI_FORMAT_R16G16_FLOAT,colorFlags);
         auto depth=texture(DXGI_FORMAT_R24G8_TYPELESS,D3D11_BIND_DEPTH_STENCIL|D3D11_BIND_SHADER_RESOURCE,depthPixels.data());
+        auto nativeFrameDepth=texture(DXGI_FORMAT_R24G8_TYPELESS,D3D11_BIND_SHADER_RESOURCE,depthPixels.data());
+        auto publishedDepthCopy=texture(DXGI_FORMAT_R24G8_TYPELESS,D3D11_BIND_SHADER_RESOURCE);
         ComPtr<ID3D11RenderTargetView> sceneTarget,maskTarget,outputTarget,motionTarget;
         require(SUCCEEDED(device->CreateRenderTargetView(scene.Get(),nullptr,&sceneTarget)) &&
             SUCCEEDED(device->CreateRenderTargetView(mask.Get(),nullptr,&maskTarget)) &&
@@ -185,6 +199,59 @@ int main(int argc, char** argv)
         dsv.Format=DXGI_FORMAT_D24_UNORM_S8_UINT; dsv.ViewDimension=D3D11_DSV_DIMENSION_TEXTURE2D;
         ComPtr<ID3D11DepthStencilView> depthTarget;
         require(SUCCEEDED(device->CreateDepthStencilView(depth.Get(),&dsv,&depthTarget)), "DSV failed");
+        // Hold this view before publication, as the UI framework does. The
+        // producer must update its underlying texture, not replace a pointer
+        // that late consumers have already retained.
+        dsv.Flags=D3D11_DSV_READ_ONLY_DEPTH|D3D11_DSV_READ_ONLY_STENCIL;
+        ComPtr<ID3D11DepthStencilView> panelDepth;
+        require(SUCCEEDED(device->CreateDepthStencilView(depth.Get(),&dsv,&panelDepth)),"panel depth view failed");
+        const char* panelShader=R"(
+            float4 VS(uint id : SV_VertexID) : SV_Position {
+                float2 uv=float2((id<<1)&2,id&2);
+                return float4(uv*float2(2,-2)+float2(-1,1),0.54321,1);
+            }
+            float4 PS() : SV_Target { return 1; }
+        )";
+        auto compilePanel=[&](const char* entry,const char* profile) {
+            ComPtr<ID3DBlob> shader,errors;
+            const auto result=D3DCompile(panelShader,std::strlen(panelShader),"panel-depth-test",nullptr,nullptr,
+                entry,profile,D3DCOMPILE_OPTIMIZATION_LEVEL3,0,&shader,&errors);
+            require(SUCCEEDED(result),"panel shader compilation failed");
+            return shader;
+        };
+        const auto panelVsCode=compilePanel("VS","vs_5_0"),panelPsCode=compilePanel("PS","ps_5_0");
+        ComPtr<ID3D11VertexShader> panelVs;
+        ComPtr<ID3D11PixelShader> panelPs;
+        require(SUCCEEDED(device->CreateVertexShader(panelVsCode->GetBufferPointer(),panelVsCode->GetBufferSize(),nullptr,&panelVs)) &&
+            SUCCEEDED(device->CreatePixelShader(panelPsCode->GetBufferPointer(),panelPsCode->GetBufferSize(),nullptr,&panelPs)),"panel shaders failed");
+        D3D11_DEPTH_STENCIL_DESC panelDescription{};
+        panelDescription.DepthEnable=TRUE; panelDescription.DepthFunc=D3D11_COMPARISON_LESS_EQUAL;
+        panelDescription.DepthWriteMask=D3D11_DEPTH_WRITE_MASK_ZERO;
+        ComPtr<ID3D11DepthStencilState> panelState;
+        require(SUCCEEDED(device->CreateDepthStencilState(&panelDescription,&panelState)),"panel depth state failed");
+        D3D11_RASTERIZER_DESC panelRasterDescription{};
+        panelRasterDescription.FillMode=D3D11_FILL_SOLID; panelRasterDescription.CullMode=D3D11_CULL_NONE;
+        panelRasterDescription.DepthClipEnable=TRUE;
+        ComPtr<ID3D11RasterizerState> panelRaster;
+        require(SUCCEEDED(device->CreateRasterizerState(&panelRasterDescription,&panelRaster)),"panel raster state failed");
+        auto panelPixels=[&] {
+            csah::volumetric_lighting::StateScope restore(context.Get());
+            context->ClearRenderTargetView(outputTarget.Get(),black);
+            context->SetPredication(nullptr,FALSE);
+            context->IASetInputLayout(nullptr); context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+            context->VSSetShader(panelVs.Get(),nullptr,0); context->PSSetShader(panelPs.Get(),nullptr,0);
+            context->GSSetShader(nullptr,nullptr,0); context->HSSetShader(nullptr,nullptr,0); context->DSSetShader(nullptr,nullptr,0);
+            auto* target=outputTarget.Get(); context->OMSetRenderTargets(1,&target,panelDepth.Get());
+            context->OMSetDepthStencilState(panelState.Get(),0); context->OMSetBlendState(nullptr,nullptr,0xffffffffu);
+            context->RSSetState(panelRaster.Get());
+            for (unsigned eye=0;eye<2;++eye) {
+                const D3D11_VIEWPORT vp{float(eye*width/2),0,float(width/2),float(height),0,1};
+                context->RSSetViewports(1,&vp); context->Draw(3,0);
+            }
+            std::vector<std::uint32_t> pixels;
+            require(readInput(context.Get(),output.Get(),width,height,pixels),"panel image readback failed");
+            return pixels;
+        };
         ComPtr<ID3D11Buffer> cameraBuffer;
         D3D11_BUFFER_DESC cb{}; cb.ByteWidth=sizeof(camera); cb.BindFlags=D3D11_BIND_CONSTANT_BUFFER;
         cb.Usage=D3D11_USAGE_DYNAMIC; cb.CPUAccessFlags=D3D11_CPU_ACCESS_WRITE;
@@ -201,6 +268,10 @@ int main(int argc, char** argv)
             context->OMSetRenderTargets(2,targets,nullptr);
             ID3D11ShaderResourceView* views[]{sceneView.Get(),nullptr,motionView.Get(),depthView.Get()};
             context->PSSetShaderResources(0,4,views);
+            auto* alias=depthView.Get();
+            context->VSSetShaderResources(11,1,&alias);
+            context->PSSetShaderResources(7,1,&alias);
+            context->CSSetShaderResources(9,1,&alias);
         };
         bindPost(true);
         for (unsigned i=0;i<61;++i) runtime.onPostImageSpace();
@@ -210,6 +281,10 @@ int main(int argc, char** argv)
         auto frame=[&](bool validViewport=true) {
             float jitterX{},jitterY{};
             runtime.onPreRender(manager.data(),&jitterX,&jitterY);
+            // The engine produces fresh depth every frame. The immutable
+            // fixture supplies that input independently of late publication.
+            context->OMSetRenderTargets(0,nullptr,nullptr);
+            context->CopyResource(depth.Get(),nativeFrameDepth.Get());
             if (verifyTemporal) {
                 float scaleX{},scaleY{};
                 std::memcpy(&scaleX,manager.data()+0x1664,4);
@@ -252,7 +327,50 @@ int main(int argc, char** argv)
             runtime.onMapSucceeded(context.Get(),cameraPtr,0,D3D11_MAP_WRITE_DISCARD,mapped);
             runtime.onBeforeUnmap(context.Get(),cameraPtr,0); context->Unmap(cameraPtr,0);
             runtime.onWorldCompositeDraw(context.Get());
-            bindPost(validViewport); runtime.onPostImageSpace();
+            bindPost(validViewport);
+            const auto previousCommits=runtime.snapshot().committedFrames;
+            runtime.onPostImageSpace();
+            const auto published=runtime.snapshot();
+            ComPtr<ID3D11ShaderResourceView> vertexAlias,pixelAlias,computeAlias;
+            context->VSGetShaderResources(11,1,&vertexAlias);
+            context->PSGetShaderResources(7,1,&pixelAlias);
+            context->CSGetShaderResources(9,1,&computeAlias);
+            require(vertexAlias.Get()==depthView.Get() && pixelAlias.Get()==depthView.Get() && computeAlias.Get()==depthView.Get(),
+                "native depth publication lost an existing shader-resource binding");
+            if (verifyTemporal && published.committedFrames>previousCommits &&
+                (verifiedDepthModes & (1u<<unsigned(settings.mode)))==0) {
+                std::vector<std::uint32_t> displayed;
+                require(readInput(context.Get(),depth.Get(),width,height,displayed),"published scene depth unreadable");
+                const auto panel=panelPixels();
+                // Negative control: the old implementation left the original
+                // reduced layout behind after publishing full-size color.
+                context->CopyResource(publishedDepthCopy.Get(),depth.Get());
+                context->CopyResource(depth.Get(),nativeFrameDepth.Get());
+                const auto oldPanel=panelPixels();
+                context->CopyResource(depth.Get(),publishedDepthCopy.Get());
+                unsigned oldMismatches{};
+                for (UINT y=0;y<height;++y) for (UINT x=0;x<width;++x) {
+                    const auto eye=x/(width/2), local=x%(width/2);
+                    const auto sx=eye*published.inputWidth+UINT((float(local)+0.5f)*published.inputWidth/(width/2));
+                    const auto sy=UINT((float(y)+0.5f)*published.inputHeight/height);
+                    const auto actual=displayed[y*width+x];
+                    const auto expected=nativeDepthAt(sx,sy);
+                    publishedDepthCorrect=publishedDepthCorrect &&
+                        std::abs(int(actual&0xffffffu)-int(expected))<=1 &&
+                        (actual&0xff000000u)==nativeStencilAt(x,y);
+                    const auto visible=float(expected)/16777215.0f>=0.54321f;
+                    panelOcclusionCorrect=panelOcclusionCorrect && (panel[y*width+x]!=0)==visible;
+                    oldMismatches += (oldPanel[y*width+x]!=0)!=visible;
+                }
+                require(oldMismatches>0,"old low-resolution depth did not reproduce incorrect panel occlusion");
+                oldLayoutMismatchPixels+=oldMismatches;
+                verifiedDepthModes |= 1u<<unsigned(settings.mode);
+            }
+            if (verifyCapturedCamera) {
+                std::vector<std::uint32_t> unchanged;
+                require(readInput(context.Get(),depth.Get(),width,height,unchanged) && unchanged==depthPixels,
+                    "native/center DLAA changed the game's native depth or stencil");
+            }
         };
         for (unsigned i=0;i<4;++i) frame();
         require(runtime.snapshot().operational && runtime.snapshot().committedFrames>0,
@@ -289,6 +407,11 @@ int main(int argc, char** argv)
         std::cout<<"Maximum per-eye jitter declaration error: "<<maximumJitterError<<" pixels\n";
         require(temporalConsistent,"DLSS declared jitter differs from the native stereo rasterization");
         require(verifiedInputModes==0x1e && stereoInputsCorrect,"scaled stereo color/depth/motion inputs disagree");
+        require(verifiedDepthModes==0x1e && publishedDepthCorrect,
+            "late full-resolution panel still sees reduced-resolution weapon depth or damaged stencil");
+        require(panelOcclusionCorrect,"late panel rasterization has ghost occlusion holes");
+        std::cout<<"Old depth layout produced "<<oldLayoutMismatchPixels
+            <<" wrong panel pixels across four modes; corrected layout produced zero.\n";
         require(jitterPatternCorrect,"native camera did not rasterize the requested per-eye sample pattern");
         verifyTemporal=false; verifyCapturedCamera=true; camera=recordedCamera;
         for (const auto mode : {Mode::dlaa,Mode::centerDlaa}) {
@@ -302,7 +425,7 @@ int main(int argc, char** argv)
             if (message->Severity<=D3D11_MESSAGE_SEVERITY_ERROR) throw std::runtime_error(message->pDescription);
         }
         runtime.onDeviceCreated(nullptr,nullptr); context->ClearState();
-        std::cout<<"Real upscaler recovery, four scaled stereo inputs, and recorded-camera jitter passed on "
+        std::cout<<"Real upscaler recovery, stereo inputs, native depth publication, late panel occlusion, and camera jitter passed on "
             <<(hardware ? "hardware" : "WARP")<<"; vendor evaluation substituted.\n";
         return 0;
     } catch (const std::exception& e) { std::cerr<<e.what()<<'\n'; return 1; }

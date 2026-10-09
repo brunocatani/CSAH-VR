@@ -13,7 +13,7 @@ namespace csah::render
         float farDepth{1.0F};
         std::uint32_t rawProbe{};
         std::uint32_t firstPersonProjectionAvailable{};
-        std::uint32_t padding{};
+        std::uint32_t nativeDepthOutputEnabled{};
     };
     static_assert(sizeof(DepthPreparationConstants) == 80);
 
