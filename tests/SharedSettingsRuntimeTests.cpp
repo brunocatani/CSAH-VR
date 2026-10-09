@@ -154,6 +154,7 @@ int main(int argumentCount, char** arguments)
         "Skylighting diff");
 
     verifyLive([](Snapshot& value) { value.lodBlending.terrainBrightness=1.5f; }, "LOD matching live settings diff");
+    verifyLive([](Snapshot& value) { value.terrainVariation.enabled=true; }, "Terrain variation live settings diff");
     auto native = baseline;
     native.nativeShadows.directionalShadowDistance += 250.0f;
     const auto nativeChanges = diff(baseline, native);

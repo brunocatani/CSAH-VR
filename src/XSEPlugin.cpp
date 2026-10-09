@@ -2,6 +2,7 @@
 
 #include "Features/basic_wetness/BasicWetnessRuntime.h"
 #include "Features/lod_blending/LodBlendingRuntime.h"
+#include "Features/terrain_variation/TerrainVariationRuntime.h"
 #include "Features/lod_blending/LodBlendingSettingsStore.h"
 #include "Features/basic_wetness/BasicWetnessSettingsStore.h"
 #include "Features/bloom_glare/BloomGlareRuntime.h"
@@ -418,6 +419,7 @@ extern "C" __declspec(dllexport) bool F4SEAPI F4SEPlugin_Load(
             csah::hair_specular::loadSettings();
         const auto subsurfaceScatteringSettings =
             csah::subsurface_scattering::loadSettings();
+        const auto terrainVariationSettings=csah::terrain_variation::loadSettings();
         const auto lodBlendingSettings = csah::lod_blending::loadSettings();
         const auto basicWetnessSettings =
             csah::basic_wetness::loadSettings();
@@ -466,6 +468,7 @@ extern "C" __declspec(dllexport) bool F4SEAPI F4SEPlugin_Load(
         csah::subsurface_scattering::Runtime::get().applySettings(
             subsurfaceScatteringSettings);
         csah::lod_blending::Runtime::get().applySettings(lodBlendingSettings);
+        csah::terrain_variation::Runtime::get().applySettings(terrainVariationSettings);
         csah::basic_wetness::Runtime::get().applySettings(
             basicWetnessSettings);
         csah::pbr::Runtime::get().applySettings(pbrSettings);

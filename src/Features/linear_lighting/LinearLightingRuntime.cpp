@@ -1,5 +1,6 @@
 #include "Features/linear_lighting/LinearLightingRuntime.h"
 #include "Features/lod_blending/LodBlendingRuntime.h"
+#include "Features/terrain_variation/TerrainVariationRuntime.h"
 
 #include "Features/complex_materials/ComplexParallaxModel.h"
 #include "Features/complex_materials/ComplexEnvironmentMaterialModel.h"
@@ -1890,7 +1891,7 @@ namespace csah::linear_lighting
                 std::memory_order_release);
         }
         if (!requested ||
-            (!linearLightingEnabled && !complexParallaxActive && !lod_blending::Runtime::get().requested()) ||
+            (!linearLightingEnabled && !complexParallaxActive && !lod_blending::Runtime::get().requested() && !terrain_variation::Runtime::get().requested()) ||
             !gpuResourcesReady_.load(std::memory_order_acquire)) {
             inactiveShaderSelections_.fetch_add(1, std::memory_order_relaxed);
             return { requested, {} };
@@ -1991,7 +1992,7 @@ namespace csah::linear_lighting
             }
 
             if (!linearLightingEnabled && !useComplexParallax &&
-                !useComplexEnvironment && !lod_blending::Runtime::get().requested()) {
+                !useComplexEnvironment && !lod_blending::Runtime::get().requested() && !terrain_variation::Runtime::get().requested()) {
                 inactiveShaderSelections_.fetch_add(
                     1, std::memory_order_relaxed);
                 return { requested, {} };
@@ -2227,7 +2228,7 @@ namespace csah::linear_lighting
     bool Runtime::replacementFeaturesEnabled() noexcept
     {
         applyQueuedSettingsForRenderBoundary();
-        return lod_blending::Runtime::get().requested() || enabled_.load(std::memory_order_acquire) ||
+        return terrain_variation::Runtime::get().requested() || lod_blending::Runtime::get().requested() || enabled_.load(std::memory_order_acquire) ||
             pbrMaterialsEnabled_.load(std::memory_order_acquire) ||
             (complexParallaxEnabled_.load(std::memory_order_acquire) &&
                 complexParallaxResourcesReady_.load(

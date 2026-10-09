@@ -249,6 +249,46 @@
       "label": "Tuning",
       "pages": [
         {
+          "id": "terrain-variation-tuning",
+          "label": "Terrain Variation",
+          "groups": [
+            {
+              "id": "terrain-sampling",
+              "label": "Texture Repetition",
+              "controls": [
+                {
+                  "id": "terrain-variation",
+                  "type": "toggle",
+                  "label": "Terrain Variation",
+                  "help": "Blends shifted terrain texture samples to reduce visible repetition.",
+                  "default": false,
+                  "binding": {
+                    "type": "ini",
+                    "root": "documents",
+                    "path": "Mods_Config/CSAH/CSAH.ini",
+                    "section": "TerrainVariation",
+                    "key": "bEnabled"
+                  }
+                },
+                {
+                  "id": "terrain-variation-lod",
+                  "type": "toggle",
+                  "label": "Include Distant Terrain",
+                  "help": "Also varies the distant terrain colour texture and its transition blend.",
+                  "default": true,
+                  "binding": {
+                    "type": "ini",
+                    "root": "documents",
+                    "path": "Mods_Config/CSAH/CSAH.ini",
+                    "section": "TerrainVariation",
+                    "key": "bEnableLOD"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
           "id": "lod-matching-tuning",
           "label": "LOD Matching",
           "groups": [

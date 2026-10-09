@@ -146,6 +146,8 @@ struct PSOutput
 #endif
 };
 
+static StochasticOffsets terrainOffsets;
+
 #if LINEAR_LIGHTING_COMPLEX_PARALLAX
 float4 NormalizeLandscapeWeights(float4 weights)
 {
@@ -165,8 +167,8 @@ float BlendedParallaxDepth(
     float activeWeight = 0.0;
 #define ACCUMULATE_ARRAY_PARALLAX_HEIGHT(Weight, Slice) \
     [branch] if ((Weight) > 0.0) { \
-        weightedHeight += (Weight) * TexSpecularLayers.SampleGrad( \
-            Samp2, float3(uv, float(Slice)), gradientX, gradientY).a; \
+        weightedHeight += (Weight) * SampleVariedTerrain(TexSpecularLayers, \
+            Samp2, float3(uv, float(Slice)), gradientX, gradientY, terrainOffsets, true, true).a; \
         activeWeight += (Weight); \
     }
     ACCUMULATE_ARRAY_PARALLAX_HEIGHT(weights.x, indices.specular0);
@@ -189,8 +191,8 @@ float BlendedParallaxDepth(
     float activeWeight = 0.0;
 #define ACCUMULATE_PARALLAX_HEIGHT(Weight, Texture, Sampler) \
     [branch] if ((Weight) > 0.0) { \
-        weightedHeight += (Weight) * Texture.SampleGrad( \
-            Sampler, uv, gradientX, gradientY).a; \
+        weightedHeight += (Weight) * SampleVariedTerrain(Texture, \
+            Sampler, uv, gradientX, gradientY, terrainOffsets, true, true).a; \
         activeWeight += (Weight); \
     }
     ACCUMULATE_PARALLAX_HEIGHT(weights.x, TexSpecular0, Samp8);
@@ -343,10 +345,11 @@ PSOutput PSMain(PSInput input)
         input.currentPosition.w,
         input.previousPosition.w);
 
-#if LINEAR_LIGHTING_COMPLEX_PARALLAX
     const float2 gradientX = ddx(baseUv);
     const float2 gradientY = ddy(baseUv);
-#endif
+    terrainOffsets=(StochasticOffsets)0;
+    if(TerrainVariationParameters[0].x>0.5)
+        terrainOffsets=ComputeStochasticOffsets(input.lodMultiplierUv*0.5);
 
 #if LINEAR_LIGHTING_INSTANCED_LANDSCAPE
     const LandscapeLayerIndices layerIndices =
@@ -362,13 +365,13 @@ PSOutput PSMain(PSInput input)
         input, baseUv, gradientX, gradientY);
 #endif
 #define LANDSCAPE_SAMPLE_2D(Texture, Sampler, Uv) \
-    Texture.SampleGrad(Sampler, Uv, gradientX, gradientY)
+    SampleVariedTerrain(Texture, Sampler, Uv, gradientX, gradientY, terrainOffsets, true, false)
 #define LANDSCAPE_SAMPLE_ARRAY(Texture, Sampler, Uv) \
-    Texture.SampleGrad(Sampler, Uv, gradientX, gradientY)
+    SampleVariedTerrain(Texture, Sampler, Uv, gradientX, gradientY, terrainOffsets, true, false)
 #else
     const float2 uv = baseUv;
-#define LANDSCAPE_SAMPLE_2D(Texture, Sampler, Uv) Texture.Sample(Sampler, Uv)
-#define LANDSCAPE_SAMPLE_ARRAY(Texture, Sampler, Uv) Texture.Sample(Sampler, Uv)
+#define LANDSCAPE_SAMPLE_2D(Texture, Sampler, Uv) SampleVariedTerrain(Texture, Sampler, Uv, gradientX, gradientY, terrainOffsets, false, false)
+#define LANDSCAPE_SAMPLE_ARRAY(Texture, Sampler, Uv) SampleVariedTerrain(Texture, Sampler, Uv, gradientX, gradientY, terrainOffsets, false, false)
 #endif
 
     float3 diffuse = 0.0;
@@ -460,13 +463,13 @@ PSOutput PSMain(PSInput input)
             SampLandscapeLodDiffuse,
             landscapeLodBase * 0.00025).xyz * 3.777778) - 2.006;
 #if LINEAR_LIGHTING_INSTANCED_LANDSCAPE
-    const float3 lodMultiplier = AdjustLodAlbedo(TexLodMultiplierLayers.Sample(
+    const float3 lodMultiplier = AdjustLodAlbedo(SampleVariedLod(TexLodMultiplierLayers,
         Samp3,
         float3(
             input.lodMultiplierUv,
             float(layerIndices.lodTextureSlice))),true).xyz;
 #else
-    const float3 lodMultiplier = AdjustLodAlbedo(TexLodMultiplier.Sample(
+    const float3 lodMultiplier = AdjustLodAlbedo(SampleVariedLod(TexLodMultiplier,
         SampLodMultiplier, input.lodMultiplierUv),true).xyz;
 #endif
     diffuse = lerp(

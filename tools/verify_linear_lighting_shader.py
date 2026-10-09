@@ -1006,6 +1006,10 @@ def verify(root: Path) -> None:
     parity_source = root / "tests" / "LinearLightingShaderParityTests.cpp"
     generator = root / "tools" / "generate_linear_lighting_runtime_contracts.py"
     manifest_path, contracts = load_contracts(root)
+    from generate_surface_classification_shaders import material_contracts, surface_variants
+    material_inventory=material_contracts(root)
+    material_classes=surface_variants(root,material_inventory)[2]
+    classes_by_name={contract.name:cls.class_code for contract,cls in zip(material_inventory,material_classes,strict=True)}
     complex_environment_contracts, _ = build_inventory(root)
     complex_environment_names = {
         contract.name for contract in complex_environment_contracts
@@ -1189,6 +1193,7 @@ def verify(root: Path) -> None:
     fxc = find_fxc()
     with tempfile.TemporaryDirectory(prefix="fo4vr-cs-ll-") as temporary:
         temp = Path(temporary)
+        verify_terrain_uv_producers(root,fxc,temp)
         for index, contract in enumerate(contracts):
             label = str(contract["label"])
             source = contract["source"]
@@ -1439,6 +1444,18 @@ def verify(root: Path) -> None:
                     f"{label} replacement constant buffers differ from vanilla: "
                     f"{candidate_buffers!r} != {original['constant_buffers']!r}"
                 )
+            if label == "LandscapeFourLayerSixMrt_L3_00000023":
+                # A declared-but-unused input becomes live. All three native
+                # VS producers are verified above; no interface is invented.
+                extra=set(candidate["inputs"])-set(original["inputs"])
+                if extra not in (set(), {"linear v7.xy"}):
+                    fail("base terrain gained an unverified pixel input")
+                candidate["inputs"]=[value for value in candidate["inputs"] if value not in extra]
+                original_uv=[row for row in original["input_signature"] if row[0]=="TEXCOORD" and row[1]==6]
+                candidate_uv=[row for row in candidate["input_signature"] if row[0]=="TEXCOORD" and row[1]==6]
+                if len(original_uv)!=1 or len(candidate_uv)!=1 or original_uv[0][:-1]!=candidate_uv[0][:-1]:
+                    fail("base terrain TEXCOORD6 signature changed")
+                candidate["input_signature"]=[original_uv[0] if row==candidate_uv[0] else row for row in candidate["input_signature"]]
             for key in (
                 "samplers",
                 "textures",
@@ -1453,9 +1470,41 @@ def verify(root: Path) -> None:
                 fail(f"{label} original shader occupies the private LOD parameter slot")
             if re.search(r"dcl_resource_.*\bt55\b", candidate_assembly) and "dcl_resource_buffer (float,float,float,float) t55" not in candidate_assembly:
                 fail(f"{label} LOD parameter transport changed")
+            if re.search(r"dcl_resource_.*\bt56\b", vanilla_assembly):
+                fail(f"{label} original occupies the terrain-variation parameter slot")
+            if re.search(r"dcl_resource_.*\bt56\b", candidate_assembly) and "dcl_resource_buffer (float,float,float,float) t56" not in candidate_assembly:
+                fail(f"{label} terrain-variation parameter transport changed")
+            if re.search(r"dcl_resource_.*\bt56\b", candidate_assembly) and classes_by_name[label]!=4:
+                fail(f"{label} terrain sampler is outside the classified terrain draw scope")
             validate_frame_reflection(candidate_assembly)
 
     print(f"Linear Lighting shader contracts verified: {len(contracts)}")
+
+
+def verify_terrain_uv_producers(root: Path, fxc: Path, temporary: Path) -> None:
+    # Native base, LOD-blended and instanced terrain all already write the
+    # camera-independent TEXCOORD6 UV. The base PS formerly left it unused.
+    import census_linear_lighting_fxp as census
+    expected = {0x0000003B, 0x0200003B, 0x0A00003B}
+    observed = set()
+    for shader in census.parse_fxp((root / "Shaders012_VR.fxp").read_bytes()).containers:
+        if shader.family != "DFPrepass" or shader.stage != "VS" or shader.key not in expected:
+            continue
+        binary=temporary / f"terrain-vs-{shader.key:x}.dxbc"
+        assembly=temporary / f"terrain-vs-{shader.key:x}.asm"
+        binary.write_bytes(shader.data)
+        run_fxc(fxc,["/dumpbin","/Fc",str(assembly),str(binary)])
+        text=assembly.read_text(encoding="utf-8")
+        signature=text.partition("// Output signature:")[2].partition("vs_5_0")[0]
+        rows=[line[2:].split() for line in signature.splitlines() if line.startswith("//")]
+        uv=[row for row in rows if len(row)==7 and row[0]=="TEXCOORD" and row[1]=="6"]
+        if len(uv)!=1 or uv[0][2]!="xy" or uv[0][5]!="float" or uv[0][6]!="xy":
+            fail(f"native terrain VS {shader.key:x} does not produce the required UV")
+        if f"dcl_output o{uv[0][3]}.xy" not in text:
+            fail(f"native terrain VS {shader.key:x} lost its UV output declaration")
+        observed.add(shader.key)
+    if observed!=expected:
+        fail("native terrain vertex-producer coverage changed")
 
 
 def main() -> int:

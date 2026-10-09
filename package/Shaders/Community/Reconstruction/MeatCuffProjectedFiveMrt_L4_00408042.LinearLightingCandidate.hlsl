@@ -196,7 +196,7 @@ PSOutput PSMain(PSInput input)
         input.currentPosition.w,
         input.previousPosition.w);
 #endif
-    const float4 baseDiffuseSample = AdjustMaterialLodAlbedo(TexDiffuse.Sample(SampDiffuse, baseUv));
+    const float4 baseDiffuseSample = AdjustMaterialLodAlbedo(SampleMaterialTerrainLod(TexDiffuse,SampDiffuse, baseUv));
     const float3 baseNormalSample = TexNormal.Sample(SampNormal, baseUv).xyz;
     const float2 baseSpecularSample = TexSpecular.Sample(
         SampSpecular, baseUv).xy;

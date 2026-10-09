@@ -37,7 +37,11 @@ namespace csah::lod_blending
     }
     ScopedBindings::ScopedBindings(ID3D11DeviceContext* context,ID3D11ShaderResourceView* parameters) noexcept:context_(context)
     {
-        if(context_) {context_->PSGetShaderResources(55,1,&previous_);context_->PSSetShaderResources(55,1,&parameters);}
+        if(context_) {
+            context_->PSGetShaderResources(55,1,&previous_);
+            if(previous_.Get()==parameters) {context_=nullptr;return;}
+            context_->PSSetShaderResources(55,1,&parameters);
+        }
     }
     ScopedBindings::~ScopedBindings() {if(context_) {auto* prior=previous_.Get();context_->PSSetShaderResources(55,1,&prior);}}
     Runtime& Runtime::get() noexcept {static Runtime value;return value;}

@@ -318,7 +318,7 @@ PSOutput PSMain(PSInput input)
         clip(LINEAR_LIGHTING_PROJECTED_ALPHA_MASK.x - additionalAlpha);
     }
 #endif
-    float4 diffuse = AdjustMaterialLodAlbedo(TexDiffuse.Sample(SampDiffuse, uv));
+    float4 diffuse = AdjustMaterialLodAlbedo(SampleMaterialTerrainLod(TexDiffuse,SampDiffuse, uv));
 #if LINEAR_LIGHTING_VERTEX_COLOR
 #if LINEAR_LIGHTING_HAIR
 #if LINEAR_LIGHTING_VERTEX_ALPHA

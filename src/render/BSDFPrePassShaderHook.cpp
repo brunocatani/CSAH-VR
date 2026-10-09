@@ -132,6 +132,7 @@ namespace csah::render
         constexpr std::uint32_t kSurfaceClassificationConsumer = 1u << 3;
         constexpr std::uint32_t kAuthoredPbrConsumer = 1u << 4;
         constexpr std::uint32_t kLodBlendingConsumer = 1u << 5;
+        constexpr std::uint32_t kTerrainVariationConsumer = 1u << 6;
         std::atomic_uint32_t descriptorConsumerMask{};
         std::atomic_bool authoredPbrEnabled{};
         std::atomic_uint32_t authoredPbrPointerFailureMask{};
@@ -602,6 +603,11 @@ namespace csah::render
     void setDFPrePassSurfaceClassificationEnabled(bool enabled) noexcept
     {
         setDescriptorConsumer(kSurfaceClassificationConsumer, enabled);
+    }
+
+    void setDFPrePassTerrainVariationEnabled(bool enabled) noexcept
+    {
+        setDescriptorConsumer(kTerrainVariationConsumer,enabled);
     }
 
     void setDFPrePassLodBlendingEnabled(bool enabled) noexcept

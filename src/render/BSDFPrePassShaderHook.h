@@ -29,6 +29,7 @@ namespace csah::render
     void setDFPrePassComplexEnvironmentEnabled(bool enabled) noexcept;
     void setDFPrePassIblEnabled(bool enabled) noexcept;
     void setDFPrePassSurfaceClassificationEnabled(bool enabled) noexcept;
+    void setDFPrePassTerrainVariationEnabled(bool enabled) noexcept;
     void setDFPrePassLodBlendingEnabled(bool enabled) noexcept;
     void setDFPrePassAuthoredPbrEnabled(bool enabled) noexcept;
 

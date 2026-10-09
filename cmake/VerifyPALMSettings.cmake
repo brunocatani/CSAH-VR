@@ -74,9 +74,9 @@ foreach(tabIndex RANGE 0 ${lastTab})
   endforeach()
 endforeach()
 
-if(NOT controlCount EQUAL 147)
+if(NOT controlCount EQUAL 149)
   message(FATAL_ERROR
-    "CSAH PALM settings coverage changed: expected 147 controls, found ${controlCount}")
+    "CSAH PALM settings coverage changed: expected 149 controls, found ${controlCount}")
 endif()
 
 foreach(required IN ITEMS
@@ -104,7 +104,7 @@ foreach(required IN ITEMS
     quality precipitation native-shadows-enabled shadow-distance mode
     center-width stereo-sun-occlusion directional-diagnostic
     gpu-profiling-mode lod-matching lod-terrain-brightness lod-terrain-gamma
-    lod-object-brightness lod-object-gamma)
+    lod-object-brightness lod-object-gamma terrain-variation terrain-variation-lod)
   list(FIND controlIds "${required}" controlIndex)
   if(controlIndex EQUAL -1)
     message(FATAL_ERROR
@@ -133,6 +133,7 @@ foreach(required IN ITEMS
     "subsurface_scattering::Runtime::get().applySettings"
     "basic_wetness::Runtime::get().applySettings"
     "lod_blending::Runtime::get().applySettings"
+    "terrain_variation::Runtime::get().applySettings"
     "pbr::Runtime::get().applySettings"
     "volumetric_lighting::Runtime::get().start"
     "bloom_glare::Runtime::get().applySettings"
@@ -158,6 +159,7 @@ foreach(required IN ITEMS
     "subsurface_scattering::Runtime::get().applySettings"
     "basic_wetness::Runtime::get().applySettings"
     "lod_blending::Runtime::get().applySettings"
+    "terrain_variation::Runtime::get().applySettings"
     "pbr::Runtime::get().applySettings"
     "cloud_shadows::Runtime::get().applySettings"
     "volumetric_lighting::Runtime::get().applySettings"
@@ -232,4 +234,4 @@ foreach(relativePath IN ITEMS
 endforeach()
 
 message(STATUS
-  "Verified PALM settings ownership: 147 shared-INI controls, direct runtime publication, no wrist provider or assets")
+  "Verified PALM settings ownership: 149 shared-INI controls, direct runtime publication, no wrist provider or assets")

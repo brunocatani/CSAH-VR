@@ -2,6 +2,7 @@
 
 #include "Features/basic_wetness/BasicWetnessRuntime.h"
 #include "Features/lod_blending/LodBlendingRuntime.h"
+#include "Features/terrain_variation/TerrainVariationRuntime.h"
 #include "Features/bloom_glare/BloomGlareRuntime.h"
 #include "Features/cloud_shadows/CloudShadowRuntime.h"
 #include "Features/contact_shadows/ContactShadowRuntime.h"
@@ -3631,6 +3632,9 @@ namespace csah::render
                     activeReplacementBinding.family ==
                         linear_lighting::ReplacementShaderFamily::
                             dFLightAmbient);
+            const auto terrainBindings=terrain_variation::Runtime::get().scopeDraw(context,
+                activeReplacementBinding.family==linear_lighting::ReplacementShaderFamily::material &&
+                activeSurfaceClassCode==static_cast<std::uint32_t>(surface_classification::SurfaceClassCode::terrain));
             const auto lodBindings=lod_blending::Runtime::get().scopeDraw(context,
                 activeReplacementBinding.family==linear_lighting::ReplacementShaderFamily::material);
             const auto skylightingVisibility = skylighting::Runtime::get().scopeVisibilityDraw(
@@ -3724,6 +3728,9 @@ namespace csah::render
                     activeReplacementBinding.family ==
                         linear_lighting::ReplacementShaderFamily::
                             dFLightAmbient);
+            const auto terrainBindings=terrain_variation::Runtime::get().scopeDraw(context,
+                activeReplacementBinding.family==linear_lighting::ReplacementShaderFamily::material &&
+                activeSurfaceClassCode==static_cast<std::uint32_t>(surface_classification::SurfaceClassCode::terrain));
             const auto lodBindings=lod_blending::Runtime::get().scopeDraw(context,
                 activeReplacementBinding.family==linear_lighting::ReplacementShaderFamily::material);
             const auto skylightingVisibility = skylighting::Runtime::get().scopeVisibilityDraw(
@@ -3829,6 +3836,9 @@ namespace csah::render
                     activeReplacementBinding.family ==
                         linear_lighting::ReplacementShaderFamily::
                             dFLightAmbient);
+            const auto terrainBindings=terrain_variation::Runtime::get().scopeDraw(context,
+                activeReplacementBinding.family==linear_lighting::ReplacementShaderFamily::material &&
+                activeSurfaceClassCode==static_cast<std::uint32_t>(surface_classification::SurfaceClassCode::terrain));
             const auto lodBindings=lod_blending::Runtime::get().scopeDraw(context,
                 activeReplacementBinding.family==linear_lighting::ReplacementShaderFamily::material);
             const auto skylightingVisibility = skylighting::Runtime::get().scopeVisibilityDraw(
@@ -3936,6 +3946,9 @@ namespace csah::render
                     activeReplacementBinding.family ==
                         linear_lighting::ReplacementShaderFamily::
                             dFLightAmbient);
+            const auto terrainBindings=terrain_variation::Runtime::get().scopeDraw(context,
+                activeReplacementBinding.family==linear_lighting::ReplacementShaderFamily::material &&
+                activeSurfaceClassCode==static_cast<std::uint32_t>(surface_classification::SurfaceClassCode::terrain));
             const auto lodBindings=lod_blending::Runtime::get().scopeDraw(context,
                 activeReplacementBinding.family==linear_lighting::ReplacementShaderFamily::material);
             const auto skylightingVisibility = skylighting::Runtime::get().scopeVisibilityDraw(
@@ -4680,6 +4693,7 @@ namespace csah::render
                 *device,
                 *immediateContext);
             lod_blending::Runtime::get().onDeviceCreated(*device, *immediateContext);
+            terrain_variation::Runtime::get().onDeviceCreated(*device, *immediateContext);
             basic_wetness::Runtime::get().onDeviceCreated(
                 *device,
                 *immediateContext);

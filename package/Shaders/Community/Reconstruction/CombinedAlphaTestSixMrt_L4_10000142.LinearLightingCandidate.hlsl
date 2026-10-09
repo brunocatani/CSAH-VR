@@ -170,7 +170,7 @@ PSOutput PSMain(PSInput input)
     const CombinedMaterialData material =
         CombinedMaterials[input.materialIndex];
     const float3 textureSlices = float3(material.textureSlices.xyz);
-    const float4 diffuseSample = AdjustMaterialLodAlbedo(TexDiffuse.Sample(
+    const float4 diffuseSample = AdjustMaterialLodAlbedo(SampleMaterialTerrainLod(TexDiffuse,
         SampDiffuse,
         float3(uv, textureSlices.x)));
 

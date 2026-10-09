@@ -2112,6 +2112,7 @@ add_custom_command(
     "${COMPLEX_PARALLAX_HLSL_SOURCE}"
     "${ROOT_DIR}/package/Shaders/Community/LinearLighting/LinearLighting.hlsli"
     "${ROOT_DIR}/package/Shaders/Community/LODBlending/LODBlending.hlsli"
+    "${ROOT_DIR}/package/Shaders/Community/TerrainVariation/TerrainVariation.hlsli"
   COMMENT "Compiling combined base landscape complex parallax"
   VERBATIM)
 
@@ -2131,6 +2132,7 @@ add_custom_command(
     "${COMPLEX_PARALLAX_HLSL_SOURCE}"
     "${ROOT_DIR}/package/Shaders/Community/LinearLighting/LinearLighting.hlsli"
     "${ROOT_DIR}/package/Shaders/Community/LODBlending/LODBlending.hlsli"
+    "${ROOT_DIR}/package/Shaders/Community/TerrainVariation/TerrainVariation.hlsli"
   COMMENT "Compiling combined LOD landscape complex parallax"
   VERBATIM)
 
@@ -2153,6 +2155,7 @@ add_custom_command(
     "${COMPLEX_PARALLAX_HLSL_SOURCE}"
     "${ROOT_DIR}/package/Shaders/Community/LinearLighting/LinearLighting.hlsli"
     "${ROOT_DIR}/package/Shaders/Community/LODBlending/LODBlending.hlsli"
+    "${ROOT_DIR}/package/Shaders/Community/TerrainVariation/TerrainVariation.hlsli"
   COMMENT "Compiling combined instanced LOD landscape complex parallax"
   VERBATIM)
 
@@ -2174,6 +2177,7 @@ add_custom_command(
     "${COMPLEX_PARALLAX_HLSL_SOURCE}"
     "${ROOT_DIR}/package/Shaders/Community/LinearLighting/LinearLighting.hlsli"
     "${ROOT_DIR}/package/Shaders/Community/LODBlending/LODBlending.hlsli"
+    "${ROOT_DIR}/package/Shaders/Community/TerrainVariation/TerrainVariation.hlsli"
   COMMENT "Compiling classified base landscape complex parallax"
   VERBATIM)
 
@@ -2196,6 +2200,7 @@ add_custom_command(
     "${COMPLEX_PARALLAX_HLSL_SOURCE}"
     "${ROOT_DIR}/package/Shaders/Community/LinearLighting/LinearLighting.hlsli"
     "${ROOT_DIR}/package/Shaders/Community/LODBlending/LODBlending.hlsli"
+    "${ROOT_DIR}/package/Shaders/Community/TerrainVariation/TerrainVariation.hlsli"
   COMMENT "Compiling classified LOD landscape complex parallax"
   VERBATIM)
 
@@ -2219,6 +2224,7 @@ add_custom_command(
     "${COMPLEX_PARALLAX_HLSL_SOURCE}"
     "${ROOT_DIR}/package/Shaders/Community/LinearLighting/LinearLighting.hlsli"
     "${ROOT_DIR}/package/Shaders/Community/LODBlending/LODBlending.hlsli"
+    "${ROOT_DIR}/package/Shaders/Community/TerrainVariation/TerrainVariation.hlsli"
   COMMENT "Compiling classified instanced LOD landscape complex parallax"
   VERBATIM)
 
@@ -2270,6 +2276,10 @@ target_compile_options(CSAHCore PRIVATE
 )
 
 add_library(${PROJECT_NAME} SHARED
+  "${SOURCE_DIR}/Features/terrain_variation/TerrainVariationRuntime.cpp"
+  "${SOURCE_DIR}/Features/terrain_variation/TerrainVariationRuntime.h"
+  "${SOURCE_DIR}/Features/terrain_variation/TerrainVariationSettings.cpp"
+  "${SOURCE_DIR}/Features/terrain_variation/TerrainVariationSettings.h"
   "${SOURCE_DIR}/Features/lod_blending/LodBlendingRuntime.cpp"
   "${SOURCE_DIR}/Features/lod_blending/LodBlendingRuntime.h"
   "${SOURCE_DIR}/Features/lod_blending/LodBlendingSettings.h"
@@ -3371,6 +3381,15 @@ if(BUILD_CSAH_TESTS)
     CommonLibF4::CommonLibF4 d3d11 dxguid shell32 spdlog::spdlog)
   add_test(NAME CSAH.IblEnvironmentUpdater
     COMMAND CSAHIblEnvironmentUpdaterTests "${ROOT_DIR}")
+
+  add_executable(CSAHTerrainVariationTests "${ROOT_DIR}/tests/TerrainVariationTests.cpp"
+    "${SOURCE_DIR}/Features/terrain_variation/TerrainVariationRuntime.cpp")
+  target_compile_features(CSAHTerrainVariationTests PRIVATE cxx_std_23)
+  target_compile_definitions(CSAHTerrainVariationTests PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_include_directories(CSAHTerrainVariationTests PRIVATE "${SOURCE_DIR}")
+  target_precompile_headers(CSAHTerrainVariationTests PRIVATE "${SOURCE_DIR}/PCH.h")
+  target_link_libraries(CSAHTerrainVariationTests PRIVATE CommonLibF4::CommonLibF4 d3d11 d3dcompiler spdlog::spdlog)
+  add_test(NAME CSAH.TerrainVariation COMMAND CSAHTerrainVariationTests "${ROOT_DIR}")
 
   add_executable(CSAHLodBlendingTests "${ROOT_DIR}/tests/LodBlendingTests.cpp"
     "${SOURCE_DIR}/Features/lod_blending/LodBlendingRuntime.cpp")

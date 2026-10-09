@@ -383,7 +383,7 @@ PSOutput PSMain(PSInput input)
     }
 #endif
 #if LINEAR_LIGHTING_ALPHA_TEST
-    float4 diffuseSample = AdjustMaterialLodAlbedo(TexDiffuse.Sample(SampDiffuse, uv));
+    float4 diffuseSample = AdjustMaterialLodAlbedo(SampleMaterialTerrainLod(TexDiffuse,SampDiffuse, uv));
     float alpha = diffuseSample.w;
 #if LINEAR_LIGHTING_VERTEX_ALPHA
     alpha *= input.vertexColor.w;
@@ -394,7 +394,7 @@ PSOutput PSMain(PSInput input)
 #if LINEAR_LIGHTING_ALPHA_TEST
     float gradientRemapSource = diffuseSample.y;
 #else
-    float gradientRemapSource = AdjustMaterialLodAlbedo(TexDiffuse.Sample(SampDiffuse, uv)).y;
+    float gradientRemapSource = AdjustMaterialLodAlbedo(SampleMaterialTerrainLod(TexDiffuse,SampDiffuse, uv)).y;
 #endif
     float gradientRemapRow = cb2[2].x;
 #if LINEAR_LIGHTING_VERTEX_COLOR
@@ -408,7 +408,7 @@ PSOutput PSMain(PSInput input)
 #elif LINEAR_LIGHTING_ALPHA_TEST
     float3 diffuse = diffuseSample.xyz;
 #else
-    float3 diffuse = AdjustMaterialLodAlbedo(TexDiffuse.Sample(SampDiffuse, uv)).xyz;
+    float3 diffuse = AdjustMaterialLodAlbedo(SampleMaterialTerrainLod(TexDiffuse,SampDiffuse, uv)).xyz;
 #endif
 #if LINEAR_LIGHTING_LANDSCAPE_LOD
     float2 landscapeLodBase = input.landscapeLodCoordinates + cb0[0].zw;
