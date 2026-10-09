@@ -227,7 +227,6 @@ namespace csah::dlaa
         void restoreDynamicResolutionIfOwned() noexcept;
         [[nodiscard]] bool validateCameraFrame(
             const Fo4VrFrameBuffer& frame) const noexcept;
-        void logCameraSnapshot(const Fo4VrFrameBuffer& frame, const char* boundary) const noexcept;
 
         Settings settings_{};
         Microsoft::WRL::ComPtr<ID3D11Device> device_;
@@ -236,7 +235,6 @@ namespace csah::dlaa
         Fo4VrFrameBuffer cameraFrame_{};
         render::WorldCameraCapture worldCameraCapture_;
         bool worldCameraDiagnosticLogged_{};
-        bool postCameraDiagnosticLogged_{};
         bool missingWorldCameraLogged_{};
         std::atomic_bool qualificationResetRequested_{};
         QualifiedResources qualifiedResources_{};

@@ -12,7 +12,8 @@ namespace csah::render
         CameraVector firstPersonToWorldW;
         float farDepth{1.0F};
         std::uint32_t rawProbe{};
-        std::array<float, 2> padding{};
+        std::uint32_t firstPersonProjectionAvailable{};
+        std::uint32_t padding{};
     };
     static_assert(sizeof(DepthPreparationConstants) == 80);
 

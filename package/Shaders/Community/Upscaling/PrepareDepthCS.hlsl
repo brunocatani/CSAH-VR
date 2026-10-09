@@ -12,7 +12,8 @@ cbuffer DepthPreparationConstants : register(b0)
     float4 FirstPersonToWorldW;
     float FarDepth;
     uint RawProbe;
-    float2 Padding;
+    uint FirstPersonProjectionAvailable;
+    uint Padding;
 };
 
 [numthreads(8, 8, 1)]
@@ -38,10 +39,14 @@ void main(uint3 id : SV_DispatchThreadID)
         result = Fo4VrProjectionDepth(nativeDepth);
         if (Fo4VrFirstPersonDepth(nativeDepth))
         {
-            const float2 uv = (float2(id.xy) + 0.5f) * LocalUvScaleBias.xy + LocalUvScaleBias.zw;
-            const float4 clip = float4(uv * float2(2, -2) + float2(-1, 1), result, 1);
-            const float denominator = dot(FirstPersonToWorldW, clip);
-            result = abs(denominator) > 1e-8f ? dot(FirstPersonToWorldZ, clip) / denominator : FarDepth;
+            result = FarDepth;
+            if (FirstPersonProjectionAvailable != 0)
+            {
+                const float2 uv = (float2(id.xy) + 0.5f) * LocalUvScaleBias.xy + LocalUvScaleBias.zw;
+                const float4 clip = float4(uv * float2(2, -2) + float2(-1, 1), Fo4VrProjectionDepth(nativeDepth), 1);
+                const float denominator = dot(FirstPersonToWorldW, clip);
+                result = abs(denominator) > 1e-8f ? dot(FirstPersonToWorldZ, clip) / denominator : FarDepth;
+            }
         }
     }
     WorldProjectionDepth[id.xy] = isfinite(result) ? saturate(result) : FarDepth;

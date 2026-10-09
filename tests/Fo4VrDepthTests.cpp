@@ -10,9 +10,11 @@
 #include <cstring>
 #include <chrono>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <limits>
 #include <stdexcept>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -41,6 +43,24 @@ namespace
             CameraVector{0, 0, 0, 1}, CameraVector{0, 0, 1 / p[2].w, -p[2].z / p[2].w}};
     }
 
+    csah::render::Fo4VrFrameBuffer recordedWorldCamera(const std::filesystem::path& root)
+    {
+        std::ifstream stream(root / "tests/fixtures/fo4vr_world_camera_without_first_person.txt");
+        require(stream.good(), "recorded world camera fixture missing");
+        std::array<CameraVector, csah::render::kFo4VrCameraRows> rows{};
+        std::string word;
+        std::size_t count{};
+        while (stream >> word) {
+            if (word.starts_with('#')) { std::getline(stream, word); continue; }
+            require(count < rows.size() * 4, "recorded camera has excess components");
+            reinterpret_cast<float*>(rows.data())[count++] = std::stof(word);
+        }
+        require(count == rows.size() * 4, "recorded camera is truncated");
+        csah::render::Fo4VrFrameBuffer frame{};
+        std::memcpy(&frame, rows.data(), sizeof(frame));
+        return frame;
+    }
+
     void temporalCameraTests(ID3D11Device* device)
     {
         csah::render::Fo4VrFrameBuffer validFrame{};
@@ -53,12 +73,21 @@ namespace
             // Native origin writes fill xyz only. Padding must not reject a camera.
             validFrame.currentEyePosition[eye].w = std::numeric_limits<float>::quiet_NaN();
         }
-        require(csah::dlaa::inspectCamera(validFrame).valid(), "valid native perspective rejected by camera diagnostics");
+        require(csah::dlaa::inspectCamera(validFrame).worldValid(), "valid native perspective rejected by camera diagnostics");
         auto malformed = validFrame;
         malformed.inverseFirstPersonProjection[1][2].x = std::numeric_limits<float>::quiet_NaN();
         auto report = csah::dlaa::inspectCamera(malformed);
         require(report.eyeFailures[0] == 0 && report.eyeFailures[1] == csah::dlaa::firstPersonInverseNonfinite,
             "first-person inverse failure was not distinguished from world projection");
+        require(report.worldValid() && report.firstPersonAvailable(0) && !report.firstPersonAvailable(1),
+            "an unavailable first-person eye incorrectly disabled valid world rendering");
+        malformed = validFrame;
+        malformed.inverseFirstPersonProjection[0] = {};
+        report = csah::dlaa::inspectCamera(malformed);
+        require(report.worldValid() && !report.firstPersonAvailable(0), "empty optional inverse was treated as available");
+        malformed = validFrame;
+        malformed.inverseProjection[0][0].x = std::numeric_limits<float>::quiet_NaN();
+        require(!csah::dlaa::inspectCamera(malformed).worldValid(), "invalid required world inverse was accepted");
         malformed = validFrame;
         malformed.projection[0][3].z = 0;
         report = csah::dlaa::inspectCamera(malformed);
@@ -109,7 +138,7 @@ namespace
         require(capture.confirm(world.Get(), 11, published) && published.currentEyePosition[0].x == 456,
             "next world frame did not replace its camera");
         capture.observe(world.Get(), malformed, 12);
-        require(capture.confirm(world.Get(), 12, published) && !csah::dlaa::inspectCamera(published).valid(),
+        require(capture.confirm(world.Get(), 12, published) && !csah::dlaa::inspectCamera(published).worldValid(),
             "raw rejected upload was unavailable for world-boundary diagnostics");
         capture.reset();
         require(!capture.confirm(world.Get(), 11, published), "session reset retained a camera candidate");
@@ -239,6 +268,16 @@ namespace
 
     void run(const std::filesystem::path& root, bool hardware)
     {
+        const auto captured = recordedWorldCamera(root);
+        require(csah::dlaa::inspectCamera(captured).worldValid(),
+            "recorded valid world camera blocked by unavailable first-person matrices");
+        require(!csah::dlaa::inspectCamera(captured).firstPersonAvailable(0) &&
+            !csah::dlaa::inspectCamera(captured).firstPersonAvailable(1), "recorded NaN inverse incorrectly became available");
+        for (const auto& eyeProjection : captured.projection) {
+            const auto planes = csah::render::projectionPlanes(eyeProjection);
+            require(planes.valid && std::abs(planes.nearPlane - 5.0F) < 0.001F && planes.farPlane > 300000,
+                "recorded native world projection no longer decodes");
+        }
         std::array<CameraVector, 85> rows{};
         rows[59].x = 123; rows[60].x = 456; rows[61].x = 789; rows[62].x = 1011;
         for (std::size_t i = 77; i < rows.size(); ++i) rows[i].x = std::numeric_limits<float>::quiet_NaN();
@@ -299,14 +338,15 @@ namespace
         ComPtr<ID3D11Buffer> constants;
         require(SUCCEEDED(device->CreateBuffer(&bd, nullptr, &constants)), "depth constants failed");
 
-        for (UINT eye = 0; eye < 2; ++eye) for (const auto inverted : {false, true}) {
+        for (UINT eye = 0; eye < 2; ++eye) for (const auto inverted : {false, true})
+            for (const auto firstPersonAvailable : {false, true}) {
             const auto world = projection(1.0F + eye, 1000.0F + eye * 500, inverted);
             const auto firstPerson = projection(4.0F + eye * 4, 2000);
-            const auto inverse = inverseProjection(firstPerson);
+            const auto inverse = firstPersonAvailable ? inverseProjection(firstPerson) : captured.inverseFirstPersonProjection[eye];
             const DepthPreparationConstants cb{width, height, eye * eyeWidth + 1, 2,
                 {1.0F / eyeWidth, 1.0F / sourceHeight, 1.0F / eyeWidth, 2.0F / sourceHeight},
                 csah::render::rowThroughMatrix(world[2], inverse), csah::render::rowThroughMatrix(world[3], inverse),
-                inverted ? 0.0F : 1.0F, {}};
+                inverted ? 0.0F : 1.0F, 0, firstPersonAvailable ? 1U : 0U, 0};
             context->UpdateSubresource(constants.Get(), 0, nullptr, &cb, 0, 0);
             auto* input = sourceView.Get(); auto* destination = outputView.Get(); auto* buffer = constants.Get();
             context->CSSetShader(shader.Get(), nullptr, 0);
@@ -324,8 +364,10 @@ namespace
                 double expected = cb.farDepth;
                 if (depth > 0) {
                     if (depth <= 0.01F) {
-                        const double z = firstPerson[2].w / (double(depth) * 100 - firstPerson[2].z);
-                        expected = world[2].z + world[2].w / z;
+                        if (firstPersonAvailable) {
+                            const double z = firstPerson[2].w / (double(depth) * 100 - firstPerson[2].z);
+                            expected = world[2].z + world[2].w / z;
+                        }
                     } else expected = double(depth) * 1.01 - 0.01;
                 }
                 expected = std::clamp(expected, 0.0, 1.0);

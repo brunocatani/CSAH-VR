@@ -445,7 +445,7 @@ namespace csah::dlaa
         cameraBufferQualified_.store(false, std::memory_order_release);
         cameraBuffer_.Reset();
         worldCameraCapture_.reset();
-        worldCameraDiagnosticLogged_ = postCameraDiagnosticLogged_ = missingWorldCameraLogged_ = false;
+        worldCameraDiagnosticLogged_ = missingWorldCameraLogged_ = false;
         pendingCameraMap = {};
         cameraBufferIdentity_.store(nullptr, std::memory_order_release);
         qualificationProbes_ = {};
@@ -527,7 +527,7 @@ namespace csah::dlaa
         if (!qualificationResetRequested_.exchange(false, std::memory_order_acq_rel)) return;
         const auto hardResetOnLoad = settings_.hardResetOnLoad;
         worldCameraCapture_.reset();
-        worldCameraDiagnosticLogged_ = postCameraDiagnosticLogged_ = missingWorldCameraLogged_ = false;
+        worldCameraDiagnosticLogged_ = missingWorldCameraLogged_ = false;
         pendingCameraMap = {};
         cameraBufferQualified_.store(false, std::memory_order_release);
         restoreDynamicResolutionIfOwned();
@@ -711,11 +711,13 @@ namespace csah::dlaa
             resetHistory_ = true;
             return;
         }
-        if (!worldCameraDiagnosticLogged_ && sceneContentObserved_ && motionContentObserved_) {
-            worldCameraDiagnosticLogged_ = true;
-            logCameraSnapshot(candidate, "world-composite");
-        }
-        if (!validateCameraFrame(candidate)) {
+        const auto validation = inspectCamera(candidate);
+        if (!validation.worldValid()) {
+            if (!worldCameraDiagnosticLogged_) {
+                worldCameraDiagnosticLogged_ = true;
+                logging::warn("DLAA rejected required world-camera data at the world draw (eyeFailures=[0x{:03X},0x{:03X}]); optional first-person inverses do not gate world rendering.",
+                    validation.eyeFailures[0], validation.eyeFailures[1]);
+            }
             cameraBufferQualified_.store(false, std::memory_order_release);
             operational_.store(false, std::memory_order_release);
             resetHistory_ = true;
@@ -726,29 +728,16 @@ namespace csah::dlaa
         cameraBufferQualified_.store(true, std::memory_order_release);
         if (!firstCameraQualifiedLogged_.exchange(true, std::memory_order_relaxed)) {
             const auto planes = render::projectionPlanes(cameraFrame_.projection[0]);
-            logging::info("DLAA confirmed the stereo camera at the world composite ({}x{}, near={}, far={}, inverted={}).",
-                description.Width, description.Height, planes.nearPlane, planes.farPlane, planes.inverted);
+            logging::info("DLAA confirmed the stereo world camera ({}x{}, near={}, far={}, inverted={}, optionalFirstPersonAvailable=[{},{}]).",
+                description.Width, description.Height, planes.nearPlane, planes.farPlane, planes.inverted,
+                validation.firstPersonAvailable(0), validation.firstPersonAvailable(1));
         }
     }
 
     bool Runtime::validateCameraFrame(
         const Fo4VrFrameBuffer& frame) const noexcept
     {
-        return inspectCamera(frame).valid();
-    }
-
-    void Runtime::logCameraSnapshot(const Fo4VrFrameBuffer& frame, const char* boundary) const noexcept
-    {
-        const auto report = inspectCamera(frame);
-        logging::info("DLAA camera diagnostic [{}]: eyeFailures=[0x{:03X},0x{:03X}]; bits: planes=001, projectionNonfinite=002, projectionEmpty=004, inverseNonfinite=008, inverseEmpty=010, firstPersonInverseNonfinite=020, currentHistoryNonfinite=040, previousHistoryNonfinite=080, originNonfinite=100.",
-            boundary, report.eyeFailures[0], report.eyeFailures[1]);
-        const auto rows = std::bit_cast<std::array<render::CameraVector, render::kFo4VrCameraRows>>(frame);
-        // Two bounded snapshots per world session: selected world camera and
-        // the later post-image-space upload. Preserve raw values for replay;
-        // rejecting a map alone cannot identify which camera/pass wrote it.
-        for (std::size_t row = 0; row < rows.size(); ++row)
-            logging::info("DLAA camera diagnostic [{}] b12[{}]=({:.9g},{:.9g},{:.9g},{:.9g}).",
-                boundary, row, rows[row].x, rows[row].y, rows[row].z, rows[row].w);
+        return inspectCamera(frame).worldValid();
     }
 
     void Runtime::onPreRender(
@@ -893,13 +882,6 @@ namespace csah::dlaa
         }
         if (!cameraBufferQualified_.load(std::memory_order_acquire)) {
             captureCameraBinding();
-        }
-        if (!postCameraDiagnosticLogged_ && cameraBuffer_ && sceneContentObserved_ && motionContentObserved_) {
-            Fo4VrFrameBuffer candidate{};
-            if (worldCameraCapture_.confirm(cameraBuffer_.Get(), postCall - 1, candidate)) {
-                postCameraDiagnosticLogged_ = true;
-                logCameraSnapshot(candidate, "post-image-space");
-            }
         }
         consumeQualificationProbes();
         if (!renderResourcesQualified_.load(std::memory_order_acquire) &&
@@ -2205,6 +2187,7 @@ namespace csah::dlaa
             !reactiveMaskShader_ || !reactiveMaskConstants_) {
             return false;
         }
+        const auto cameraValidation = inspectCamera(cameraFrame_);
         const auto sourceTop = settings_.mode == Mode::centerDlaa ?
             evaluationGeometry_.center.top : 0u;
         for (std::uint32_t eye = 0; eye < eyeResources_.size(); ++eye) {
@@ -2238,6 +2221,7 @@ namespace csah::dlaa
                 &sourceRegion);
             const auto planes = render::projectionPlanes(cameraFrame_.projection[eye]);
             if (!planes.valid) return false;
+            const auto firstPersonAvailable = cameraValidation.firstPersonAvailable(eye);
             render::DepthPreparationConstants depthConstants{
                 .width = evaluationGeometry_.inputWidth,
                 .height = evaluationGeometry_.inputHeight,
@@ -2248,11 +2232,12 @@ namespace csah::dlaa
                     static_cast<float>(evaluationGeometry_.center.left) / qualifiedResources_.eyeWidth,
                     static_cast<float>(sourceTop) / qualifiedResources_.height} : Float4{
                     1.0F / evaluationGeometry_.inputWidth, 1.0F / evaluationGeometry_.inputHeight, 0, 0},
-                .firstPersonToWorldZ = render::rowThroughMatrix(cameraFrame_.projection[eye][2],
-                    cameraFrame_.inverseFirstPersonProjection[eye]),
-                .firstPersonToWorldW = render::rowThroughMatrix(cameraFrame_.projection[eye][3],
-                    cameraFrame_.inverseFirstPersonProjection[eye]),
+                .firstPersonToWorldZ = firstPersonAvailable ? render::rowThroughMatrix(cameraFrame_.projection[eye][2],
+                    cameraFrame_.inverseFirstPersonProjection[eye]) : Float4{},
+                .firstPersonToWorldW = firstPersonAvailable ? render::rowThroughMatrix(cameraFrame_.projection[eye][3],
+                    cameraFrame_.inverseFirstPersonProjection[eye]) : Float4{},
                 .farDepth = planes.inverted ? 0.0F : 1.0F,
+                .firstPersonProjectionAvailable = firstPersonAvailable ? 1U : 0U,
             };
             D3D11_MAPPED_SUBRESOURCE mappedDepth{};
             if (FAILED(context_->Map(depthPreparationConstants_.Get(), 0,

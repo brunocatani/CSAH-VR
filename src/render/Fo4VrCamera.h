@@ -28,6 +28,8 @@ namespace csah::render
         CameraMatrix inverseView;
         std::array<CameraMatrix, 2> inverseViewProjection;
         std::array<CameraMatrix, 2> inverseProjection;
+        // Optional native first-person data; both matrices can be NaN during
+        // a valid VR world frame. Do not make world rendering depend on them.
         std::array<CameraMatrix, 2> inverseFirstPersonProjection;
         // Copied from global shader state by 141D93910, not from the camera
         // frustum. Derive clip planes from projection instead of these rows.

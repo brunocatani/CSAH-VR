@@ -15,12 +15,21 @@ namespace csah::dlaa
         currentHistoryNonfinite = 0x040,
         previousHistoryNonfinite = 0x080,
         eyeOriginNonfinite = 0x100,
+        firstPersonInverseEmpty = 0x200,
     };
 
     struct CameraValidation
     {
         std::array<std::uint32_t, 2> eyeFailures{};
-        [[nodiscard]] bool valid() const noexcept { return eyeFailures[0] == 0 && eyeFailures[1] == 0; }
+        static constexpr std::uint32_t optionalFirstPersonFailures =
+            firstPersonInverseNonfinite | firstPersonInverseEmpty;
+        // The native VR renderer can upload NaN first-person inverses while
+        // every world-camera field is valid. These rows are only consumed by
+        // the reserved first-person depth range, never by world qualification.
+        [[nodiscard]] bool worldValid() const noexcept
+        { return ((eyeFailures[0] | eyeFailures[1]) & ~optionalFirstPersonFailures) == 0; }
+        [[nodiscard]] bool firstPersonAvailable(std::size_t eye) const noexcept
+        { return eye < eyeFailures.size() && (eyeFailures[eye] & optionalFirstPersonFailures) == 0; }
     };
 
     [[nodiscard]] inline CameraValidation inspectCamera(const render::Fo4VrFrameBuffer& frame) noexcept
@@ -45,6 +54,7 @@ namespace csah::dlaa
             if (!finite(frame.inverseProjection[eye])) failures |= inverseProjectionNonfinite;
             if (!nonempty(frame.inverseProjection[eye])) failures |= inverseProjectionEmpty;
             if (!finite(frame.inverseFirstPersonProjection[eye])) failures |= firstPersonInverseNonfinite;
+            else if (!nonempty(frame.inverseFirstPersonProjection[eye])) failures |= firstPersonInverseEmpty;
             if (!finite(frame.viewProjectionUnjittered[eye])) failures |= currentHistoryNonfinite;
             if (!finite(frame.previousViewProjectionUnjittered[eye])) failures |= previousHistoryNonfinite;
             const auto& position = frame.currentEyePosition[eye];
