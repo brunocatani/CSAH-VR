@@ -100,21 +100,10 @@ foreach(required IN ITEMS
     "D3D11_MAP_FLAG_DO_NOT_WAIT"
     "DLAA qualification motion readback"
     "DLAA qualification depth readback"
-    "DLAA post-boundary pixel-shader identity"
-    "kExpectedTaaShaderBytecodeSize = 7116"
-    "0x7B8698FD6048E067ull"
-    "0x14E0F980u"
-    "0xC22E90E5u"
-    "0x6326C5EEu"
-    "0xEEC9586Bu"
     "DXGI_FORMAT_R11G11B10_FLOAT"
     "DXGI_FORMAT_R8G8B8A8_UNORM"
     "DXGI_FORMAT_R16G16_FLOAT"
     "DXGI_FORMAT_R24G8_TYPELESS"
-    "sceneContentObserved_"
-    "outputContentObserved_"
-    "motionContentObserved_"
-    "depthContentObserved_"
     "lastValidCameraPostCall_"
     "kDynamicResolutionWidthOffset"
     "kDynamicResolutionHeightOffset"
@@ -160,7 +149,6 @@ foreach(required IN ITEMS
     "resolveTaaMaskView("
     "DXGI_FORMAT_R8_UNORM"
     "biasCurrentColorUav"
-    "kMaximumQualificationProbeAttempts = 5"
     "kQualificationProbeFrameCadence = 60"
     "Qualification is passive resource discovery"
     "Upscaling re-armed passive TAA resource qualification"
@@ -183,7 +171,7 @@ foreach(required IN ITEMS
   string(FIND "${runtime}" "${required}" found)
   if(found EQUAL -1)
     message(FATAL_ERROR
-      "DLAA fail-closed qualification regression: missing '${required}'")
+      "DLAA rendering integration regression: missing '${required}'")
   endif()
 endforeach()
 
@@ -393,11 +381,6 @@ foreach(required IN ITEMS
   endif()
 endforeach()
 
-string(FIND "${renderer}" "dlaa::Runtime::get().onPixelShaderCreated" shader_identity)
-if(shader_identity EQUAL -1)
-  message(FATAL_ERROR
-    "DLAA post-boundary shader identity registration disappeared")
-endif()
 
 string(FIND "${renderer}" "HRESULT WINAPI hookCreateDeviceAndSwapChain(" hook_start)
 string(FIND "${renderer}" "dlaa::initializeStreamlineBeforeDevice()" init_pos)

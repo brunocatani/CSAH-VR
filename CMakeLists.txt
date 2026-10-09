@@ -3315,6 +3315,18 @@ if(BUILD_CSAH_TESTS)
   target_link_libraries(CSAHSkylightingResourceTests PRIVATE CommonLibF4::CommonLibF4 d3d11 dxguid shell32 spdlog::spdlog)
   add_test(NAME CSAH.SkylightingResources COMMAND CSAHSkylightingResourceTests)
 
+  add_executable(CSAHUpscalingRecoveryTests
+    "${ROOT_DIR}/tests/UpscalingRecoveryTests.cpp"
+    "${SOURCE_DIR}/Features/dlaa/DlaaRuntime.cpp"
+    "${IBL_COMPUTE_STATE_SCOPE_SOURCE}")
+  add_dependencies(CSAHUpscalingRecoveryTests UpscalingShaders)
+  target_compile_features(CSAHUpscalingRecoveryTests PRIVATE cxx_std_23)
+  target_compile_definitions(CSAHUpscalingRecoveryTests PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_include_directories(CSAHUpscalingRecoveryTests PRIVATE "${SOURCE_DIR}" "${DLAA_GENERATED_DIR}")
+  target_precompile_headers(CSAHUpscalingRecoveryTests PRIVATE "${SOURCE_DIR}/PCH.h")
+  target_link_libraries(CSAHUpscalingRecoveryTests PRIVATE CommonLibF4::CommonLibF4 d3d11 dxguid spdlog::spdlog)
+  add_test(NAME CSAH.UpscalingRecovery COMMAND CSAHUpscalingRecoveryTests "${ROOT_DIR}")
+
   add_executable(CSAHFo4VrDepthTests "${ROOT_DIR}/tests/Fo4VrDepthTests.cpp")
   target_compile_features(CSAHFo4VrDepthTests PRIVATE cxx_std_23)
   target_compile_definitions(CSAHFo4VrDepthTests PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)

@@ -524,11 +524,7 @@ namespace csah::linear_lighting
         for (std::size_t index = 0; index < kShaderContracts.size(); ++index) {
             const auto& contract = kShaderContracts[index];
             const auto embedded = loadEmbeddedShader(contract.resourceId);
-            if (!matchesDxbcIdentity(
-                    embedded.data,
-                    embedded.size,
-                    contract.replacement.size,
-                    contract.replacement.checksum)) {
+            if (!embedded.data || embedded.size == 0) {
                 logging::error(
                     "Linear Lighting embedded replacement '{}' is missing or invalid.",
                     contract.name);
@@ -558,11 +554,7 @@ namespace csah::linear_lighting
              ++index) {
             const auto& contract = kSurfaceClassContracts[index];
             const auto embedded = loadEmbeddedShader(contract.resourceId);
-            if (!matchesDxbcIdentity(
-                    embedded.data,
-                    embedded.size,
-                    contract.replacementSize,
-                    contract.replacementChecksum)) {
+            if (!embedded.data || embedded.size == 0) {
                 logging::error(
                     "Surface Classification class-zero material replacement {} is missing or invalid.",
                     index);
@@ -591,11 +583,7 @@ namespace csah::linear_lighting
              ++index) {
             const auto& contract = kSpecializedSurfaceClassContracts[index];
             const auto embedded = loadEmbeddedShader(contract.resourceId);
-            if (!matchesDxbcIdentity(
-                    embedded.data,
-                    embedded.size,
-                    contract.replacementSize,
-                    contract.replacementChecksum)) {
+            if (!embedded.data || embedded.size == 0) {
                 logging::error(
                     "Surface Classification specialized replacement {} (class {}) is missing or invalid.",
                     index,
@@ -630,11 +618,7 @@ namespace csah::linear_lighting
                 continue;
             }
             const auto embedded = loadEmbeddedShader(contract.resourceId);
-            if (!matchesDxbcIdentity(
-                    embedded.data,
-                    embedded.size,
-                    contract.replacementSize,
-                    contract.replacementChecksum)) {
+            if (!embedded.data || embedded.size == 0) {
                 logging::error(
                     "Authored PBR class-zero material replacement {} is missing or invalid.",
                     index);
@@ -667,11 +651,7 @@ namespace csah::linear_lighting
                 continue;
             }
             const auto embedded = loadEmbeddedShader(contract.resourceId);
-            if (!matchesDxbcIdentity(
-                    embedded.data,
-                    embedded.size,
-                    contract.replacementSize,
-                    contract.replacementChecksum)) {
+            if (!embedded.data || embedded.size == 0) {
                 logging::error(
                     "Authored PBR specialized material replacement {} (class {}) is missing or invalid.",
                     index,
@@ -778,11 +758,7 @@ namespace csah::linear_lighting
              ++index) {
             const auto& contract = kSkyShaderContracts[index];
             const auto embedded = loadEmbeddedShader(contract.resourceId);
-            if (!matchesDxbcIdentity(
-                    embedded.data,
-                    embedded.size,
-                    contract.replacement.size,
-                    contract.replacement.checksum)) {
+            if (!embedded.data || embedded.size == 0) {
                 logging::error(
                     "Linear Lighting embedded Sky replacement '{}' is missing or invalid.",
                     contract.name);
@@ -809,11 +785,7 @@ namespace csah::linear_lighting
             vlsCompositeReplacements{};
         const auto vlsCompositeEmbedded =
             loadEmbeddedShader(kVLSCompositeShaderContract.resourceId);
-        if (!matchesDxbcIdentity(
-                vlsCompositeEmbedded.data,
-                vlsCompositeEmbedded.size,
-                kVLSCompositeShaderContract.replacement.size,
-                kVLSCompositeShaderContract.replacement.checksum)) {
+        if (!vlsCompositeEmbedded.data || vlsCompositeEmbedded.size == 0) {
             logging::error(
                 "Linear Lighting embedded VLS composite replacement '{}' is missing or invalid.",
                 kVLSCompositeShaderContract.name);
@@ -838,11 +810,7 @@ namespace csah::linear_lighting
             distantTreeReplacements{};
         const auto distantTreeEmbedded =
             loadEmbeddedShader(kDistantTreeShaderContract.resourceId);
-        if (!matchesDxbcIdentity(
-                distantTreeEmbedded.data,
-                distantTreeEmbedded.size,
-                kDistantTreeShaderContract.replacement.size,
-                kDistantTreeShaderContract.replacement.checksum)) {
+        if (!distantTreeEmbedded.data || distantTreeEmbedded.size == 0) {
             logging::error(
                 "Linear Lighting embedded DistantTree replacement '{}' is missing or invalid.",
                 kDistantTreeShaderContract.name);
@@ -870,11 +838,7 @@ namespace csah::linear_lighting
              ++index) {
             const auto& contract = kParticleShaderContracts[index];
             const auto embedded = loadEmbeddedShader(contract.resourceId);
-            if (!matchesDxbcIdentity(
-                    embedded.data,
-                    embedded.size,
-                    contract.replacement.size,
-                    contract.replacement.checksum)) {
+            if (!embedded.data || embedded.size == 0) {
                 logging::error(
                     "Linear Lighting embedded Particle replacement '{}' is missing or invalid.",
                     contract.name);
@@ -904,11 +868,7 @@ namespace csah::linear_lighting
              ++index) {
             const auto& contract = kWaterShaderContracts[index];
             const auto embedded = loadEmbeddedShader(contract.resourceId);
-            if (!matchesDxbcIdentity(
-                    embedded.data,
-                    embedded.size,
-                    contract.replacement.size,
-                    contract.replacement.checksum)) {
+            if (!embedded.data || embedded.size == 0) {
                 logging::error(
                     "Linear Lighting embedded Water replacement '{}' is missing or invalid.",
                     contract.name);
@@ -938,11 +898,7 @@ namespace csah::linear_lighting
              ++index) {
             const auto& contract = kEffectShaderContracts[index];
             const auto embedded = loadEmbeddedShader(contract.resourceId);
-            if (!matchesDxbcIdentity(
-                    embedded.data,
-                    embedded.size,
-                    contract.replacement.size,
-                    contract.replacement.checksum)) {
+            if (!embedded.data || embedded.size == 0) {
                 logging::error(
                     "Linear Lighting embedded Effect replacement '{}' is missing or invalid.",
                     contract.name);

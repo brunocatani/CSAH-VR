@@ -23,7 +23,6 @@ namespace csah::dlaa
         bool cameraBufferQualified{};
         bool renderResourcesQualified{};
         bool operational{};
-        bool contractRejected{};
         bool cameraBindingObserved{};
         std::uint64_t mappedCameraFrames{};
         std::uint64_t cameraMapCandidates{};
@@ -60,11 +59,6 @@ namespace csah::dlaa
             ID3D11Device* device,
             ID3D11DeviceContext* context) noexcept;
         void beginQualificationSession(const char* reason) noexcept;
-        void onPixelShaderCreated(
-            ID3D11PixelShader* shader,
-            std::size_t bytecodeSize,
-            std::uint64_t hash,
-            const std::array<std::uint32_t, 4>& checksum) noexcept;
 
         void onMapSucceeded(
             ID3D11DeviceContext* context,
@@ -97,14 +91,6 @@ namespace csah::dlaa
             Microsoft::WRL::ComPtr<ID3D11Texture2D> readback;
             std::uint32_t polls{};
             bool pending{};
-        };
-
-        struct PixelShaderIdentity
-        {
-            ID3D11PixelShader* shader{};
-            std::size_t bytecodeSize{};
-            std::uint64_t hash{};
-            std::array<std::uint32_t, 4> checksum{};
         };
 
         struct QualifiedResources
@@ -187,7 +173,6 @@ namespace csah::dlaa
             ID3D11Resource* resource,
             ID3D11ShaderResourceView* depthView = nullptr) noexcept;
         void consumeQualificationProbes() noexcept;
-        [[nodiscard]] bool capturePixelShaderIdentity() noexcept;
         void updateQualificationState() noexcept;
         [[nodiscard]] bool updateEvaluationGeometry() noexcept;
         [[nodiscard]] bool validateActiveViewport() noexcept;
@@ -261,11 +246,6 @@ namespace csah::dlaa
         std::array<GpuTimingSlot, kGpuTimingSlotCount> gpuTimingSlots_{};
         std::array<QualificationProbe, kQualificationProbeCount>
             qualificationProbes_{};
-        static constexpr std::size_t kMaximumPixelShaderIdentities = 4096;
-        std::array<PixelShaderIdentity, kMaximumPixelShaderIdentities>
-            pixelShaderIdentities_{};
-        std::mutex pixelShaderIdentityMutex_;
-        std::size_t pixelShaderIdentityCount_{};
         mutable std::mutex settingsMutex_;
         Settings pendingSettings_{};
         std::atomic_uint64_t pendingSettingsRevision_{ 1 };
@@ -276,7 +256,7 @@ namespace csah::dlaa
         std::atomic_bool cameraBufferQualified_{};
         std::atomic_bool renderResourcesQualified_{};
         std::atomic_bool operational_{};
-        std::atomic_bool contractRejected_{};
+        std::uint64_t nextResourceAttemptPostCall_{};
         std::atomic_bool qualificationCaptureRequested_{ true };
         std::atomic<ID3D11Buffer*> cameraBufferIdentity_{};
         std::atomic_uint64_t mappedCameraFrames_{};
@@ -318,10 +298,6 @@ namespace csah::dlaa
         float jitterProjectionX_{};
         float jitterProjectionY_{};
         bool resourceContractObserved_{};
-        bool sceneContentObserved_{};
-        bool outputContentObserved_{};
-        bool motionContentObserved_{};
-        bool depthContentObserved_{};
         bool resetHistory_{ true };
         bool renderThreadRequested_{ true };
         bool dynamicResolutionOwned_{};
@@ -333,7 +309,6 @@ namespace csah::dlaa
         std::uint8_t savedDynamicResolutionActive_{};
         std::atomic_bool firstCameraQualifiedLogged_{};
         std::atomic_bool firstCameraValidationFailureLogged_{};
-        std::atomic_bool firstPixelShaderIdentityLogged_{};
         std::atomic_bool firstResourceContractLogged_{};
         std::atomic_bool firstEvaluationLogged_{};
         std::atomic_bool firstEvaluationFailureLogged_{};

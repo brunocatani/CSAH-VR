@@ -42,17 +42,8 @@ namespace csah::dlaa
 
         constexpr UINT kProbeSampleCount = 16;
         constexpr std::uint32_t kMaximumProbePolls = 120;
-        constexpr std::uint32_t kMaximumQualificationProbeAttempts = 5;
+        constexpr std::uint32_t kDiagnosticProbeAttempts = 5;
         constexpr std::uint64_t kQualificationProbeFrameCadence = 60;
-        constexpr std::size_t kExpectedTaaShaderBytecodeSize = 7116;
-        constexpr std::uint64_t kExpectedTaaShaderFnv64 =
-            0x7B8698FD6048E067ull;
-        constexpr std::array<std::uint32_t, 4> kExpectedTaaShaderChecksum{
-            0x14E0F980u,
-            0xC22E90E5u,
-            0x6326C5EEu,
-            0xEEC9586Bu,
-        };
         constexpr std::size_t kDynamicResolutionWidthOffset = 0x1664;
         constexpr std::size_t kDynamicResolutionHeightOffset = 0x1668;
         constexpr std::size_t kDynamicResolutionActiveOffset = 0x1680;
@@ -481,10 +472,6 @@ namespace csah::dlaa
         cpuEvaluateMicroseconds_ = 0.0;
         cpuCommitMicroseconds_ = 0.0;
         cpuRestoreMicroseconds_ = 0.0;
-        {
-            std::scoped_lock lock(pixelShaderIdentityMutex_);
-            pixelShaderIdentityCount_ = 0;
-        }
         qualificationProbeAttempts_.store(0, std::memory_order_relaxed);
         renderResourcesQualified_.store(false, std::memory_order_release);
         operational_.store(false, std::memory_order_release);
@@ -493,7 +480,6 @@ namespace csah::dlaa
         firstCameraValidationFailureLogged_.store(
             false,
             std::memory_order_relaxed);
-        firstPixelShaderIdentityLogged_.store(false, std::memory_order_relaxed);
         firstResourceContractLogged_.store(false, std::memory_order_relaxed);
         firstEvaluationLogged_.store(false, std::memory_order_relaxed);
         firstEvaluationFailureLogged_.store(false, std::memory_order_relaxed);
@@ -512,7 +498,7 @@ namespace csah::dlaa
         dynamicResolutionOwned_ = false;
         dynamicResolutionManager_ = nullptr;
         logging::info(
-            "DLAA captured the native D3D11 device for fail-closed resource qualification; vanilla TAA remains active.");
+            "DLAA captured the native D3D11 device for stereo resource discovery; vanilla TAA remains active.");
     }
 
     void Runtime::beginQualificationSession(const char* reason) noexcept
@@ -546,27 +532,6 @@ namespace csah::dlaa
         resetHistory_ = true;
         logging::info(
             "DLAA qualification reset applied on the render thread; output remains vanilla until the stereo resource contract is proven.");
-    }
-
-    void Runtime::onPixelShaderCreated(
-        ID3D11PixelShader* shader,
-        std::size_t bytecodeSize,
-        std::uint64_t hash,
-        const std::array<std::uint32_t, 4>& checksum) noexcept
-    {
-        if (!shader || bytecodeSize == 0) {
-            return;
-        }
-        std::scoped_lock lock(pixelShaderIdentityMutex_);
-        if (pixelShaderIdentityCount_ >= pixelShaderIdentities_.size()) {
-            return;
-        }
-        pixelShaderIdentities_[pixelShaderIdentityCount_++] = {
-            .shader = shader,
-            .bytecodeSize = bytecodeSize,
-            .hash = hash,
-            .checksum = checksum,
-        };
     }
 
     void Runtime::onMapSucceeded(
@@ -782,6 +747,7 @@ namespace csah::dlaa
 
         const auto activeUpscaling =
             requested_.load(std::memory_order_acquire) &&
+            postRenderCalls_.load(std::memory_order_relaxed) + 1 >= nextResourceAttemptPostCall_ &&
             evaluationGeometry_.valid &&
             evaluationGeometry_.inputWidth != 0 &&
             evaluationGeometry_.inputHeight != 0 && jitterX && jitterY;
@@ -874,8 +840,8 @@ namespace csah::dlaa
         }
 
         // Qualification is passive resource discovery. Run it even while the
-        // user-facing feature is disabled so the exact TAA shader/resource
-        // tuple is pinned during the deterministic post-load render window.
+        // user-facing feature is disabled so the TAA resources can be found
+        // as soon as the engine starts producing world frames.
         // Evaluation and publication remain gated by requestedNow below.
         if (!requestedNow) {
             operational_.store(false, std::memory_order_release);
@@ -885,8 +851,6 @@ namespace csah::dlaa
         }
         consumeQualificationProbes();
         if (!renderResourcesQualified_.load(std::memory_order_acquire) &&
-            qualificationProbeAttempts_.load(std::memory_order_relaxed) <
-                kMaximumQualificationProbeAttempts &&
             postCall % kQualificationProbeFrameCadence == 0) {
             qualificationCaptureRequested_.store(
                 true,
@@ -903,7 +867,7 @@ namespace csah::dlaa
         if (!renderResourcesQualified_.load(std::memory_order_acquire)) {
             return;
         }
-        if (contractRejected_.load(std::memory_order_acquire)) {
+        if (postCall < nextResourceAttemptPostCall_) {
             return;
         }
         const auto geometryWasValid = evaluationGeometry_.valid;
@@ -996,7 +960,7 @@ namespace csah::dlaa
                                  1,
                                  std::memory_order_relaxed) +
             1;
-        const auto shaderMatches = capturePixelShaderIdentity();
+        const auto diagnostic = attempt <= kDiagnosticProbeAttempts;
         std::array<ID3D11RenderTargetView*,
             D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT> renderTargets{};
         ID3D11DepthStencilView* depthView{};
@@ -1015,15 +979,15 @@ namespace csah::dlaa
             }
             ID3D11Resource* resource{};
             view->GetResource(&resource);
-            logTexture("OM.RTV", slot, resource);
+            if (diagnostic) logTexture("OM.RTV", slot, resource);
             if (slot == 0) {
-                queueQualificationProbe("OM.RTV0", resource);
+                if (diagnostic) queueQualificationProbe("OM.RTV0", resource);
                 (void)textureDescription(
                     resource,
                     taaMaskDescription,
                     taaMask);
             } else if (slot == 1) {
-                queueQualificationProbe("OM.RTV1", resource);
+                if (diagnostic) queueQualificationProbe("OM.RTV1", resource);
                 (void)textureDescription(
                     resource,
                     outputDescription,
@@ -1039,7 +1003,7 @@ namespace csah::dlaa
             ID3D11Resource* resource{};
             depthView->GetResource(&resource);
             depthTargetResource = resource;
-            logTexture("OM.DSV", 0, resource);
+            if (diagnostic) logTexture("OM.DSV", 0, resource);
         }
 
         std::array<ID3D11ShaderResourceView*, 32> resources{};
@@ -1054,7 +1018,6 @@ namespace csah::dlaa
         D3D11_TEXTURE2D_DESC sceneDescription{};
         D3D11_TEXTURE2D_DESC motionDescription{};
         D3D11_TEXTURE2D_DESC depthDescription{};
-        bool depthMatchesTarget{};
         for (UINT slot = 0; slot < resources.size(); ++slot) {
             auto* view = resources[slot];
             if (!view) {
@@ -1062,28 +1025,27 @@ namespace csah::dlaa
             }
             ID3D11Resource* resource{};
             view->GetResource(&resource);
-            logTexture("PS.SRV", slot, resource);
+            if (diagnostic) logTexture("PS.SRV", slot, resource);
             switch (slot) {
             case 0:
-                queueQualificationProbe("PS.SRV0", resource);
+                if (diagnostic) queueQualificationProbe("PS.SRV0", resource);
                 (void)textureDescription(
                     resource,
                     sceneDescription,
                     sceneColor);
                 break;
             case 1:
-                queueQualificationProbe("PS.SRV1", resource);
+                if (diagnostic) queueQualificationProbe("PS.SRV1", resource);
                 break;
             case 2:
-                queueQualificationProbe("PS.SRV2", resource);
+                if (diagnostic) queueQualificationProbe("PS.SRV2", resource);
                 (void)textureDescription(
                     resource,
                     motionDescription,
                     motionVectors);
                 break;
             case 3:
-                queueQualificationProbe("PS.SRV3", resource, view);
-                depthMatchesTarget = resource == depthTargetResource;
+                if (diagnostic) queueQualificationProbe("PS.SRV3", resource, view);
                 {
                     D3D11_SHADER_RESOURCE_VIEW_DESC description{};
                     view->GetDesc(&description);
@@ -1098,7 +1060,7 @@ namespace csah::dlaa
                     depth);
                 break;
             case 4:
-                queueQualificationProbe("PS.SRV4", resource);
+                if (diagnostic) queueQualificationProbe("PS.SRV4", resource);
                 break;
             default:
                 break;
@@ -1122,7 +1084,7 @@ namespace csah::dlaa
                 value.SampleDesc.Count == 1;
         };
         const auto resourceTuple = sceneColor && taaMask &&
-            outputColor && motionVectors && depth && depthSourceView && depthMatchesTarget &&
+            outputColor && motionVectors && depth && depthSourceView &&
             packedWidth >= 2 && (packedWidth % 2u) == 0 &&
             sceneDescription.Height != 0 &&
             sceneDescription.Format == DXGI_FORMAT_R11G11B10_FLOAT &&
@@ -1136,9 +1098,7 @@ namespace csah::dlaa
             commonDescription(depthDescription) &&
             (sceneDescription.BindFlags & D3D11_BIND_SHADER_RESOURCE) != 0 &&
             (taaMaskDescription.BindFlags & D3D11_BIND_SHADER_RESOURCE) != 0 &&
-            (outputDescription.BindFlags &
-                (D3D11_BIND_RENDER_TARGET | D3D11_BIND_UNORDERED_ACCESS)) ==
-                (D3D11_BIND_RENDER_TARGET | D3D11_BIND_UNORDERED_ACCESS) &&
+            (outputDescription.BindFlags & D3D11_BIND_RENDER_TARGET) != 0 &&
             (motionDescription.BindFlags & D3D11_BIND_SHADER_RESOURCE) != 0 &&
             (depthDescription.BindFlags & D3D11_BIND_SHADER_RESOURCE) != 0 &&
             viewportCount == 1 && viewport.TopLeftX == 0.0f &&
@@ -1152,20 +1112,13 @@ namespace csah::dlaa
             qualifiedResources_.depth.Get() == depth.Get() &&
             qualifiedResources_.packedWidth == packedWidth &&
             qualifiedResources_.height == sceneDescription.Height;
-        // The exact shader identity is mandatory when the tuple is first
-        // pinned. Later evidence probes may execute after the engine has
-        // selected another image-space shader; the already-proven, pointer-
-        // stable tuple remains authoritative until a resource changes.
-        const auto exactContract = resourceTuple &&
-            (shaderMatches ||
-                (resourceContractObserved_ && matchesPinnedTuple));
+        // This verified native post-TAA boundary supplies the stereo resources.
+        // Discovery depends on their usable layout, not a shader bytecode pin
+        // or the brightness of a handful of diagnostic pixels.
+        const auto exactContract = resourceTuple;
         if (exactContract) {
             const auto changed = !matchesPinnedTuple;
             if (changed) {
-                sceneContentObserved_ = false;
-                outputContentObserved_ = false;
-                motionContentObserved_ = false;
-                depthContentObserved_ = false;
                 for (auto& eye : eyeResources_) {
                     eye = {};
                 }
@@ -1192,8 +1145,7 @@ namespace csah::dlaa
                     true,
                     std::memory_order_relaxed)) {
                 logging::info(
-                    "DLAA pinned the exact FO4VR stereo TAA resource contract: shader fnv64=0x{:016X}, packed={}x{}, eye={}x{}, scene=R11G11B10_FLOAT, mask=R8G8B8A8_UNORM OM.RTV0, output=R8G8B8A8_UNORM, motion=R16G16_FLOAT, depth=R24G8_TYPELESS.",
-                    kExpectedTaaShaderFnv64,
+                    "DLAA pinned the exact FO4VR stereo TAA resource contract: packed={}x{}, eye={}x{}, scene=R11G11B10_FLOAT, mask=R8G8B8A8_UNORM OM.RTV0, output=R8G8B8A8_UNORM, motion=R16G16_FLOAT, depth=R24G8_TYPELESS.",
                     packedWidth,
                     sceneDescription.Height,
                     eyeWidth,
@@ -1210,11 +1162,9 @@ namespace csah::dlaa
         }
         updateQualificationState();
         const auto streamline = streamlineSnapshot();
-        logging::info(
-            "DLAA qualification boundary attempt {}/{} complete: exactShader={}, exactResources={}, viewportCount={}, viewport=({},{} {}x{} depth {}..{}), cameraReady={}, cameraBinding={}, cameraFrames={}, containingMaps={}, identityMatches={}, validationFailures={}, Streamline initialized={}, deviceBound={}, swapchainUpgraded={}, featureLoaded={}, supported={}, functionsBound={}. Vanilla TAA remains active until the private stereo proof succeeds.",
+        if (diagnostic) logging::info(
+            "DLAA resource discovery attempt {}: exactResources={}, viewportCount={}, viewport=({},{} {}x{} depth {}..{}), cameraReady={}, cameraBinding={}, cameraFrames={}, containingMaps={}, identityMatches={}, validationFailures={}, Streamline initialized={}, deviceBound={}, swapchainUpgraded={}, featureLoaded={}, supported={}, functionsBound={}. Vanilla TAA remains active until the private stereo proof succeeds.",
             attempt,
-            kMaximumQualificationProbeAttempts,
-            shaderMatches,
             exactContract,
             viewportCount,
             viewport.TopLeftX,
@@ -1235,70 +1185,6 @@ namespace csah::dlaa
             streamline.featureLoaded,
             streamline.featureSupported,
             streamline.featureFunctionsBound);
-    }
-
-    bool Runtime::capturePixelShaderIdentity() noexcept
-    {
-        if (!context_) {
-            return false;
-        }
-        ID3D11PixelShader* shader{};
-        std::array<ID3D11ClassInstance*, D3D11_SHADER_MAX_INTERFACES>
-            classInstances{};
-        UINT classInstanceCount = static_cast<UINT>(classInstances.size());
-        context_->PSGetShader(
-            &shader,
-            classInstances.data(),
-            &classInstanceCount);
-        auto releaseShader = Microsoft::WRL::ComPtr<ID3D11PixelShader>{};
-        releaseShader.Attach(shader);
-        for (UINT index = 0;
-             index < classInstanceCount && index < classInstances.size();
-             ++index) {
-            if (classInstances[index]) {
-                classInstances[index]->Release();
-            }
-        }
-        if (!shader) {
-            return false;
-        }
-
-        PixelShaderIdentity identity{};
-        {
-            std::scoped_lock lock(pixelShaderIdentityMutex_);
-            const auto found = std::find_if(
-                pixelShaderIdentities_.begin(),
-                pixelShaderIdentities_.begin() + pixelShaderIdentityCount_,
-                [shader](const PixelShaderIdentity& candidate) {
-                    return candidate.shader == shader;
-                });
-            if (found ==
-                pixelShaderIdentities_.begin() + pixelShaderIdentityCount_) {
-                return false;
-            }
-            identity = *found;
-        }
-        const auto exact = identity.bytecodeSize ==
-                kExpectedTaaShaderBytecodeSize &&
-            identity.hash == kExpectedTaaShaderFnv64 &&
-            identity.checksum == kExpectedTaaShaderChecksum &&
-            classInstanceCount == 0;
-        if (!firstPixelShaderIdentityLogged_.exchange(
-                true,
-                std::memory_order_relaxed)) {
-            logging::info(
-                "DLAA post-boundary pixel-shader identity: shader={}, bytecodeSize={}, fnv64=0x{:016X}, checksum=[0x{:08X},0x{:08X},0x{:08X},0x{:08X}], classInstances={}, exactMatch={}.",
-                static_cast<const void*>(identity.shader),
-                identity.bytecodeSize,
-                identity.hash,
-                identity.checksum[0],
-                identity.checksum[1],
-                identity.checksum[2],
-                identity.checksum[3],
-                classInstanceCount,
-                exact);
-        }
-        return exact;
     }
 
     void Runtime::queueQualificationProbe(
@@ -1546,13 +1432,6 @@ namespace csah::dlaa
                     peak,
                     nonBlack,
                     kProbeSampleCount);
-                if (nonBlack != 0 && std::isfinite(peak) && peak > 0.0f) {
-                    if (std::strcmp(probe.label, "PS.SRV0") == 0) {
-                        sceneContentObserved_ = true;
-                    } else if (std::strcmp(probe.label, "OM.RTV1") == 0) {
-                        outputContentObserved_ = true;
-                    }
-                }
             } else if (probe.format == DXGI_FORMAT_R16G16_FLOAT) {
                 float sumAbsoluteX{};
                 float sumAbsoluteY{};
@@ -1593,18 +1472,13 @@ namespace csah::dlaa
                     finite,
                     nonFinite,
                     kProbeSampleCount);
-                if (std::strcmp(probe.label, "PS.SRV2") == 0 && finite != 0) {
-                    motionContentObserved_ = true;
-                }
             } else {
                 float minimum = 1.0f;
                 float maximum{};
                 std::uint32_t zero{};
                 std::uint32_t farRange{};
-                bool validDepth = true;
                 for (UINT index = 0; index < kProbeSampleCount; ++index) {
                     const auto depth = std::bit_cast<float>(pixels[index]);
-                    validDepth = validDepth && std::isfinite(depth) && depth >= 0 && depth <= 1;
                     minimum = (std::min)(minimum, depth);
                     maximum = (std::max)(maximum, depth);
                     zero += depth <= 0.000001f;
@@ -1619,12 +1493,6 @@ namespace csah::dlaa
                     kProbeSampleCount,
                     farRange,
                     kProbeSampleCount);
-                // A readable cleared resource is not evidence of its depth
-                // direction. Projection-derived conversion owns that contract;
-                // this probe only verifies access to the qualified resource.
-                if (std::strcmp(probe.label, "PS.SRV3") == 0) {
-                    depthContentObserved_ = validDepth;
-                }
             }
             context_->Unmap(probe.readback.Get(), 0);
             probe.pending = false;
@@ -1636,8 +1504,6 @@ namespace csah::dlaa
     {
         const auto streamline = streamlineSnapshot();
         const auto ready = resourceContractObserved_ &&
-            sceneContentObserved_ && outputContentObserved_ &&
-            motionContentObserved_ && depthContentObserved_ &&
             cameraBufferQualified_.load(std::memory_order_acquire) &&
             static_cast<bool>(qualifiedResources_) &&
             streamline.initialized && streamline.deviceBound &&
@@ -1697,7 +1563,7 @@ namespace csah::dlaa
     void Runtime::hardResetTemporalState(const char* reason) noexcept
     {
         operational_.store(false, std::memory_order_release);
-        contractRejected_.store(false, std::memory_order_release);
+        nextResourceAttemptPostCall_ = 0;
         restoreDynamicResolutionIfOwned();
         releaseStreamlineDlaaResources();
         for (auto& eye : eyeResources_) {
@@ -1750,12 +1616,12 @@ namespace csah::dlaa
                 optimal.renderHeight == 0 ||
                 optimal.renderWidth > qualifiedResources_.eyeWidth ||
                 optimal.renderHeight > qualifiedResources_.height) {
-                logging::warn(
-                    "Upscaling rejected {} because Streamline did not return a valid per-eye input extent for {}x{} output.",
+                if (!firstEvaluationFailureLogged_.exchange(true, std::memory_order_relaxed)) logging::warn(
+                    "Upscaling is waiting for {} because Streamline did not return a valid per-eye input extent for {}x{} output.",
                     modeName(settings_.mode),
                     qualifiedResources_.eyeWidth,
                     qualifiedResources_.height);
-                contractRejected_.store(true, std::memory_order_release);
+                nextResourceAttemptPostCall_ = postRenderCalls_.load(std::memory_order_relaxed) + kQualificationProbeFrameCadence;
                 return false;
             }
             next.inputWidth = optimal.renderWidth;
@@ -2780,20 +2646,20 @@ namespace csah::dlaa
             evaluationGeometry_.outputHeight);
         if (!viewportValid || !outputsReady) {
             operational_.store(false, std::memory_order_release);
-            contractRejected_.store(true, std::memory_order_release);
-            restoreDynamicResolutionIfOwned();
-            releaseStreamlineDlaaResources();
-            for (auto& eye : eyeResources_) {
-                eye = {};
+            // A menu/resize boundary can temporarily leave a different viewport.
+            // Retain the geometry so the next pre-render can restore its scale.
+            // Only allocation failures need a bounded retry delay.
+            if (viewportValid && !outputsReady) {
+                nextResourceAttemptPostCall_ = postCall + kQualificationProbeFrameCadence;
+                restoreDynamicResolutionIfOwned();
             }
-            evaluationGeometry_.valid = false;
             resetHistory_ = true;
             stereoEvaluationFailures_.fetch_add(1, std::memory_order_relaxed);
             if (!firstEvaluationFailureLogged_.exchange(
                     true,
                     std::memory_order_relaxed)) {
                 logging::warn(
-                    "Upscaling latched a fail-closed contract rejection for mode {} (activeViewport={}, privateOutputs={}); vanilla TAA remains published until a settings change or hard refresh.",
+                    "Upscaling skipped this frame for mode {} (activeViewport={}, privateOutputs={}); evaluation will resume automatically when ready.",
                     modeName(settings_.mode),
                     viewportValid,
                     outputsReady);
@@ -3131,7 +2997,7 @@ namespace csah::dlaa
     void Runtime::clearRenderResources(bool releaseStreamline) noexcept
     {
         operational_.store(false, std::memory_order_release);
-        contractRejected_.store(false, std::memory_order_release);
+        nextResourceAttemptPostCall_ = 0;
         renderResourcesQualified_.store(false, std::memory_order_release);
         if (releaseStreamline) {
             releaseStreamlineDlaaResources();
@@ -3154,10 +3020,6 @@ namespace csah::dlaa
         publishedCenterLeft_.store(0, std::memory_order_relaxed);
         publishedCenterTop_.store(0, std::memory_order_relaxed);
         resourceContractObserved_ = false;
-        sceneContentObserved_ = false;
-        outputContentObserved_ = false;
-        motionContentObserved_ = false;
-        depthContentObserved_ = false;
         resetHistory_ = true;
     }
 
@@ -3228,8 +3090,6 @@ namespace csah::dlaa
             .renderResourcesQualified = renderResourcesQualified_.load(
                 std::memory_order_acquire),
             .operational = operational_.load(std::memory_order_acquire),
-            .contractRejected = contractRejected_.load(
-                std::memory_order_acquire),
             .cameraBindingObserved = cameraBufferIdentity_.load(
                                          std::memory_order_acquire) != nullptr,
             .mappedCameraFrames = mappedCameraFrames_.load(

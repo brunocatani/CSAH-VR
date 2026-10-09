@@ -2819,11 +2819,6 @@ namespace csah::render
                     bytecode,
                     bytecodeLength,
                     *shader);
-                csah::dlaa::Runtime::get().onPixelShaderCreated(
-                    *shader,
-                    identity.bytecodeSize,
-                    identity.hash,
-                    identity.checksum);
             }
             if (shaderInterceptionActive.load(std::memory_order_acquire) &&
                 SUCCEEDED(result) && shader && *shader) {

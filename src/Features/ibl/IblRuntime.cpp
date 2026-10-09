@@ -307,23 +307,6 @@ namespace csah::ibl
             return { LockResource(loaded), static_cast<std::size_t>(size) };
         }
 
-        [[nodiscard]] bool matchesIdentity(
-            EmbeddedShader shader,
-            const CaptureProbeContract& identity) noexcept
-        {
-            if (!shader.data || shader.size != identity.bytecodeSize ||
-                shader.size < 20) {
-                return false;
-            }
-            const auto* bytes = static_cast<const std::uint8_t*>(shader.data);
-            return bytes[0] == 'D' && bytes[1] == 'X' &&
-                bytes[2] == 'B' && bytes[3] == 'C' &&
-                std::equal(
-                    identity.checksum.begin(),
-                    identity.checksum.end(),
-                    bytes + 4);
-        }
-
         [[nodiscard]] const char* sceneProbeFormatName(
             DXGI_FORMAT format) noexcept
         {
@@ -1846,7 +1829,7 @@ namespace csah::ibl
              ++index) {
             const auto& definition = kIblMaterialShaderDefinitions[index];
             const auto embedded = loadEmbeddedShader(definition.resourceId);
-            if (!matchesIdentity(embedded, definition.replacementIdentity) ||
+            if (!embedded.data || embedded.size == 0 ||
                 FAILED(createPixelShader(
                     device_.Get(),
                     embedded.data,
@@ -1855,7 +1838,7 @@ namespace csah::ibl
                     &replacements[index])) ||
                 !replacements[index]) {
                 logging::error(
-                    "IBL material replacement '{}' failed its embedded identity/CreatePixelShader gate.",
+                    "IBL material replacement '{}' could not be loaded or created on the D3D11 device.",
                     definition.name);
                 return false;
             }

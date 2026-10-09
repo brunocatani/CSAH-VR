@@ -484,7 +484,7 @@ namespace csah::skylighting
         ID3D11DeviceContext* immediateContext) noexcept
     {
         gpuResourcesReady_.store(false, std::memory_order_release);
-        resourceCreationAttempted_ = false;
+        nextResourceAttemptCall_ = 0;
         nearProbes_ = {};
         farProbes_ = {};
         privateDepthTexture_.Reset();
@@ -554,14 +554,16 @@ namespace csah::skylighting
     bool Runtime::ensureGpuResources() noexcept
     {
         if (gpuResourcesReady_.load(std::memory_order_acquire)) return true;
-        if (resourceCreationAttempted_ || !device_ || !context_) return false;
-        // The render-thread callback owns first-use allocation. A disabled
-        // startup allocates no probe volumes; failures retain the existing
-        // one-attempt-per-device policy instead of retrying every frame.
-        resourceCreationAttempted_ = true;
+        if (!device_ || !context_) return false;
+        const auto call = captureCalls_.load(std::memory_order_relaxed);
+        if (call < nextResourceAttemptCall_) return false;
+        // Retry transient allocation failures at a bounded render cadence.
+        nextResourceAttemptCall_ = call + 60;
         if (!createProbeResources()) {
+            nearProbes_ = {};
+            farProbes_ = {};
             logging::error(
-                "Skylighting GPU resource creation failed; native rendering remains unchanged.");
+                "Skylighting GPU resource creation failed; retrying after 60 native callbacks.");
             return false;
         }
         render::nameResource(nearProbes_.probeTexture.Get(), "CSAH / Skylighting / Near visibility");
@@ -707,16 +709,8 @@ namespace csah::skylighting
         return true;
     }
 
-    bool Runtime::createProbeResources() noexcept
+    bool Runtime::createDiagnosticResources() noexcept
     {
-        if (!device_ || !context_ ||
-            !createProbeLevelResources(
-                nearProbes_, dimensionsFor(activeQuality_)) ||
-            !createProbeLevelResources(
-                farProbes_, farDimensionsFor())) {
-            return false;
-        }
-
         D3D11_BUFFER_DESC diagnosticDescription{};
         diagnosticDescription.ByteWidth =
             static_cast<UINT>(kDiagnosticByteWidth);
@@ -806,6 +800,28 @@ namespace csah::skylighting
             return false;
         }
 
+        diagnosticBuffer_ = std::move(diagnosticBuffer);
+        diagnosticOutput_ = std::move(diagnosticOutput);
+        diagnosticStaging_ = std::move(diagnosticStaging);
+        diagnosticCompletion_ = std::move(diagnosticCompletion);
+        ambientDiagnosticBuffer_ = std::move(ambientDiagnosticBuffer);
+        ambientDiagnosticOutput_ = std::move(ambientDiagnosticOutput);
+        ambientDiagnosticStaging_ = std::move(ambientDiagnosticStaging);
+        ambientDiagnosticCompletion_ =
+            std::move(ambientDiagnosticCompletion);
+        return true;
+    }
+
+    bool Runtime::createProbeResources() noexcept
+    {
+        if (!device_ || !context_ ||
+            !createProbeLevelResources(
+                nearProbes_, dimensionsFor(activeQuality_)) ||
+            !createProbeLevelResources(
+                farProbes_, farDimensionsFor())) {
+            return false;
+        }
+
         ComPtr<ID3D11ComputeShader> updateShader;
         if (FAILED(device_->CreateComputeShader(
                 csah_skylighting_update_probes,
@@ -842,15 +858,9 @@ namespace csah::skylighting
             return false;
         }
 
-        diagnosticBuffer_ = std::move(diagnosticBuffer);
-        diagnosticOutput_ = std::move(diagnosticOutput);
-        diagnosticStaging_ = std::move(diagnosticStaging);
-        diagnosticCompletion_ = std::move(diagnosticCompletion);
-        ambientDiagnosticBuffer_ = std::move(ambientDiagnosticBuffer);
-        ambientDiagnosticOutput_ = std::move(ambientDiagnosticOutput);
-        ambientDiagnosticStaging_ = std::move(ambientDiagnosticStaging);
-        ambientDiagnosticCompletion_ =
-            std::move(ambientDiagnosticCompletion);
+        if (!createDiagnosticResources()) {
+            logging::warn("Skylighting diagnostic resources unavailable; probe rendering remains active.");
+        }
         updateShader_ = std::move(updateShader);
         comparisonSampler_ = std::move(comparisonSampler);
         constantsBuffer_ = std::move(constantsBuffer);
@@ -1157,7 +1167,8 @@ namespace csah::skylighting
             std::bit_cast<float>(
                 minimumSpecularBits_.load(std::memory_order_relaxed)),
             featureActive ? 1.0f : 0.0f,
-            featureActive && !diagnosticSubmitted_ &&
+            featureActive && diagnosticBuffer_ && diagnosticOutput_ &&
+                    diagnosticStaging_ && diagnosticCompletion_ && !diagnosticSubmitted_ &&
                     !diagnosticPending_ && !diagnosticLogged_ ?
                 1.0f :
                 0.0f,
@@ -1182,9 +1193,7 @@ namespace csah::skylighting
         std::uint32_t sliceCount) noexcept
     {
         if (!context_ || !privateDepthResource_ || !level.probeOutput ||
-            !level.accumulationOutput || !diagnosticBuffer_ ||
-            !diagnosticOutput_ || !diagnosticStaging_ ||
-            !diagnosticCompletion_ || !updateShader_ ||
+            !level.accumulationOutput || !updateShader_ ||
             !comparisonSampler_ || !constantsBuffer_) {
             return;
         }
@@ -1461,10 +1470,14 @@ namespace csah::skylighting
         consumeDiagnosticReadback();
         consumeAmbientDiagnosticReadback();
         const auto featureRequested = requested();
-        const auto resourcesReady = featureRequested && ensureGpuResources();
+        if (!featureRequested) {
+            exteriorActive_.store(false, std::memory_order_release);
+            return;
+        }
+        const auto resourcesReady = ensureGpuResources();
         const auto hookOwned =
             nativeHookOwned_.load(std::memory_order_acquire);
-        if (!featureRequested || !resourcesReady || !hookOwned ||
+        if (!resourcesReady || !hookOwned ||
             !precipitation || !render || !restoreProjection || !context_) {
             if (!firstPrerequisiteRejectionLogged_.exchange(
                     true,

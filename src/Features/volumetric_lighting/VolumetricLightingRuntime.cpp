@@ -523,6 +523,58 @@ namespace csah::volumetric_lighting
             return result;
         }
 
+        // Delayed samples are telemetry. They cannot certify the current
+        // frame, and failure to allocate/read them must not disable lighting.
+        void createOutputDiagnostics(GpuState& gpu) noexcept
+        {
+            auto result = gpu.device->CreateComputeShader(
+                csah_volumetric_qualify_cs, sizeof(csah_volumetric_qualify_cs),
+                nullptr, gpu.qualifyCompute.ReleaseAndGetAddressOf());
+            D3D11_BUFFER_DESC qualification{};
+            qualification.ByteWidth = static_cast<UINT>(
+                kQualificationRecordCount * sizeof(OutputProbe));
+            qualification.Usage = D3D11_USAGE_DEFAULT;
+            qualification.BindFlags = D3D11_BIND_UNORDERED_ACCESS;
+            qualification.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
+            qualification.StructureByteStride = sizeof(OutputProbe);
+            if (SUCCEEDED(result)) {
+                result = gpu.device->CreateBuffer(
+                    &qualification,
+                    nullptr,
+                    gpu.qualificationOutput.ReleaseAndGetAddressOf());
+            }
+            D3D11_UNORDERED_ACCESS_VIEW_DESC qualificationView{};
+            qualificationView.Format = DXGI_FORMAT_UNKNOWN;
+            qualificationView.ViewDimension = D3D11_UAV_DIMENSION_BUFFER;
+            qualificationView.Buffer.NumElements = static_cast<UINT>(
+                kQualificationRecordCount);
+            if (SUCCEEDED(result)) {
+                result = gpu.device->CreateUnorderedAccessView(
+                    gpu.qualificationOutput.Get(),
+                    &qualificationView,
+                    gpu.qualificationOutputView.ReleaseAndGetAddressOf());
+            }
+            qualification.Usage = D3D11_USAGE_STAGING;
+            qualification.BindFlags = 0;
+            qualification.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+            qualification.MiscFlags = 0;
+            qualification.StructureByteStride = 0;
+            if (SUCCEEDED(result)) {
+                result = gpu.device->CreateBuffer(
+                    &qualification,
+                    nullptr,
+                    gpu.qualificationStaging.ReleaseAndGetAddressOf());
+            }
+
+            if (FAILED(result)) {
+                gpu.qualifyCompute.Reset();
+                gpu.qualificationOutput.Reset();
+                gpu.qualificationOutputView.Reset();
+                gpu.qualificationStaging.Reset();
+                logging::warn("Volumetric Lighting output diagnostics unavailable (HRESULT=0x{:08X}); rendering remains active.", static_cast<std::uint32_t>(result));
+            }
+        }
+
         [[nodiscard]] bool createStaticResources(GpuState& gpu) noexcept
         {
             if (!gpu.device) {
@@ -547,13 +599,6 @@ namespace csah::volumetric_lighting
                     sizeof(csah_volumetric_integrate_cs),
                     nullptr,
                     gpu.integrateCompute.ReleaseAndGetAddressOf());
-            }
-            if (SUCCEEDED(result)) {
-                result = gpu.device->CreateComputeShader(
-                    csah_volumetric_qualify_cs,
-                    sizeof(csah_volumetric_qualify_cs),
-                    nullptr,
-                    gpu.qualifyCompute.ReleaseAndGetAddressOf());
             }
             if (SUCCEEDED(result)) {
                 result = gpu.device->CreatePixelShader(
@@ -608,42 +653,6 @@ namespace csah::volumetric_lighting
                     gpu.temporalConstants.ReleaseAndGetAddressOf());
             }
 
-            D3D11_BUFFER_DESC qualification{};
-            qualification.ByteWidth = static_cast<UINT>(
-                kQualificationRecordCount * sizeof(OutputProbe));
-            qualification.Usage = D3D11_USAGE_DEFAULT;
-            qualification.BindFlags = D3D11_BIND_UNORDERED_ACCESS;
-            qualification.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
-            qualification.StructureByteStride = sizeof(OutputProbe);
-            if (SUCCEEDED(result)) {
-                result = gpu.device->CreateBuffer(
-                    &qualification,
-                    nullptr,
-                    gpu.qualificationOutput.ReleaseAndGetAddressOf());
-            }
-            D3D11_UNORDERED_ACCESS_VIEW_DESC qualificationView{};
-            qualificationView.Format = DXGI_FORMAT_UNKNOWN;
-            qualificationView.ViewDimension = D3D11_UAV_DIMENSION_BUFFER;
-            qualificationView.Buffer.NumElements = static_cast<UINT>(
-                kQualificationRecordCount);
-            if (SUCCEEDED(result)) {
-                result = gpu.device->CreateUnorderedAccessView(
-                    gpu.qualificationOutput.Get(),
-                    &qualificationView,
-                    gpu.qualificationOutputView.ReleaseAndGetAddressOf());
-            }
-            qualification.Usage = D3D11_USAGE_STAGING;
-            qualification.BindFlags = 0;
-            qualification.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
-            qualification.MiscFlags = 0;
-            qualification.StructureByteStride = 0;
-            if (SUCCEEDED(result)) {
-                result = gpu.device->CreateBuffer(
-                    &qualification,
-                    nullptr,
-                    gpu.qualificationStaging.ReleaseAndGetAddressOf());
-            }
-
             D3D11_SAMPLER_DESC sampler{};
             sampler.Filter = D3D11_FILTER_MIN_MAG_LINEAR_MIP_POINT;
             sampler.AddressU = D3D11_TEXTURE_ADDRESS_CLAMP;
@@ -676,12 +685,10 @@ namespace csah::volumetric_lighting
             }
             gpu.staticReady = SUCCEEDED(result) && gpu.fullscreenVertex &&
                 gpu.generateCompute && gpu.integrateCompute &&
-                gpu.qualifyCompute &&
                 gpu.resolvePixel && gpu.temporalPixel &&
                 gpu.blurHorizontalPixel && gpu.blurVerticalPixel &&
                 gpu.compositePixel && gpu.frameConstants &&
-                gpu.temporalConstants && gpu.qualificationOutput &&
-                gpu.qualificationOutputView && gpu.qualificationStaging &&
+                gpu.temporalConstants &&
                 gpu.linearSampler &&
                 gpu.depthState && gpu.rasterState;
             if (!gpu.staticReady) {
@@ -689,6 +696,7 @@ namespace csah::volumetric_lighting
                     "Volumetric Lighting GPU resource creation failed (HRESULT=0x{:08X}); the engine host gate is disabled.",
                     static_cast<std::uint32_t>(result));
             }
+            if (gpu.staticReady) createOutputDiagnostics(gpu);
             return gpu.staticReady;
         }
 
@@ -994,7 +1002,7 @@ namespace csah::volumetric_lighting
                     true, std::memory_order_relaxed) ||
                 failures % 60u == 0u) {
                 logging::warn(
-                    "Volumetric Lighting output qualification rejected a frame (reason=0x{:X}, HRESULT=0x{:08X}, attempt={}); composition remains pass-through.",
+                    "Volumetric Lighting output diagnostic reported invalid samples (reason=0x{:X}, HRESULT=0x{:08X}, attempt={}); the compositor handles invalid radiance per pixel.",
                     reason,
                     static_cast<std::uint32_t>(result),
                     gpu.qualificationAttempts);
@@ -1051,7 +1059,7 @@ namespace csah::volumetric_lighting
                 1;
             if (passes == 1) {
                 logging::info(
-                    "Volumetric Lighting output qualified before composition: structured=[mean={},max={}], filteredMean={}, positiveContrastMax={}, sunIntensity={}, glareMax={}, probes={}. Broad fog is disabled by default and final local radiance is bounded.",
+                    "Volumetric Lighting output diagnostic: structured=[mean={},max={}], filteredMean={}, positiveContrastMax={}, sunIntensity={}, glareMax={}, probes={}. Broad fog is disabled by default and final local radiance is bounded.",
                     qualification.structuredMean,
                     qualification.structuredMaximum,
                     qualification.filteredMean,
@@ -1394,7 +1402,7 @@ namespace csah::volumetric_lighting
         applyNativeGate();
         if (ready) {
             logging::info(
-                "Volumetric Lighting GPU suite is ready: scalar world-space visibility, detailed DFLight integration, stereo temporal rejection, local shaft contrast, bounded HDR composition, and fail-closed GPU output qualification.");
+                "Volumetric Lighting GPU suite is ready: scalar world-space visibility, detailed DFLight integration, stereo temporal rejection, local shaft contrast, bounded HDR composition, and independent GPU output diagnostics.");
         }
     }
 
@@ -1764,8 +1772,9 @@ namespace csah::volumetric_lighting
             gpu.currentVolume.source.Get(),
             gpu.receiverDepth.source.Get(),
             imageSpaceConstants.Get());
-        const auto presented = gpu.outputQualified;
-        if (presented) {
+        // CompositeVolumePS handles non-finite radiance in this frame. A
+        // delayed sparse readback must not veto later, unrelated frames.
+        {
             context->PSSetShader(gpu.compositePixel.Get(), nullptr, 0);
             const std::array<ID3D11ShaderResourceView*, 5> compositeSources{
                 gpu.currentVolume.source.Get(),
@@ -1793,9 +1802,6 @@ namespace csah::volumetric_lighting
         gpu.historyValid = true;
         gpu.historyWriteIndex = readIndex;
         ++gpu.frameIndex;
-        if (!presented) {
-            return;
-        }
         const auto rendered = value.renderedFrames.fetch_add(
                                   1, std::memory_order_relaxed) + 1;
         if (!value.firstRenderLogged.exchange(

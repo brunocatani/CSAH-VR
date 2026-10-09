@@ -1,6 +1,7 @@
 #include "Features/skylighting/SkylightingRuntime.h"
 #include "Features/skylighting/SkylightingNativeHooks.h"
 
+#include "D3D11AllocationFailure.h"
 #include <cstdlib>
 #include <iostream>
 #include <stdexcept>
@@ -20,6 +21,12 @@ namespace
     {
         if (!condition) throw std::runtime_error(message);
     }
+
+    HRESULT STDMETHODCALLTYPE failQuery(ID3D11Device*, const D3D11_QUERY_DESC*, ID3D11Query** output)
+    { if (output) *output = nullptr; return E_OUTOFMEMORY; }
+    HRESULT STDMETHODCALLTYPE failTexture3D(ID3D11Device*, const D3D11_TEXTURE3D_DESC*,
+        const D3D11_SUBRESOURCE_DATA*, ID3D11Texture3D** output)
+    { if (output) *output = nullptr; return E_OUTOFMEMORY; }
 
     void run()
     {
@@ -58,6 +65,19 @@ namespace
         require(!runtime.snapshot().gpuResourcesReady, "missing device reused an old resource owner");
         runtime.onDeviceCreated(device.Get(), context.Get());
         require(runtime.snapshot().gpuResourcesReady, "enabled device initialization failed");
+        {
+            DeviceFailureScope failure(device.Get(), 24, reinterpret_cast<void*>(&failQuery));
+            runtime.onDeviceCreated(device.Get(), context.Get());
+            require(runtime.snapshot().gpuResourcesReady, "diagnostic query failure disabled Skylighting");
+        }
+        {
+            DeviceFailureScope failure(device.Get(), 6, reinterpret_cast<void*>(&failTexture3D));
+            runtime.onDeviceCreated(device.Get(), context.Get());
+            require(!runtime.snapshot().gpuResourcesReady, "missing probe texture became renderable");
+        }
+        for (unsigned frame = 0; frame < 61; ++frame)
+            runtime.onNativePrecipitationFrame(nullptr, nullptr, nullptr);
+        require(runtime.snapshot().gpuResourcesReady, "temporary texture failure permanently disabled Skylighting");
         runtime.onDeviceCreated(nullptr, nullptr);
         context->ClearState();
     }
