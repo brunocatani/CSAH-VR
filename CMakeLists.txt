@@ -458,6 +458,8 @@ set(SKYLIGHTING_SETTINGS_STORE_SOURCE
   "${SKYLIGHTING_SOURCE_DIR}/SkylightingSettingsStore.cpp")
 set(SKYLIGHTING_SETTINGS_STORE_HEADER
   "${SKYLIGHTING_SOURCE_DIR}/SkylightingSettingsStore.h")
+set(SKYLIGHTING_SAMPLING_SHADER_SOURCE
+  "${ROOT_DIR}/package/Shaders/Community/Skylighting/SkylightingSampling.hlsli")
 set(SKYLIGHTING_AMBIENT_SHADER_SOURCE
   "${ROOT_DIR}/package/Shaders/Community/Skylighting/SkylightingAmbientTransform.hlsl")
 set(SKYLIGHTING_COMPUTE_SHADER_SOURCE
@@ -468,6 +470,7 @@ set(SKYLIGHTING_VERIFY_SCRIPT
   "${ROOT_DIR}/cmake/VerifySkylighting.cmake")
 set_source_files_properties(
   "${SKYLIGHTING_AMBIENT_SHADER_SOURCE}"
+  "${SKYLIGHTING_SAMPLING_SHADER_SOURCE}"
   "${SKYLIGHTING_COMPUTE_SHADER_SOURCE}"
   PROPERTIES HEADER_FILE_ONLY TRUE)
 set(SKY_SYNC_SOURCE_DIR
@@ -831,6 +834,7 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
   "${SKYLIGHTING_SETTINGS_STORE_HEADER}"
   "${SKYLIGHTING_SHADER_GENERATOR}"
   "${SKYLIGHTING_AMBIENT_SHADER_SOURCE}"
+  "${SKYLIGHTING_SAMPLING_SHADER_SOURCE}"
   "${SKYLIGHTING_COMPUTE_SHADER_SOURCE}"
   "${SKYLIGHTING_AMBIENT_HEADER}"
   "${SKYLIGHTING_COMPUTE_HEADER}"
@@ -1861,6 +1865,7 @@ add_custom_command(
   DEPENDS
     "${SKYLIGHTING_SHADER_GENERATOR}"
     "${SKYLIGHTING_AMBIENT_SHADER_SOURCE}"
+  "${SKYLIGHTING_SAMPLING_SHADER_SOURCE}"
     "${SKYLIGHTING_COMPUTE_SHADER_SOURCE}"
     "${ROOT_DIR}/tools/dxbc_transform.py"
     "${DFLIGHT_AMBIENT_CONTRACT_MANIFEST}"
@@ -2271,6 +2276,7 @@ add_library(${PROJECT_NAME} SHARED
   "${SKYLIGHTING_SETTINGS_STORE_HEADER}"
   "${SKYLIGHTING_SHADER_GENERATOR}"
   "${SKYLIGHTING_AMBIENT_SHADER_SOURCE}"
+  "${SKYLIGHTING_SAMPLING_SHADER_SOURCE}"
   "${SKYLIGHTING_COMPUTE_SHADER_SOURCE}"
   "${SKYLIGHTING_AMBIENT_HEADER}"
   "${SKYLIGHTING_COMPUTE_HEADER}"
@@ -3314,6 +3320,12 @@ if(BUILD_CSAH_TESTS)
   target_precompile_headers(CSAHSkylightingResourceTests PRIVATE "${SOURCE_DIR}/PCH.h")
   target_link_libraries(CSAHSkylightingResourceTests PRIVATE CommonLibF4::CommonLibF4 d3d11 dxguid shell32 spdlog::spdlog)
   add_test(NAME CSAH.SkylightingResources COMMAND CSAHSkylightingResourceTests)
+
+  add_executable(CSAHSkylightingSamplingTests "${ROOT_DIR}/tests/SkylightingSamplingTests.cpp")
+  target_compile_features(CSAHSkylightingSamplingTests PRIVATE cxx_std_23)
+  target_compile_definitions(CSAHSkylightingSamplingTests PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_link_libraries(CSAHSkylightingSamplingTests PRIVATE d3d11 d3dcompiler)
+  add_test(NAME CSAH.SkylightingSampling COMMAND CSAHSkylightingSamplingTests "${ROOT_DIR}")
 
   add_executable(CSAHUpscalingRecoveryTests
     "${ROOT_DIR}/tests/UpscalingRecoveryTests.cpp"

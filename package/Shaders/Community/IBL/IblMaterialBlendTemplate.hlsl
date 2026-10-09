@@ -1,3 +1,5 @@
+#define SKYLIGHTING_PARAMETERS_SRV
+#include "../Skylighting/SkylightingSampling.hlsli"
 #include "../Common/Fo4VrDepth.hlsli"
 
 // Shared with the directional DFLight transform so direct and environment
@@ -429,6 +431,14 @@ PixelOutput PSMain(PixelInput input)
         1.0,
         max(BasicWetnessParams.w, 0.0),
         wetness);
+    if (receiverPositionValid && Response.z > 0.5f)
+    {
+        const float3 halfVector = -input.DirectionAndArray.xyz + viewDirection;
+        const float normalLength = dot(halfVector, halfVector);
+        if (normalLength > 1.0e-6f)
+            vanilla.xyz *= SkylightingReflectionVisibility(receiverWorldPosition,
+                halfVector * rsqrt(normalLength), viewDirection, pbrRoughness);
+    }
     vanilla.xyz *= max(reflectionLobe, 0.0f);
     output.Reflection = vanilla;
     output.ReflectionLobe = float4(max(reflectionLobe, 0.0f), 1.0f);

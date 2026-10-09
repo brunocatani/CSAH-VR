@@ -425,6 +425,11 @@ def patch_ambient_shader(original: bytes, template: bytes) -> bytes:
         )
 
     prefix = words[: temp_declaration[0]]
+    for start, end in instructions(words):
+        if (words[start] & 0x7FF) == OPCODE_DCL_CONSTANT_BUFFER:
+            operand = executable_operands(words, start, end)[0]
+            if operand.immediate_indices[0] == 12:
+                prefix[end - 1] = max(prefix[end - 1], 61)
     for declaration in declarations:
         prefix.extend(declaration)
     updated_temps = words[temp_declaration[0] : temp_declaration[1]]
@@ -603,7 +608,7 @@ def validate_candidate(
     )
     text = assembly.read_text(encoding="utf-8")
     for required in (
-        "dcl_constantbuffer CB13[19], immediateIndexed",
+        "dcl_constantbuffer CB13[20], immediateIndexed",
         "dcl_resource_texture3d (float,float,float,float) t50",
         "dcl_resource_texture3d (float,float,float,float) t51",
         "dcl_uav_raw u7",
@@ -644,7 +649,7 @@ def main() -> int:
             "Skylighting ambient transform compilation",
         )
         for required in (
-            "dcl_constantbuffer CB13[19], immediateIndexed",
+            "dcl_constantbuffer CB13[20], immediateIndexed",
             "dcl_resource_texture3d (float,float,float,float) t50",
             "dcl_resource_texture3d (float,float,float,float) t51",
             "dcl_uav_raw u7",

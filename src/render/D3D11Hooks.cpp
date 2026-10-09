@@ -3625,6 +3625,8 @@ namespace csah::render
                     activeReplacementBinding.family ==
                         linear_lighting::ReplacementShaderFamily::
                             dFLightAmbient);
+            const auto skylightingVisibility = skylighting::Runtime::get().scopeVisibilityDraw(
+                context, static_cast<bool>(activeIblMaterialBinding));
             const auto bloomGlareBindings =
                 bloom_glare::Runtime::get().scopeDraw(
                     context,
@@ -3713,6 +3715,8 @@ namespace csah::render
                     activeReplacementBinding.family ==
                         linear_lighting::ReplacementShaderFamily::
                             dFLightAmbient);
+            const auto skylightingVisibility = skylighting::Runtime::get().scopeVisibilityDraw(
+                context, static_cast<bool>(activeIblMaterialBinding));
             const auto bloomGlareBindings =
                 bloom_glare::Runtime::get().scopeDraw(
                     context,
@@ -3813,6 +3817,8 @@ namespace csah::render
                     activeReplacementBinding.family ==
                         linear_lighting::ReplacementShaderFamily::
                             dFLightAmbient);
+            const auto skylightingVisibility = skylighting::Runtime::get().scopeVisibilityDraw(
+                context, static_cast<bool>(activeIblMaterialBinding));
             const auto bloomGlareBindings =
                 bloom_glare::Runtime::get().scopeDraw(
                     context,
@@ -3915,6 +3921,8 @@ namespace csah::render
                     activeReplacementBinding.family ==
                         linear_lighting::ReplacementShaderFamily::
                             dFLightAmbient);
+            const auto skylightingVisibility = skylighting::Runtime::get().scopeVisibilityDraw(
+                context, static_cast<bool>(activeIblMaterialBinding));
             const auto bloomGlareBindings =
                 bloom_glare::Runtime::get().scopeDraw(
                     context,

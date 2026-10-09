@@ -25,6 +25,7 @@ cbuffer SkylightingSettings : register(b13)
     // x=minimum diffuse visibility, y=minimum specular visibility,
     // z=feature active, w=one-shot diagnostic collection.
     float4 Response;
+    float4 ProbeWorldOrigin;
 };
 
 static const float kPi = 3.14159265358979323846f;

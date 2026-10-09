@@ -280,6 +280,25 @@ namespace csah::skylighting
         }
     }
 
+    ScopedVisibilityBindings::ScopedVisibilityBindings(ID3D11DeviceContext* context,
+        ID3D11ShaderResourceView* nearProbe, ID3D11ShaderResourceView* farProbe,
+        ID3D11ShaderResourceView* parameters) noexcept : context_(context)
+    {
+        if (!context_) return;
+        std::array<ID3D11ShaderResourceView*, 3> previous{};
+        context_->PSGetShaderResources(50, 3, previous.data());
+        for (std::size_t index = 0; index < previous.size(); ++index) previous_[index].Attach(previous[index]);
+        const std::array<ID3D11ShaderResourceView*, 3> views{nearProbe, farProbe, parameters};
+        context_->PSSetShaderResources(50, 3, views.data());
+    }
+
+    ScopedVisibilityBindings::~ScopedVisibilityBindings()
+    {
+        if (!context_) return;
+        const std::array<ID3D11ShaderResourceView*, 3> previous{previous_[0].Get(), previous_[1].Get(), previous_[2].Get()};
+        context_->PSSetShaderResources(50, 3, previous.data());
+    }
+
     ScopedAmbientBindings::ScopedAmbientBindings(
         ID3D11DeviceContext* context,
         ID3D11ShaderResourceView* nearProbe,
@@ -503,6 +522,8 @@ namespace csah::skylighting
         updateShader_.Reset();
         comparisonSampler_.Reset();
         constantsBuffer_.Reset();
+        visibilityParametersView_.Reset();
+        visibilityParameters_.Reset();
         constants_ = {};
         probeDataValid_.store(false, std::memory_order_release);
         privateDepthReady_.store(false, std::memory_order_release);
@@ -858,6 +879,18 @@ namespace csah::skylighting
             return false;
         }
 
+        bufferDescription.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+        ComPtr<ID3D11Buffer> parameters;
+        ComPtr<ID3D11ShaderResourceView> parametersView;
+        D3D11_SHADER_RESOURCE_VIEW_DESC parameterDescription{};
+        parameterDescription.Format = DXGI_FORMAT_R32G32B32A32_FLOAT;
+        parameterDescription.ViewDimension = D3D11_SRV_DIMENSION_BUFFER;
+        parameterDescription.Buffer.NumElements = sizeof(Constants) / 16;
+        if (FAILED(device_->CreateBuffer(&bufferDescription, nullptr, &parameters)) ||
+            FAILED(device_->CreateShaderResourceView(parameters.Get(), &parameterDescription, &parametersView))) return false;
+        visibilityParameters_ = std::move(parameters);
+        visibilityParametersView_ = std::move(parametersView);
+
         if (!createDiagnosticResources()) {
             logging::warn("Skylighting diagnostic resources unavailable; probe rendering remains active.");
         }
@@ -1180,6 +1213,7 @@ namespace csah::skylighting
             &constants_,
             0,
             0);
+        if (visibilityParameters_) context_->UpdateSubresource(visibilityParameters_.Get(), 0, nullptr, &constants_, 0, 0);
         publishedSettingsRevision_ =
             settingsRevision_.load(std::memory_order_acquire);
         publishedCaptureRevision_ = captureRevision_;
@@ -1730,6 +1764,17 @@ namespace csah::skylighting
             cameraPosition.x,
             cameraPosition.y,
             cameraPosition.z);
+        constants_.probeWorldOrigin = {cameraPosition.x, cameraPosition.y, cameraPosition.z, 0.0f};
+        // Both volumes are sampled against this capture origin, even on a
+        // frame that updates only the near or only the far ring.
+        auto& otherLevel = updateFarLevel ? nearProbes_ : farProbes_;
+        auto& otherConstants = updateFarLevel ? constants_.nearLevel : constants_.farLevel;
+        if (otherLevel.previousCellValid) {
+            otherConstants.positionOffset = {
+                static_cast<float>(otherLevel.previousCell[0]) * otherConstants.cellSize.x - cameraPosition.x,
+                static_cast<float>(otherLevel.previousCell[1]) * otherConstants.cellSize.y - cameraPosition.y,
+                static_cast<float>(otherLevel.previousCell[2]) * otherConstants.cellSize.z - cameraPosition.z, 0.0f};
+        }
         const auto baseStableSlices = updateFarLevel ?
             8u :
             (activeQuality_ == Quality::high ?
@@ -1763,6 +1808,23 @@ namespace csah::skylighting
     bool Runtime::requested() const noexcept
     {
         return enabled_.load(std::memory_order_acquire);
+    }
+
+    bool Runtime::visibilityReady() const noexcept
+    {
+        return requested() && gpuResourcesReady_.load(std::memory_order_acquire) &&
+            nativeHookOwned_.load(std::memory_order_acquire) && exteriorActive_.load(std::memory_order_acquire) &&
+            privateDepthReady_.load(std::memory_order_acquire) && probeDataValid_.load(std::memory_order_acquire);
+    }
+
+    ScopedVisibilityBindings Runtime::scopeVisibilityDraw(ID3D11DeviceContext* context, bool consumerActive) noexcept
+    {
+        if (!consumerActive || !context || context != context_.Get()) return {};
+        const auto active = visibilityReady();
+        if (settingsRevision_.load(std::memory_order_acquire) != publishedSettingsRevision_ ||
+            captureRevision_ != publishedCaptureRevision_ || active != publishedFeatureActive_) publishConstants(active);
+        return ScopedVisibilityBindings(context, active ? nearProbes_.probeResource.Get() : nullptr,
+            active ? farProbes_.probeResource.Get() : nullptr, active ? visibilityParametersView_.Get() : nullptr);
     }
 
     ScopedAmbientBindings Runtime::scopeAmbientDraw(

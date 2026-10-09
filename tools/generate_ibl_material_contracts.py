@@ -523,6 +523,8 @@ def template_contract(
             SURFACE_CLASS_SLOT,
         ),
     ]
+    for slot in (50, 51, 52):
+        declarations.append(declaration_for_slot(words, OPCODE_DCL_RESOURCE, OPERAND_RESOURCE, slot))
     temp_declaration, _, body = shader_declarations_and_body(words)
     template_temp_count = words[temp_declaration[0] + 1]
     if template_temp_count == 0 or template_temp_count > 64:
@@ -1154,6 +1156,7 @@ def validate_candidate(
     original_textures = set(original_declarations.textures)
     candidate_textures = set(candidate_declarations.textures)
     if candidate_textures - {
+        50, 51,
         DFLIGHT_ALBEDO_SLOT,
         PUBLISHED_ENVIRONMENT_SLOT,
         PUBLISHED_VALIDITY_SLOT,
@@ -1166,6 +1169,7 @@ def validate_candidate(
         CUBEMAP_STYLE_SLOT,
         SURFACE_CLASS_SLOT,
     } != original_textures or not {
+        50, 51,
         DFLIGHT_ALBEDO_SLOT,
         PUBLISHED_ENVIRONMENT_SLOT,
         PUBLISHED_VALIDITY_SLOT,
@@ -1188,6 +1192,9 @@ def validate_candidate(
     ):
         raise ContractError(f"{name} changed vanilla declarations")
     for declaration in (
+        "dcl_resource_texture3d (float,float,float,float) t50",
+        "dcl_resource_texture3d (float,float,float,float) t51",
+        "dcl_resource_buffer (float,float,float,float) t52",
         "dcl_resource_texture2d (float,float,float,float) t29",
         "dcl_resource_texturecube (float,float,float,float) t30",
         "dcl_resource_texturecube (float,float,float,float) t31",

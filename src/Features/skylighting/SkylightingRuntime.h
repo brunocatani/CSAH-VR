@@ -15,6 +15,21 @@ namespace csah::skylighting
 {
     class Runtime;
 
+    class ScopedVisibilityBindings final
+    {
+    public:
+        ScopedVisibilityBindings() noexcept = default;
+        ScopedVisibilityBindings(ID3D11DeviceContext* context,
+            ID3D11ShaderResourceView* nearProbe, ID3D11ShaderResourceView* farProbe,
+            ID3D11ShaderResourceView* parameters) noexcept;
+        ~ScopedVisibilityBindings();
+        ScopedVisibilityBindings(const ScopedVisibilityBindings&) = delete;
+        ScopedVisibilityBindings& operator=(const ScopedVisibilityBindings&) = delete;
+    private:
+        ID3D11DeviceContext* context_{};
+        std::array<Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>, 3> previous_;
+    };
+
     using NativePrecipitationRender =
         void(__fastcall*)(void* precipitation, void* rainEmitter);
     using NativeProjectionSetup =
@@ -95,6 +110,9 @@ namespace csah::skylighting
             NativeProjectionSetup restoreProjection) noexcept;
 
         [[nodiscard]] bool requested() const noexcept;
+        [[nodiscard]] bool visibilityReady() const noexcept;
+        [[nodiscard]] ScopedVisibilityBindings scopeVisibilityDraw(
+            ID3D11DeviceContext* context, bool consumerActive) noexcept;
         [[nodiscard]] ScopedAmbientBindings scopeAmbientDraw(
             ID3D11DeviceContext* context,
             bool ambientReplacementActive) noexcept;
@@ -157,8 +175,9 @@ namespace csah::skylighting
             ProbeLevelConstants farLevel{};
             UInt4 updateControl{};
             Float4 response{};
+            Float4 probeWorldOrigin{};
         };
-        static_assert(sizeof(Constants) == 304);
+        static_assert(sizeof(Constants) == 320);
 
         struct ProbeResources
         {
@@ -230,6 +249,8 @@ namespace csah::skylighting
         Microsoft::WRL::ComPtr<ID3D11ComputeShader> updateShader_;
         Microsoft::WRL::ComPtr<ID3D11SamplerState> comparisonSampler_;
         Microsoft::WRL::ComPtr<ID3D11Buffer> constantsBuffer_;
+        Microsoft::WRL::ComPtr<ID3D11Buffer> visibilityParameters_;
+        Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> visibilityParametersView_;
         render::GpuTimingProfiler gpuTiming_;
         render::GpuTimingProfiler ambientDrawGpuTiming_;
         D3D11_TEXTURE2D_DESC privateDepthDescription_{};

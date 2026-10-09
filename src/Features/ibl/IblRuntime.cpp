@@ -1,3 +1,4 @@
+#include "Features/skylighting/SkylightingRuntime.h"
 #include "Features/ibl/IblRuntime.h"
 
 #include "resources.h"
@@ -1041,7 +1042,7 @@ namespace csah::ibl
             environmentProvider_.publishedEnvironment() &&
             environmentProvider_.publishedValidity();
         if (!context || context != context_.Get() || !original ||
-            (!dynamicMaterialAvailable &&
+            (!dynamicMaterialAvailable && !skylighting::Runtime::get().visibilityReady() &&
                 !pbrEnabled_.load(std::memory_order_acquire)) ||
             materialConsumptionFailed_ ||
             !resourcesReady_.load(std::memory_order_acquire)) {
@@ -1080,7 +1081,8 @@ namespace csah::ibl
 
     bool Runtime::featureEnabled() const noexcept
     {
-        return environmentAcquisitionEnabled() || materialResponseEnabled();
+        return environmentAcquisitionEnabled() || materialResponseEnabled() ||
+            skylighting::Runtime::get().visibilityReady();
     }
 
     bool Runtime::materialBindingActive(
@@ -1098,11 +1100,11 @@ namespace csah::ibl
             environmentProvider_.publishedValidity() &&
             environmentProvider_.publishedPosition();
         return binding &&
-            (dynamicMaterialAvailable ||
+            (dynamicMaterialAvailable || skylighting::Runtime::get().visibilityReady() ||
                 pbrEnabled_.load(std::memory_order_acquire)) &&
             !materialConsumptionFailed_ &&
             resourcesReady_.load(std::memory_order_acquire) &&
-            materialAlbedo_ && (!pbrActive || materialProperties_);
+            (!dynamicMaterialAvailable || materialAlbedo_) && (!pbrActive || (materialAlbedo_ && materialProperties_));
     }
 
     ScopedMaterialBindings Runtime::scopeMaterialBindings(
@@ -1116,8 +1118,6 @@ namespace csah::ibl
             !resourcesReady_.load(std::memory_order_acquire)) {
             return {};
         }
-        auto* constants = enabled ? materialEnabledConstants_.Get() :
-                                    materialDisabledConstants_.Get();
         const auto dynamicActive = enabled &&
             enabled_.load(std::memory_order_acquire) &&
             dynamicCubemapsEnabled_.load(std::memory_order_acquire) &&
@@ -1143,6 +1143,8 @@ namespace csah::ibl
         auto* albedo = enabled ? materialAlbedo_.Get() : nullptr;
         const auto pbrActive = enabled &&
             pbrEnabled_.load(std::memory_order_acquire);
+        const auto materialResponse = pbrActive || (dynamicActive && radiance && validity && albedo);
+        auto* constants = materialResponse ? materialEnabledConstants_.Get() : materialDisabledConstants_.Get();
         auto* materialProperties = pbrActive ? materialProperties_.Get() :
                                                nullptr;
         auto* pbrMaterial = pbrActive ? surface_classification::Runtime::get()
@@ -1151,7 +1153,7 @@ namespace csah::ibl
         auto* surfaceClass = pbrActive ? surface_classification::Runtime::get()
                                            .shaderResourceView() :
                                        nullptr;
-        if (!constants || (enabled &&
+        if (!constants || (materialResponse &&
                 (!albedo || (pbrActive && !materialProperties) ||
                     (pbrActive && !surfaceClass) ||
                     (dynamicActive &&
