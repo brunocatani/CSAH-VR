@@ -32,7 +32,7 @@ RWBuffer<float4> Result : register(u0);
     p.RimDiffuse=float4(0.2,0.3,0.4,0);p.TransmissionDiffuse=float4(0.3,0.2,0.1,0);
     p.PbrDiffuseScale=1;p.NativeVisibility=0.8;p.ContactVisibility=visibility;
     float3 nativeDiffuse=(float3(0.7,0.8,0.9)+p.RimDiffuse.xyz+p.TransmissionDiffuse.xyz)*0.8*visibility.x;
-    Result[id.x]=float4(nativeDiffuse+PSMain(p).xyz,0.5*0.8*visibility.x);
+    Result[id.x]=float4(nativeDiffuse+PSMain(p).diffuseDelta.xyz,0.5*0.8*visibility.x);
 })";
     const auto path=root/"package/Shaders/Community/Skylighting/TransmissionTest.hlsl";
     ComPtr<ID3DBlob> code,errors;const auto status=D3DCompile(source.data(),source.size(),path.string().c_str(),nullptr,D3D_COMPILE_STANDARD_FILE_INCLUDE,"main","cs_5_0",D3DCOMPILE_OPTIMIZATION_LEVEL3|D3DCOMPILE_ENABLE_STRICTNESS|D3DCOMPILE_WARNINGS_ARE_ERRORS,0,&code,&errors);

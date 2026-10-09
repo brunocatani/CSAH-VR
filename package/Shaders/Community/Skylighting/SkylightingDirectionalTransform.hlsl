@@ -6,6 +6,7 @@ cbuffer NativeStereo : register(b8) { float4 Stereo[1]; };
 cbuffer NativeCamera : register(b12) { float4 Camera[61]; };
 cbuffer BasicWetnessSettings : register(b9) { float4 BasicWetnessParams; float4 BasicWetnessMaterialParams; };
 #include "SkylightingReceiver.hlsli"
+#include "../WaterEffects/WaterCaustics.hlsli"
 
 struct PixelInput
 {
@@ -19,7 +20,8 @@ struct PixelInput
     float4 ContactVisibility : TEXCOORD5;
 };
 
-float4 PSMain(PixelInput input) : SV_Target0
+struct DirectionalOutput {float4 diffuseDelta:SV_Target0;float4 caustics:SV_Target1;};
+DirectionalOutput PSMain(PixelInput input)
 {
     float softVisibility = input.NativeVisibility.x;
     if (Response.z > 0.5f) {
@@ -43,5 +45,17 @@ float4 PSMain(PixelInput input) : SV_Target0
     const float wetScale = 1.0f - saturate(BasicWetnessParams.z) * wetness;
     // The native final /3 still owns DFLight accumulation units. Only the
     // soft diffuse terms change; native hard shadow and specular stay intact.
-    return float4(delta * input.PbrDiffuseScale.xyz * wetScale, 0);
+    DirectionalOutput output;
+    output.diffuseDelta=float4(delta * input.PbrDiffuseScale.xyz * wetScale, 0);
+    output.caustics=1;
+    uint waterRows;WaterParameters.GetDimensions(waterRows);
+    if(waterRows>=28 && WaterParameters[1].x>.5 && WaterParameters[1].w>.5) {
+        uint width,height;NativeDepth.GetDimensions(width,height);
+        float depth=NativeDepth.Load(int3(int2(input.Position.xy),0));
+        if(depth>0 && depth<1 && width>0 && height>0) {
+            float3 world=ReconstructRelativeWorldPosition(input.Position.xy/float2(width,height),depth,input.Eye)+ProbeWorldOrigin.xyz;
+            output.caustics=float4(WaterCausticMultiplier(world),1);
+        }
+    }
+    return output;
 }

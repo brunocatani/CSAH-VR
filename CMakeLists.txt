@@ -1686,6 +1686,7 @@ add_custom_command(
     "${SKYLIGHTING_SAMPLING_SHADER_SOURCE}"
     "${SKYLIGHTING_RECEIVER_SHADER_SOURCE}"
     "${SKYLIGHTING_DIRECTIONAL_SHADER_SOURCE}"
+    "${ROOT_DIR}/package/Shaders/Community/WaterEffects/WaterCaustics.hlsli"
     "${CONTACT_SHADOW_HAIR_SHADER_SOURCE}"
     "${CONTACT_SHADOW_WETNESS_SHADER_SOURCE}"
     "${PBR_DIRECTIONAL_SHADER_SOURCE}"
@@ -2276,6 +2277,16 @@ target_compile_options(CSAHCore PRIVATE
   /W4
 )
 
+set(WATER_EFFECTS_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated/WaterEffects")
+set(WATER_CAUSTICS_HEADER "${WATER_EFFECTS_GENERATED_DIR}/WaterCausticsTexture.h")
+add_custom_command(OUTPUT "${WATER_CAUSTICS_HEADER}"
+  COMMAND "${Python3_EXECUTABLE}" "${ROOT_DIR}/tools/generate_water_caustics.py"
+    --source "${ROOT_DIR}/package/Shaders/Community/WaterEffects/watercaustics.dds"
+    --output "${WATER_CAUSTICS_HEADER}"
+  DEPENDS "${ROOT_DIR}/tools/generate_water_caustics.py" "${ROOT_DIR}/package/Shaders/Community/WaterEffects/watercaustics.dds"
+  VERBATIM)
+add_custom_target(WaterEffectsAssets DEPENDS "${WATER_CAUSTICS_HEADER}")
+
 set(SSGI_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated/ScreenSpaceGI")
 set(SSGI_GENERATED_HEADER "${SSGI_GENERATED_DIR}/ScreenSpaceGIShaders.h")
 file(GLOB SSGI_SHADER_SOURCES CONFIGURE_DEPENDS "${ROOT_DIR}/package/Shaders/Community/ScreenSpaceGI/*.hlsl" "${ROOT_DIR}/package/Shaders/Community/ScreenSpaceGI/*.hlsli")
@@ -2289,6 +2300,8 @@ add_custom_target(ScreenSpaceGIShaders DEPENDS "${SSGI_GENERATED_HEADER}")
 
 add_library(${PROJECT_NAME} SHARED
   "${SOURCE_DIR}/Features/water_effects/WaterEffectsRuntime.cpp"
+  "${SOURCE_DIR}/Features/water_effects/WaterWorldData.cpp"
+  "${SOURCE_DIR}/Features/water_effects/WaterWorldData.h"
   "${SOURCE_DIR}/Features/water_effects/WaterEffectsRuntime.h"
   "${SOURCE_DIR}/Features/water_effects/WaterEffectsSettings.cpp"
   "${SOURCE_DIR}/Features/water_effects/WaterEffectsSettings.h"
@@ -2566,6 +2579,7 @@ add_library(${PROJECT_NAME} SHARED
   "${SOURCE_DIR}/support/NearAllocation.h"
 )
 add_dependencies(${PROJECT_NAME}
+  WaterEffectsAssets
   ScreenSpaceGIShaders
   VanillaFixesShaders
   UpscalingShaders
@@ -2627,6 +2641,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
   "${VOLUMETRIC_GENERATED_DIR}"
   "${SKYLIGHTING_GENERATED_DIR}"
   "${SSGI_GENERATED_DIR}"
+  "${WATER_EFFECTS_GENERATED_DIR}"
   "${FILMIC_TONEMAPPING_GENERATED_DIR}"
   "${BLOOM_GLARE_GENERATED_DIR}"
   "${SUBSURFACE_SCATTERING_GENERATED_DIR}"
@@ -3404,11 +3419,22 @@ if(BUILD_CSAH_TESTS)
   add_test(NAME CSAH.IblEnvironmentUpdater
     COMMAND CSAHIblEnvironmentUpdaterTests "${ROOT_DIR}")
 
+  add_executable(CSAHWaterCausticsTests "${ROOT_DIR}/tests/WaterCausticsTests.cpp"
+    "${SOURCE_DIR}/Features/water_effects/WaterEffectsRuntime.cpp" "${SOURCE_DIR}/Features/water_effects/WaterWorldData.cpp")
+  add_dependencies(CSAHWaterCausticsTests WaterEffectsAssets ContactShadowShader)
+  target_compile_features(CSAHWaterCausticsTests PRIVATE cxx_std_23)
+  target_compile_definitions(CSAHWaterCausticsTests PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_include_directories(CSAHWaterCausticsTests PRIVATE "${SOURCE_DIR}" "${WATER_EFFECTS_GENERATED_DIR}" "${CONTACT_SHADOW_GENERATED_DIR}")
+  target_precompile_headers(CSAHWaterCausticsTests PRIVATE "${SOURCE_DIR}/PCH.h")
+  target_link_libraries(CSAHWaterCausticsTests PRIVATE CommonLibF4::CommonLibF4 d3d11 d3dcompiler spdlog::spdlog)
+  add_test(NAME CSAH.WaterCaustics COMMAND CSAHWaterCausticsTests "${ROOT_DIR}")
+
   add_executable(CSAHWaterParallaxTests "${ROOT_DIR}/tests/WaterParallaxTests.cpp"
-    "${SOURCE_DIR}/Features/water_effects/WaterEffectsRuntime.cpp")
+    "${SOURCE_DIR}/Features/water_effects/WaterEffectsRuntime.cpp" "${SOURCE_DIR}/Features/water_effects/WaterWorldData.cpp")
+  add_dependencies(CSAHWaterParallaxTests WaterEffectsAssets)
   target_compile_features(CSAHWaterParallaxTests PRIVATE cxx_std_23)
   target_compile_definitions(CSAHWaterParallaxTests PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
-  target_include_directories(CSAHWaterParallaxTests PRIVATE "${SOURCE_DIR}")
+  target_include_directories(CSAHWaterParallaxTests PRIVATE "${SOURCE_DIR}" "${WATER_EFFECTS_GENERATED_DIR}")
   target_precompile_headers(CSAHWaterParallaxTests PRIVATE "${SOURCE_DIR}/PCH.h")
   target_link_libraries(CSAHWaterParallaxTests PRIVATE CommonLibF4::CommonLibF4 d3d11 d3dcompiler spdlog::spdlog)
   add_test(NAME CSAH.WaterParallax COMMAND CSAHWaterParallaxTests "${ROOT_DIR}")

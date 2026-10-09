@@ -1886,7 +1886,7 @@ namespace csah::render
             }
             if (activeContactShadowBinding &&
                 !contact_shadows::Runtime::get().compositorReady(
-                    skylighting::Runtime::get().requested() ||
+                    skylighting::Runtime::get().requested() || water_effects::Runtime::get().causticsRequested() ||
                     (wrapped_grass::Runtime::get().requested() ||
                         hair_specular::Runtime::get().requested() ||
                         subsurface_scattering::Runtime::get().requested() ||
@@ -2486,6 +2486,7 @@ namespace csah::render
                 return;
             }
             auto& runtime = contact_shadows::Runtime::get();
+            const auto caustics=water_effects::Runtime::get().scopeCaustics(context);
             const auto bindings = runtime.scopeDraw(
                 context,
                 activeContactShadowBinding,
@@ -3292,7 +3293,7 @@ namespace csah::render
                     wrappedGrassFeatureActive || hairSpecularFeatureActive ||
                     subsurfaceScatteringFeatureActive ||
                     basicWetnessFeatureActive || cloudShadowFeatureActive ||
-                    skylighting::Runtime::get().requested());
+                    (skylighting::Runtime::get().requested() || water_effects::Runtime::get().causticsRequested()));
             const auto materialCompositorActive =
                 dflightCompositorActive || pbrFeatureActive;
             if (contactShadowRuntime.tracksOriginal(shader) &&
@@ -3359,7 +3360,7 @@ namespace csah::render
                             subsurfaceScatteringFeatureActive ||
                             basicWetnessFeatureActive ||
                             cloudShadowFeatureActive || pbrFeatureActive ||
-                            skylighting::Runtime::get().requested());
+                            (skylighting::Runtime::get().requested() || water_effects::Runtime::get().causticsRequested()));
             }
             const auto descriptorPending = pendingDFPrePassDescriptor.active;
             const auto activeDescriptor = activeDFPrePassDescriptor();

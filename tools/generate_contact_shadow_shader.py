@@ -11,6 +11,7 @@ import census_linear_lighting_fxp as census
 from dxbc_transform import (
     OPCODE_DCL_CONSTANT_BUFFER,
     OPCODE_DCL_RESOURCE,
+    OPCODE_DCL_SAMPLER,
     OPCODE_RET,
     OPERAND_CONSTANT_BUFFER,
     OPERAND_INPUT,
@@ -1242,11 +1243,16 @@ def sun_shadow_layout(original: bytes) -> int:
 def sun_template_contract(template: bytes):
     _, _, _, words = shader_words(template)
     declarations = []
+    resources=set()
     for start, end in instructions(words):
-        if (words[start] & 0x7FF) != OPCODE_DCL_RESOURCE: continue
-        operand = executable_operands(words, start, end)[0]
-        if operand.immediate_indices[0] in (52, 53, 54): declarations.append(words[start:end])
-    if len(declarations) != 3: raise ContractError("Skylighting sun t52/t53/t54 contract changed")
+        opcode=words[start]&0x7ff
+        if opcode not in (OPCODE_DCL_RESOURCE,OPCODE_DCL_SAMPLER): continue
+        operand=executable_operands(words,start,end)[0]
+        slot=operand.immediate_indices[0]
+        if opcode==OPCODE_DCL_RESOURCE and slot in (52,53,54,65,66):
+            declarations.append(words[start:end]);resources.add(slot)
+        elif opcode==OPCODE_DCL_SAMPLER and slot==15: declarations.append(words[start:end])
+    if resources!={52,53,54,65,66} or len(declarations)!=6: raise ContractError("Directional sky/water resource footprint changed")
     temps, _, body = shader_declarations_and_body(words)
     if (words[body[-1][0]] & 0x7FF) != OPCODE_RET: raise ContractError("Skylighting sun return changed")
     return declarations, [words[a:b] for a,b in body[:-1]], words[temps[0] + 1]
@@ -1258,8 +1264,8 @@ def remap_sun_instruction(instruction, first_temp, rim, transmission, diffuse_sc
         if operand.operand_type == OPERAND_TEMP:
             replacements[operand.start] = replace_operand_with_temp(instruction, operand, first_temp + operand.immediate_indices[0])
         elif operand.operand_type == OPERAND_OUTPUT:
-            if operand.immediate_indices != (0,): raise ContractError("Skylighting sun output changed")
-            replacements[operand.start] = replace_operand_with_temp(instruction, operand, output)
+            if operand.immediate_indices not in ((0,),(1,)): raise ContractError("Directional sky/water output changed")
+            replacements[operand.start] = replace_operand_with_temp(instruction, operand, output+operand.immediate_indices[0])
         elif operand.operand_type == OPERAND_INPUT and operand.immediate_indices[0] >= 2:
             index = operand.immediate_indices[0]
             register = {2:5, 3:rim, 4:transmission, 5:diffuse_scale, 6:0, 7:contact}.get(index)
@@ -1368,7 +1374,9 @@ def patch_shader(
         raise ContractError(
             "directional DFLight unexpectedly owns the private PBR b7 slot"
         )
-    if original_resource_slots & {52, 53, 54}:
+    original_samplers={executable_operands(words,a,b)[0].immediate_indices[0] for a,b in instructions(words) if words[a]&0x7ff==OPCODE_DCL_SAMPLER}
+    if 15 in original_samplers: raise ContractError("Native directional shader owns water sampler s15")
+    if original_resource_slots & {52, 53, 54, 65, 66}:
         raise ContractError("native directional shader owns a private Skylighting resource slot")
     first_scratch = original_temps
     visibility_scratch = first_scratch + template_temps
@@ -1471,7 +1479,7 @@ def patch_shader(
     for declaration in pbr_declarations:
         prefix.extend(declaration)
     updated_temps = words[temp_declaration[0] : temp_declaration[1]]
-    updated_temps[1] = sun_delta_scratch + 1
+    updated_temps[1] = sun_delta_scratch + 2
     rewritten: list[int] = []
     for start, end in body:
         if (start, end) == hard_site:
@@ -1483,9 +1491,11 @@ def patch_shader(
             rewritten.extend(transformed)
             rewritten.extend(transformed_sun)
             rewritten.extend(multiply_rgb(1, visibility_scratch))
+            rewritten.extend([0x07000038, *temp_mask(1,7), *temp_swizzle(1,0x246), *temp_swizzle(sun_delta_scratch+1,0x246)])
         elif (start, end) == o0_write:
             rewritten.extend(multiply_rgb(0, visibility_scratch))
             rewritten.extend([0x07000000, *temp_mask(0,7), *temp_swizzle(0,0x246), *temp_swizzle(sun_delta_scratch,0x246)])
+            rewritten.extend([0x07000038, *temp_mask(0,7), *temp_swizzle(0,0x246), *temp_swizzle(sun_delta_scratch+1,0x246)])
         rewritten.extend(words[start:end])
         if (start, end) == back_site: rewritten.extend(record_transmission(words[start:end], transmission_scratch, False))
         if (start, end) == forward_site: rewritten.extend(record_transmission(words[start:end], transmission_scratch, True))

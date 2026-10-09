@@ -74,9 +74,9 @@ foreach(tabIndex RANGE 0 ${lastTab})
   endforeach()
 endforeach()
 
-if(NOT controlCount EQUAL 159)
+if(NOT controlCount EQUAL 162)
   message(FATAL_ERROR
-    "CSAH PALM settings coverage changed: expected 159 controls, found ${controlCount}")
+    "CSAH PALM settings coverage changed: expected 162 controls, found ${controlCount}")
 endif()
 
 foreach(required IN ITEMS
@@ -238,4 +238,4 @@ foreach(relativePath IN ITEMS
 endforeach()
 
 message(STATUS
-  "Verified PALM settings ownership: 159 shared-INI controls, direct runtime publication, no wrist provider or assets")
+  "Verified PALM settings ownership: 162 shared-INI controls, direct runtime publication, no wrist provider or assets")

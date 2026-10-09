@@ -252,7 +252,10 @@
           "id": "water-effects", "label": "Water",
           "groups": [{ "id": "water-parallax", "label": "Water Surface",
             "controls": [
-              { "id": "water-effects-enabled", "type": "toggle", "label": "Water Effects", "help": "Enables height-based normal sampling on compatible water surfaces.", "default": false, "binding": { "type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "WaterEffects", "key": "bEnabled" } },
+              { "id": "water-effects-enabled", "type": "toggle", "label": "Water Effects", "help": "Enables the selected water surface and underwater lighting effects.", "default": false, "binding": { "type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "WaterEffects", "key": "bEnabled" } },
+              { "id": "water-parallax-enabled", "type": "toggle", "label": "Water Parallax", "help": "Uses alpha heights in compatible water normal maps to displace their texture sampling.", "default": true, "binding": { "type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "WaterEffects", "key": "bEnableParallax" } },
+              { "id": "water-caustics-enabled", "type": "toggle", "label": "Underwater Caustics", "help": "Modulates sunlight below the native exterior-cell water planes.", "default": true, "binding": { "type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "WaterEffects", "key": "bEnableCaustics" } },
+              { "id": "water-caustics-strength", "type": "slider", "label": "Caustics Strength", "default": 1.0, "min": 0.0, "max": 1.0, "step": 0.05, "binding": { "type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "WaterEffects", "key": "fCausticStrength" } },
               { "id": "water-parallax-scale", "type": "slider", "label": "Parallax Scale", "default": 1.0, "min": 0.0, "max": 2.0, "step": 0.05, "binding": { "type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "WaterEffects", "key": "fParallaxScale" } }
             ] }]
         },

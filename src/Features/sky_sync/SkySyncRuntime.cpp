@@ -1,3 +1,4 @@
+#include "Features/water_effects/WaterEffectsRuntime.h"
 #include "PCH.h"
 
 #include "Features/sky_sync/SkySyncRuntime.h"
@@ -476,6 +477,7 @@ namespace csah::sky_sync
     void Runtime::onWorldEnding() noexcept
     {
         worldReady_.store(false, std::memory_order_release);
+        water_effects::Runtime::get().resetWorld();
         applied_.store(false, std::memory_order_release);
         currentDirectionValid_ = false;
         currentSource_ = CelestialSource::none;
@@ -484,6 +486,7 @@ namespace csah::sky_sync
     void Runtime::onSkyUpdated(RE::Sky* sky, float deltaSeconds) noexcept
     {
         skyUpdates_.fetch_add(1, std::memory_order_relaxed);
+        water_effects::Runtime::get().onSkyUpdated(sky && hookOwned_.load(std::memory_order_acquire) && worldReady_.load(std::memory_order_acquire),deltaSeconds);
         if (!sky || !enabled_.load(std::memory_order_acquire) ||
             !hookOwned_.load(std::memory_order_acquire) ||
             !worldReady_.load(std::memory_order_acquire)) {
