@@ -45,6 +45,7 @@ namespace csah::ibl
         float diffuseSHCoverage{};
         DiffuseSHState diffuseSHState{ DiffuseSHState::invalid };
         DiffuseSH diffuseSH{};
+        double validationCpuMilliseconds{};
     };
 
     // Render-thread-only transactional updater. It captures one shared
@@ -60,6 +61,8 @@ namespace csah::ibl
             std::size_t captureShaderBytecodeSize,
             const void* filterShaderBytecode,
             std::size_t filterShaderBytecodeSize,
+            const void* reductionShaderBytecode,
+            std::size_t reductionShaderBytecodeSize,
             std::uint32_t extent) noexcept;
         void reset() noexcept;
 
@@ -94,6 +97,7 @@ namespace csah::ibl
             Microsoft::WRL::ComPtr<ID3D11Device> device;
             Microsoft::WRL::ComPtr<ID3D11ComputeShader> captureShader;
             Microsoft::WRL::ComPtr<ID3D11ComputeShader> filterShader;
+            Microsoft::WRL::ComPtr<ID3D11ComputeShader> reductionShader;
             Microsoft::WRL::ComPtr<ID3D11SamplerState> sampler;
             Microsoft::WRL::ComPtr<ID3D11Buffer> captureConstants;
             Microsoft::WRL::ComPtr<ID3D11Buffer> filterConstants;
@@ -107,8 +111,13 @@ namespace csah::ibl
                 capturedValidityView;
             Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView>
                 capturedValidityOutput;
-            Microsoft::WRL::ComPtr<ID3D11Texture2D> stagingRadiance;
-            Microsoft::WRL::ComPtr<ID3D11Texture2D> stagingValidity;
+            Microsoft::WRL::ComPtr<ID3D11Buffer> reductionConstants;
+            Microsoft::WRL::ComPtr<ID3D11Buffer> reductionPartials;
+            Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> reductionPartialsView;
+            Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView> reductionPartialsOutput;
+            Microsoft::WRL::ComPtr<ID3D11Buffer> reductionResult;
+            Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView> reductionResultOutput;
+            Microsoft::WRL::ComPtr<ID3D11Buffer> stagingReduction;
             Microsoft::WRL::ComPtr<ID3D11Buffer> stagingSceneConstants;
             Microsoft::WRL::ComPtr<ID3D11Query> completionEvent;
             std::array<HistoryCube, 2> sky;

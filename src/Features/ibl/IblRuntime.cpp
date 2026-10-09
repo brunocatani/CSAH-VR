@@ -1887,6 +1887,8 @@ namespace csah::ibl
             IDR_IBL_ENVIRONMENT_UPDATE_CS);
         const auto filterEmbedded = loadEmbeddedShader(
             IDR_IBL_ENVIRONMENT_FILTER_CS);
+        const auto reductionEmbedded = loadEmbeddedShader(
+            IDR_IBL_ENVIRONMENT_REDUCTION_CS);
         if (!updateEmbedded.data || updateEmbedded.size < 20 ||
             std::memcmp(updateEmbedded.data, "DXBC", 4) != 0 ||
             !filterEmbedded.data || filterEmbedded.size < 20 ||
@@ -1897,6 +1899,8 @@ namespace csah::ibl
                 updateEmbedded.size,
                 filterEmbedded.data,
                 filterEmbedded.size,
+                reductionEmbedded.data,
+                reductionEmbedded.size,
                 128)) {
             return false;
         }

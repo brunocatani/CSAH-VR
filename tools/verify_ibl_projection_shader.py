@@ -17,6 +17,7 @@ SHADERS = (
     ("DiffuseIblProjectionCS.hlsl", "DiffuseIblProjectionCS.dxbc"),
     ("UpdateEnvironmentCS.hlsl", "UpdateEnvironmentCS.dxbc"),
     ("FilterEnvironmentCS.hlsl", "FilterEnvironmentCS.dxbc"),
+    ("ReduceEnvironmentCS.hlsl", "ReduceEnvironmentCS.dxbc"),
     ("MaterialStyleCS.hlsl", "MaterialStyleCS.dxbc"),
 )
 

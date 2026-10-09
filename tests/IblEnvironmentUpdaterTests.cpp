@@ -17,6 +17,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <limits>
 #include <numeric>
 #include <stdexcept>
 #include <string>
@@ -345,6 +346,154 @@ namespace
         require(provider.publishUpdate({{}, true}), "could not publish seed");
     }
 
+    void verifyReduction(Device& d3d, const std::vector<std::byte>& bytecode, UINT extent, bool poison)
+    {
+        // Independent double-precision oracle over deterministic HDR and sparse
+        // coverage. This exercises the production reduction directly, including
+        // malformed samples the capture shader normally prevents.
+        std::array<std::array<double, 40>, 6> expected{};
+        std::vector<Float4> colors(extent * extent * 6);
+        std::vector<float> validity(colors.size());
+        for (UINT face = 0; face < 6; ++face) {
+            csah::ibl::DiffuseSHFit fit{};
+            auto& sums = expected[face];
+            for (UINT y = 0; y < extent; ++y) for (UINT x = 0; x < extent; ++x) {
+                const auto index = (face * extent + y) * extent + x;
+                const float gain = (x + y) % 7 == 0 ? 4000.0F : 0.02F;
+                auto& color = colors[index];
+                color = { gain * (1 + x % 5), gain * (1 + y % 3), gain * (1 + face), 0 };
+                float& coverage = validity[index];
+                coverage = (x * 13 + y * 7 + face) % 17 == 0 ? 0.0F : float((x + y) % 5) * 0.25F;
+                if (poison && x == 0 && y == 0) {
+                    switch (face) {
+                    case 0: color.x = std::numeric_limits<float>::infinity(); break;
+                    case 1: color.y = std::numeric_limits<float>::quiet_NaN(); break;
+                    case 2: color.z = -1; break;
+                    case 3: coverage = -0.1F; break;
+                    case 4: coverage = 1.1F; break;
+                    case 5: coverage = std::numeric_limits<float>::quiet_NaN(); break;
+                    }
+                    sums[10] += 1;
+                    sums[11] += 1;
+                    continue;
+                }
+                const auto u = ((float(x) + 0.5F) / extent) * 2 - 1;
+                const auto v = ((float(y) + 0.5F) / extent) * 2 - 1;
+                const auto weight = csah::ibl::cubeTexelSolidAngleWeight(u, v);
+                csah::ibl::accumulateDiffuseSHFit(fit,
+                    csah::ibl::environmentCubeDirection(static_cast<csah::ibl::EnvironmentCubeFace>(face), u, v),
+                    {color.x, color.y, color.z}, coverage, weight);
+                sums[0] += color.x; sums[1] += color.y; sums[2] += color.z; sums[3] += coverage;
+                sums[4] += color.x * 0.2126F + color.y * 0.7152F + color.z * 0.0722F;
+                sums[5] += coverage * weight; sums[6] += weight;
+                const auto peak = std::max(color.x, std::max(color.y, color.z));
+                sums[7] = std::max(sums[7], double(peak));
+                sums[8] += peak > 1e-5F; sums[9] += coverage > 1e-4F; sums[11] += 1;
+            }
+            for (UINT row = 0; row < 4; ++row) for (UINT column = 0; column < 4; ++column)
+                sums[12 + row * 4 + column] = fit.normal[row][column];
+            for (UINT channel = 0; channel < 3; ++channel) for (UINT k = 0; k < 4; ++k)
+                sums[28 + channel * 4 + k] = fit.radiance[channel][k];
+        }
+        D3D11_TEXTURE2D_DESC td{};
+        td.Width = td.Height = extent; td.MipLevels = 1; td.ArraySize = 6;
+        td.SampleDesc.Count = 1; td.Usage = D3D11_USAGE_IMMUTABLE; td.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+        std::array<ComPtr<ID3D11Texture2D>, 2> textures;
+        std::array<ComPtr<ID3D11ShaderResourceView>, 2> inputs;
+        for (UINT kind = 0; kind < 2; ++kind) {
+            td.Format = kind == 0 ? DXGI_FORMAT_R32G32B32A32_FLOAT : DXGI_FORMAT_R32_FLOAT;
+            std::array<D3D11_SUBRESOURCE_DATA, 6> data{};
+            for (UINT face = 0; face < 6; ++face) {
+                data[face].pSysMem = kind == 0 ? static_cast<const void*>(colors.data() + face * extent * extent) : validity.data() + face * extent * extent;
+                data[face].SysMemPitch = extent * (kind == 0 ? sizeof(Float4) : sizeof(float));
+            }
+            requireSucceeded(d3d.device->CreateTexture2D(&td, data.data(), &textures[kind]), "oracle texture");
+            requireSucceeded(d3d.device->CreateShaderResourceView(textures[kind].Get(), nullptr, &inputs[kind]), "oracle SRV");
+        }
+        ComPtr<ID3D11ComputeShader> shader;
+        requireSucceeded(d3d.device->CreateComputeShader(bytecode.data(), bytecode.size(), nullptr, &shader), "reduction shader");
+        D3D11_BUFFER_DESC bd{};
+        bd.Usage = D3D11_USAGE_DEFAULT; bd.BindFlags = D3D11_BIND_UNORDERED_ACCESS | D3D11_BIND_SHADER_RESOURCE;
+        bd.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED; bd.StructureByteStride = 16;
+        const UINT groups = extent / 8;
+        ComPtr<ID3D11Buffer> partials, result;
+        ComPtr<ID3D11UnorderedAccessView> partialOutput, resultOutput;
+        ComPtr<ID3D11ShaderResourceView> partialInput;
+        bd.ByteWidth = groups * groups * 6 * 10 * 16;
+        requireSucceeded(d3d.device->CreateBuffer(&bd, nullptr, &partials), "reduction partials");
+        requireSucceeded(d3d.device->CreateUnorderedAccessView(partials.Get(), nullptr, &partialOutput), "partial UAV");
+        requireSucceeded(d3d.device->CreateShaderResourceView(partials.Get(), nullptr, &partialInput), "partial SRV");
+        bd.ByteWidth = 6 * 10 * 16;
+        requireSucceeded(d3d.device->CreateBuffer(&bd, nullptr, &result), "reduction result");
+        requireSucceeded(d3d.device->CreateUnorderedAccessView(result.Get(), nullptr, &resultOutput), "result UAV");
+        ComPtr<ID3D11Buffer> staging;
+        bd.Usage = D3D11_USAGE_STAGING; bd.BindFlags = bd.MiscFlags = bd.StructureByteStride = 0;
+        bd.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+        requireSucceeded(d3d.device->CreateBuffer(&bd, nullptr, &staging), "reduction staging");
+        ComPtr<ID3D11Buffer> constants;
+        bd = {}; bd.ByteWidth = 16; bd.Usage = D3D11_USAGE_DEFAULT; bd.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+        requireSucceeded(d3d.device->CreateBuffer(&bd, nullptr, &constants), "reduction constants");
+        d3d.context->CSSetShader(shader.Get(), nullptr, 0);
+        auto* cb = constants.Get();
+        d3d.context->CSSetConstantBuffers(11, 1, &cb);
+        for (UINT fit = 0; fit < 2; ++fit) {
+            for (UINT pass = 0; pass < 2; ++pass) {
+                const std::array<UINT, 4> data{extent, groups, pass, fit};
+                d3d.context->UpdateSubresource(constants.Get(), 0, nullptr, data.data(), 0, 0);
+                std::array<ID3D11ShaderResourceView*, 3> sources = pass == 0 ?
+                    std::array<ID3D11ShaderResourceView*, 3>{ inputs[0].Get(), inputs[1].Get(), nullptr } :
+                    std::array<ID3D11ShaderResourceView*, 3>{ nullptr, nullptr, partialInput.Get() };
+                auto* output = pass == 0 ? partialOutput.Get() : resultOutput.Get();
+                d3d.context->CSSetShaderResources(0, 3, sources.data());
+                d3d.context->CSSetUnorderedAccessViews(0, 1, &output, nullptr);
+                d3d.context->Dispatch(pass == 0 ? groups : 1, pass == 0 ? groups : 1, 6);
+                output = nullptr;
+                d3d.context->CSSetUnorderedAccessViews(0, 1, &output, nullptr);
+                sources = {};
+                d3d.context->CSSetShaderResources(0, 3, sources.data());
+            }
+            d3d.context->CopyResource(staging.Get(), result.Get());
+            D3D11_MAPPED_SUBRESOURCE mapped{};
+            requireSucceeded(d3d.context->Map(staging.Get(), 0, D3D11_MAP_READ, 0, &mapped), "oracle map");
+            const auto* actual = static_cast<const std::array<float, 40>*>(mapped.pData);
+            for (UINT face = 0; face < 6; ++face) for (UINT value = 0; value < 40; ++value) {
+                const auto reference = value >= 12 && fit == 0 ? 0.0 : expected[face][value];
+                // Signed moments can nearly cancel. Bound their float-tree
+                // error by the positive L0 moment, then check the solved light.
+                const auto scale = value >= 28 ? expected[face][28 + ((value - 28) / 4) * 4] :
+                    value >= 12 ? expected[face][12] : std::abs(reference);
+                const auto tolerance = value >= 8 && value <= 11 ? 0.0 :
+                    std::max(0.002, std::abs(scale) * 2e-6);
+                require(std::isfinite(actual[face][value]) && std::abs(actual[face][value] - reference) <= tolerance,
+                    "GPU reduction disagrees with CPU oracle, extent=" + std::to_string(extent) +
+                    " face=" + std::to_string(face) + " field=" + std::to_string(value) +
+                    " expected=" + std::to_string(reference) + " actual=" + std::to_string(actual[face][value]));
+            }
+            if (fit != 0) {
+                csah::ibl::DiffuseSHFit cpu{}, gpu{};
+                for (UINT face = 0; face < 6; ++face) {
+                    for (UINT row = 0; row < 4; ++row) for (UINT column = 0; column < 4; ++column) {
+                        cpu.normal[row][column] += expected[face][12 + row * 4 + column];
+                        gpu.normal[row][column] += actual[face][12 + row * 4 + column];
+                    }
+                    for (UINT channel = 0; channel < 3; ++channel) for (UINT k = 0; k < 4; ++k) {
+                        cpu.radiance[channel][k] += expected[face][28 + channel * 4 + k];
+                        gpu.radiance[channel][k] += actual[face][28 + channel * 4 + k];
+                    }
+                }
+                csah::ibl::DiffuseSH cpuLight{}, gpuLight{};
+                require(csah::ibl::solveDiffuseSHFit(cpu, cpuLight) && csah::ibl::solveDiffuseSHFit(gpu, gpuLight),
+                    "reduction failed a constrained SH fit");
+                for (UINT channel = 0; channel < 3; ++channel) for (UINT k = 0; k < 4; ++k)
+                    require(std::abs(cpuLight.rgb[channel][k] - gpuLight.rgb[channel][k]) <
+                            std::max(0.001F, std::abs(cpuLight.rgb[channel][k]) * 2e-5F),
+                        "GPU reduction changed solved SH lighting");
+            }
+            d3d.context->Unmap(staging.Get(), 0);
+        }
+        d3d.context->ClearState();
+    }
+
     void run(const std::filesystem::path& root, D3D_DRIVER_TYPE driver)
     {
         const auto bytecode = readFile(
@@ -362,6 +511,9 @@ namespace
                 std::memcmp(filterBytecode.data(), "DXBC", 4) == 0,
             "environment filter asset is not DXBC");
 
+        const auto reductionBytecode = readFile(
+            root / "package" / "Shaders" / "Community" / "IBL" /
+            "ReduceEnvironmentCS.dxbc");
         auto d3d = createDevice(driver);
         ComPtr<IDXGIDevice> graphics;
         ComPtr<IDXGIAdapter> adapter;
@@ -370,6 +522,11 @@ namespace
             if (SUCCEEDED(adapter->GetDesc(&description)))
                 std::wcout << L"GPU regression adapter: " << description.Description << L'\n';
         }
+        for (const auto extent : {16U, 128U, 512U}) {
+            verifyReduction(d3d, reductionBytecode, extent, false);
+            verifyReduction(d3d, reductionBytecode, extent, true);
+        }
+        std::cout << "GPU reduction matches the double-precision HDR/coverage/SH oracle at 16, 128 and 512 pixels; invalid samples rejected\n";
         EnvironmentProvider provider;
         require(
             provider.initialize(d3d.device.Get(), 16),
@@ -382,6 +539,8 @@ namespace
                 bytecode.size(),
                 filterBytecode.data(),
                 filterBytecode.size(),
+                reductionBytecode.data(),
+                reductionBytecode.size(),
                 16),
             "updater initialization failed");
 

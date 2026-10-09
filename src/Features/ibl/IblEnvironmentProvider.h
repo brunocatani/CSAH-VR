@@ -70,6 +70,8 @@ namespace csah::ibl
         [[nodiscard]] ID3D11Texture2D* writableTexture() const noexcept;
         [[nodiscard]] ID3D11Texture2D* writableValidityTexture()
             const noexcept;
+        [[nodiscard]] ID3D11ShaderResourceView* writableRadianceArray() const noexcept;
+        [[nodiscard]] ID3D11ShaderResourceView* writableValidityArray() const noexcept;
         [[nodiscard]] ID3D11UnorderedAccessView* writablePosition()
             const noexcept;
         [[nodiscard]] ID3D11Texture2D* writablePositionTexture()
@@ -102,6 +104,7 @@ namespace csah::ibl
         {
             Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
             Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> shaderResource;
+            Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> mipZeroArray;
             std::array<
                 Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView>,
                 kEnvironmentMaximumMipCount>

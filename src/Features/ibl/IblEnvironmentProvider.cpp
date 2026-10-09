@@ -48,6 +48,18 @@ namespace csah::ibl
             return false;
         }
 
+        if (format != kPositionFormat) {
+            shaderResourceDescription = {};
+            shaderResourceDescription.Format = format;
+            shaderResourceDescription.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2DARRAY;
+            shaderResourceDescription.Texture2DArray.MipLevels = 1;
+            shaderResourceDescription.Texture2DArray.ArraySize = kEnvironmentCubeFaceCount;
+            if (FAILED(device->CreateShaderResourceView(texture.texture.Get(),
+                    &shaderResourceDescription, &texture.mipZeroArray))) {
+                return false;
+            }
+        }
+
         for (std::uint32_t mipLevel = 0; mipLevel < mipCount; ++mipLevel) {
             D3D11_UNORDERED_ACCESS_VIEW_DESC unorderedAccessDescription{};
             unorderedAccessDescription.Format = format;
@@ -294,6 +306,18 @@ namespace csah::ibl
             return nullptr;
         }
         return resources_.chains[1 - frontChain_].position.texture.Get();
+    }
+
+    ID3D11ShaderResourceView* EnvironmentProvider::writableRadianceArray() const noexcept
+    {
+        return state_ == EnvironmentProviderState::updating ?
+            resources_.chains[1 - frontChain_].radiance.mipZeroArray.Get() : nullptr;
+    }
+
+    ID3D11ShaderResourceView* EnvironmentProvider::writableValidityArray() const noexcept
+    {
+        return state_ == EnvironmentProviderState::updating ?
+            resources_.chains[1 - frontChain_].validity.mipZeroArray.Get() : nullptr;
     }
 
     ID3D11ShaderResourceView* EnvironmentProvider::publishedEnvironment()

@@ -1,7 +1,6 @@
 #include "Features/ibl/IblEnvironmentUpdater.h"
 
 #include "render/ComputeStateScope.h"
-#include "Features/ibl/IblSceneRadianceProbeModel.h"
 #include "support/Logger.h"
 
 #include <algorithm>
@@ -20,8 +19,9 @@ namespace csah::ibl
 
         constexpr std::uint32_t kMinimumSceneConstantRows = 82;
         constexpr UINT kThreadGroupExtent = 8;
-        constexpr float kNonBlackThreshold = 1.0e-5f;
-        constexpr float kCoveredThreshold = 1.0e-4f;
+        // Ten float4 rows per face, matching ReduceEnvironmentCS.hlsl.
+        constexpr UINT kReductionRows = 10;
+        constexpr UINT kReductionBytes = kEnvironmentCubeFaceCount * kReductionRows * 16;
         constexpr float kVisibleDirectionHistoryBlend = 0.75F;
         constexpr float kMaximumCaptureDistance = 2000000.0F;
 
@@ -147,26 +147,33 @@ namespace csah::ibl
                 &unorderedAccess));
         }
 
-        [[nodiscard]] bool createStagingCube(
-            ID3D11Device* device,
-            std::uint32_t extent,
-            DXGI_FORMAT format,
-            ComPtr<ID3D11Texture2D>& texture) noexcept
+        [[nodiscard]] bool createReductionBuffer(
+            ID3D11Device* device, UINT elements,
+            ComPtr<ID3D11Buffer>& buffer,
+            ComPtr<ID3D11UnorderedAccessView>& output,
+            ComPtr<ID3D11ShaderResourceView>* view = nullptr) noexcept
         {
-            D3D11_TEXTURE2D_DESC description{};
-            description.Width = extent;
-            description.Height = extent;
-            description.MipLevels = 1;
-            description.ArraySize = kEnvironmentCubeFaceCount;
-            description.Format = format;
-            description.SampleDesc.Count = 1;
-            description.Usage = D3D11_USAGE_STAGING;
-            description.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
-            return SUCCEEDED(device->CreateTexture2D(
-                &description,
-                nullptr,
-                &texture));
+            D3D11_BUFFER_DESC description{};
+            description.ByteWidth = elements * 16;
+            description.Usage = D3D11_USAGE_DEFAULT;
+            description.BindFlags = D3D11_BIND_UNORDERED_ACCESS |
+                (view ? D3D11_BIND_SHADER_RESOURCE : 0);
+            description.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
+            description.StructureByteStride = 16;
+            if (FAILED(device->CreateBuffer(&description, nullptr, &buffer))) return false;
+            D3D11_UNORDERED_ACCESS_VIEW_DESC uav{};
+            uav.ViewDimension = D3D11_UAV_DIMENSION_BUFFER;
+            uav.Buffer.NumElements = elements;
+            if (FAILED(device->CreateUnorderedAccessView(buffer.Get(), &uav, &output))) return false;
+            if (view) {
+                D3D11_SHADER_RESOURCE_VIEW_DESC srv{};
+                srv.ViewDimension = D3D11_SRV_DIMENSION_BUFFER;
+                srv.Buffer.NumElements = elements;
+                if (FAILED(device->CreateShaderResourceView(buffer.Get(), &srv, view->GetAddressOf()))) return false;
+            }
+            return true;
         }
+
     }
 
     bool EnvironmentUpdater::initialize(
@@ -175,6 +182,8 @@ namespace csah::ibl
         std::size_t captureShaderBytecodeSize,
         const void* filterShaderBytecode,
         std::size_t filterShaderBytecodeSize,
+        const void* reductionShaderBytecode,
+        std::size_t reductionShaderBytecodeSize,
         std::uint32_t extent) noexcept
     {
         if (!device || !captureShaderBytecode ||
@@ -182,6 +191,8 @@ namespace csah::ibl
             std::memcmp(captureShaderBytecode, "DXBC", 4) != 0 ||
             !filterShaderBytecode || filterShaderBytecodeSize < 20 ||
             std::memcmp(filterShaderBytecode, "DXBC", 4) != 0 ||
+            !reductionShaderBytecode || reductionShaderBytecodeSize < 20 ||
+            std::memcmp(reductionShaderBytecode, "DXBC", 4) != 0 ||
             extent < 16 || extent > 512 || !std::has_single_bit(extent)) {
             recordFailure();
             return false;
@@ -199,7 +210,9 @@ namespace csah::ibl
                 filterShaderBytecode,
                 filterShaderBytecodeSize,
                 nullptr,
-                &candidate.filterShader))) {
+                &candidate.filterShader)) ||
+            FAILED(device->CreateComputeShader(reductionShaderBytecode,
+                reductionShaderBytecodeSize, nullptr, &candidate.reductionShader))) {
             recordFailure();
             return false;
         }
@@ -235,16 +248,21 @@ namespace csah::ibl
                 candidate.capturedValidity,
                 candidate.capturedValidityView,
                 candidate.capturedValidityOutput) ||
-            !createStagingCube(
-                device,
-                extent,
-                EnvironmentProvider::kFormat,
-                candidate.stagingRadiance) ||
-            !createStagingCube(
-                device,
-                extent,
-                EnvironmentProvider::kValidityFormat,
-                candidate.stagingValidity)) {
+            !createConstantBuffer(device, 16, candidate.reductionConstants) ||
+            !createReductionBuffer(device, (extent / 8) * (extent / 8) *
+                kEnvironmentCubeFaceCount * kReductionRows, candidate.reductionPartials,
+                candidate.reductionPartialsOutput, &candidate.reductionPartialsView) ||
+            !createReductionBuffer(device, kEnvironmentCubeFaceCount * kReductionRows,
+                candidate.reductionResult, candidate.reductionResultOutput)) {
+            recordFailure();
+            return false;
+        }
+
+        D3D11_BUFFER_DESC stagingDescription{};
+        stagingDescription.ByteWidth = kReductionBytes;
+        stagingDescription.Usage = D3D11_USAGE_STAGING;
+        stagingDescription.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+        if (FAILED(device->CreateBuffer(&stagingDescription, nullptr, &candidate.stagingReduction))) {
             recordFailure();
             return false;
         }
@@ -459,7 +477,7 @@ namespace csah::ibl
                     context,
                     "Image Based Lighting",
                     { "capture projection", "GGX filtering",
-                        "readback staging", nullptr },
+                        "validation reduction", nullptr },
                     3,
                     5)) {
                 logging::warn(
@@ -631,44 +649,46 @@ namespace csah::ibl
             static_cast<UINT>(nullSources.size()),
             nullSources.data());
         timing.mark();
-        if (!completed || !restore.restore()) {
+        if (!completed) {
             provider.abortUpdate();
             recordFailure();
             return false;
         }
 
-        auto* writableRadiance = provider.writableTexture();
-        auto* writableValidity = provider.writableValidityTexture();
-        if (!writableRadiance || !writableValidity) {
+        std::array<ID3D11ShaderResourceView*, 3> reductionSources{
+            provider.writableRadianceArray(), provider.writableValidityArray(), nullptr };
+        if (!reductionSources[0] || !reductionSources[1]) {
             provider.abortUpdate();
             recordFailure();
             return false;
         }
-        for (UINT face = 0; face < kEnvironmentCubeFaceCount; ++face) {
-            const auto sourceSubresource = D3D11CalcSubresource(
-                0,
-                face,
-                providerSnapshot.mipCount);
-            const auto stagingSubresource = D3D11CalcSubresource(0, face, 1);
-            context->CopySubresourceRegion(
-                resources_.stagingRadiance.Get(),
-                stagingSubresource,
-                0,
-                0,
-                0,
-                writableRadiance,
-                sourceSubresource,
-                nullptr);
-            context->CopySubresourceRegion(
-                resources_.stagingValidity.Get(),
-                stagingSubresource,
-                0,
-                0,
-                0,
-                writableValidity,
-                sourceSubresource,
-                nullptr);
+        const auto groupCount = resources_.extent / kThreadGroupExtent;
+        std::array<UINT, 4> reductionConstants{resources_.extent, groupCount, 0, fitDiffuse ? 1U : 0U};
+        context->UpdateSubresource(resources_.reductionConstants.Get(), 0, nullptr, reductionConstants.data(), 0, 0);
+        auto* reductionBuffer = resources_.reductionConstants.Get();
+        auto* reductionOutput = resources_.reductionPartialsOutput.Get();
+        context->CSSetShader(resources_.reductionShader.Get(), nullptr, 0);
+        context->CSSetConstantBuffers(11, 1, &reductionBuffer);
+        context->CSSetShaderResources(0, 3, reductionSources.data());
+        context->CSSetUnorderedAccessViews(0, 1, &reductionOutput, nullptr);
+        context->Dispatch(groupCount, groupCount, kEnvironmentCubeFaceCount);
+        context->CSSetUnorderedAccessViews(0, 1, nullDestinations.data(), nullptr);
+
+        reductionSources = {nullptr, nullptr, resources_.reductionPartialsView.Get()};
+        reductionConstants[2] = 1;
+        context->UpdateSubresource(resources_.reductionConstants.Get(), 0, nullptr, reductionConstants.data(), 0, 0);
+        reductionOutput = resources_.reductionResultOutput.Get();
+        context->CSSetShaderResources(0, 3, reductionSources.data());
+        context->CSSetUnorderedAccessViews(0, 1, &reductionOutput, nullptr);
+        context->Dispatch(1, 1, kEnvironmentCubeFaceCount);
+        context->CSSetUnorderedAccessViews(0, 1, nullDestinations.data(), nullptr);
+        context->CSSetShaderResources(0, 3, nullSources.data());
+        if (!restore.restore()) {
+            provider.abortUpdate();
+            recordFailure();
+            return false;
         }
+        context->CopyResource(resources_.stagingReduction.Get(), resources_.reductionResult.Get());
         context->CopyResource(
             resources_.stagingSceneConstants.Get(),
             sceneConstants);
@@ -715,6 +735,7 @@ namespace csah::ibl
             recordFailure();
             return EnvironmentUpdateConsumeResult::failed;
         }
+        const auto validationStart = std::chrono::steady_clock::now();
         summary_.probeOrigin = {};
         if (resources_.stagingSceneConstants &&
             resources_.sceneConstantsByteWidth >=
@@ -760,8 +781,6 @@ namespace csah::ibl
                     0);
             }
         }
-        const auto validationStart = std::chrono::steady_clock::now();
-
         double red{};
         double green{};
         double blue{};
@@ -775,135 +794,56 @@ namespace csah::ibl
         DiffuseSHFit diffuseFit{};
         bool validGeneration = true;
         const auto faceSampleCount = resources_.extent * resources_.extent;
-        for (UINT face = 0; face < kEnvironmentCubeFaceCount; ++face) {
-            const auto subresource = D3D11CalcSubresource(0, face, 1);
-            D3D11_MAPPED_SUBRESOURCE mappedRadiance{};
-            D3D11_MAPPED_SUBRESOURCE mappedValidity{};
-            if (FAILED(context->Map(
-                    resources_.stagingRadiance.Get(),
-                    subresource,
-                    D3D11_MAP_READ,
-                    0,
-                    &mappedRadiance)) ||
-                !mappedRadiance.pData ||
-                mappedRadiance.RowPitch <
-                    resources_.extent * sizeof(std::uint32_t)) {
-                if (mappedRadiance.pData) {
-                    context->Unmap(
-                        resources_.stagingRadiance.Get(),
-                        subresource);
-                }
-                validGeneration = false;
-                break;
-            }
-            if (FAILED(context->Map(
-                    resources_.stagingValidity.Get(),
-                    subresource,
-                    D3D11_MAP_READ,
-                    0,
-                    &mappedValidity)) ||
-                !mappedValidity.pData ||
-                mappedValidity.RowPitch <
-                    resources_.extent * sizeof(float)) {
-                context->Unmap(
-                    resources_.stagingRadiance.Get(),
-                    subresource);
-                if (mappedValidity.pData) {
-                    context->Unmap(
-                        resources_.stagingValidity.Get(),
-                        subresource);
-                }
-                validGeneration = false;
-                break;
-            }
-
-            for (std::uint32_t y = 0; y < resources_.extent; ++y) {
-                const auto* radianceRow =
-                    reinterpret_cast<const std::uint32_t*>(
-                        static_cast<const std::byte*>(mappedRadiance.pData) +
-                        static_cast<std::size_t>(y) *
-                            mappedRadiance.RowPitch);
-                const auto* validityRow = reinterpret_cast<const float*>(
-                    static_cast<const std::byte*>(mappedValidity.pData) +
-                    static_cast<std::size_t>(y) * mappedValidity.RowPitch);
-                for (std::uint32_t x = 0; x < resources_.extent; ++x) {
-                    const auto validity = validityRow[x];
-                    const auto sample = decodeR11G11B10Float(radianceRow[x]);
-                    if (!std::isfinite(validity) || validity < 0.0f ||
-                        validity > 1.0001f || !std::isfinite(sample.red) ||
-                        !std::isfinite(sample.green) ||
-                        !std::isfinite(sample.blue) || sample.red < 0.0f ||
-                        sample.green < 0.0f || sample.blue < 0.0f) {
+        D3D11_MAPPED_SUBRESOURCE mapped{};
+        const auto mapResult = context->Map(resources_.stagingReduction.Get(), 0,
+            D3D11_MAP_READ, D3D11_MAP_FLAG_DO_NOT_WAIT, &mapped);
+        if (mapResult == DXGI_ERROR_WAS_STILL_DRAWING) {
+            return EnvironmentUpdateConsumeResult::pending;
+        }
+        if (SUCCEEDED(mapResult)) {
+            if (mapped.pData) {
+                const auto* faces = static_cast<const std::array<float, 40>*>(mapped.pData);
+                for (UINT face = 0; face < kEnvironmentCubeFaceCount; ++face) {
+                    const auto& values = faces[face];
+                    // Counts are exact floats: at most 512*512 samples per face.
+                    const bool valid = std::all_of(values.begin(), values.end(),
+                        [](float value) { return std::isfinite(value); }) &&
+                        values[10] == 0 && values[11] == static_cast<float>(faceSampleCount) &&
+                        values[6] > 0 && values[8] >= 0 && values[8] <= values[11] &&
+                        values[9] >= 0 && values[9] <= values[11];
+                    if (!valid) {
                         validGeneration = false;
                         continue;
                     }
-                    red += sample.red;
-                    green += sample.green;
-                    blue += sample.blue;
-                    validityTotal += validity;
-                    const auto luminance = sample.red * 0.2126f +
-                        sample.green * 0.7152f + sample.blue * 0.0722f;
-                    faceLuminance[face] += luminance;
-                    const auto samplePeak = std::max(
-                        sample.red,
-                        std::max(sample.green, sample.blue));
-                    peak = std::max(peak, samplePeak);
-                    if (samplePeak > kNonBlackThreshold) {
-                        ++nonBlack;
+                    red += values[0];
+                    green += values[1];
+                    blue += values[2];
+                    validityTotal += values[3];
+                    faceLuminance[face] = values[4];
+                    faceValidity[face] = values[5];
+                    faceSolidAngle[face] = values[6];
+                    peak = std::max(peak, values[7]);
+                    nonBlack += static_cast<std::uint32_t>(values[8]);
+                    covered += static_cast<std::uint32_t>(values[9]);
+                    if (pendingDiffuseFit_) {
+                        diffuseFit.observedSolidAngle += values[5];
+                        diffuseFit.totalSolidAngle += values[6];
+                        for (std::size_t row = 0; row < 4; ++row)
+                            for (std::size_t column = 0; column < 4; ++column)
+                                diffuseFit.normal[row][column] += values[12 + row * 4 + column];
+                        for (std::size_t channel = 0; channel < 3; ++channel)
+                            for (std::size_t coefficient = 0; coefficient < 4; ++coefficient)
+                                diffuseFit.radiance[channel][coefficient] += values[28 + channel * 4 + coefficient];
                     }
-                    if (validity > kCoveredThreshold) {
-                        ++covered;
-                    }
-                    const auto horizontal =
-                        ((static_cast<float>(x) + 0.5f) /
-                            static_cast<float>(resources_.extent)) *
-                            2.0f -
-                        1.0f;
-                    const auto vertical =
-                        ((static_cast<float>(y) + 0.5f) /
-                            static_cast<float>(resources_.extent)) *
-                            2.0f -
-                        1.0f;
-                    const auto solidAngleWeight =
-                        cubeTexelSolidAngleWeight(horizontal, vertical);
-                    faceValidity[face] +=
-                        static_cast<double>(validity) * solidAngleWeight;
-                    faceSolidAngle[face] += solidAngleWeight;
-                    if (pendingDiffuseFit_) accumulateDiffuseSHFit(
-                        diffuseFit,
-                        environmentCubeDirection(
-                            static_cast<EnvironmentCubeFace>(face),
-                            horizontal,
-                            vertical),
-                        { sample.red, sample.green, sample.blue },
-                        validity,
-                        solidAngleWeight);
                 }
-            }
-            context->Unmap(resources_.stagingValidity.Get(), subresource);
-            context->Unmap(resources_.stagingRadiance.Get(), subresource);
-        }
+            } else validGeneration = false;
+            context->Unmap(resources_.stagingReduction.Get(), 0);
+        } else validGeneration = false;
 
         const auto totalSamples = faceSampleCount * kEnvironmentCubeFaceCount;
         // Empty but valid coverage is meaningful after a teleport or session
         // reset: publish it so consumers use native cubemaps, not the old room.
         validGeneration = validGeneration && summary_.probeOrigin.valid;
-        validationCpuMilliseconds_ +=
-            std::chrono::duration<double, std::milli>(
-                std::chrono::steady_clock::now() - validationStart)
-                .count();
-        ++validationCpuSamples_;
-        if (!firstValidationTimingLogged_ ||
-            validationCpuSamples_ >= 300) {
-            logging::info(
-                "Feature timing Image Based Lighting validation: CPU map, cube validation, and diffuse SH fit={:.3f} ms over {} samples.",
-                validationCpuMilliseconds_ /
-                    static_cast<double>(validationCpuSamples_),
-                validationCpuSamples_);
-            firstValidationTimingLogged_ = true;
-            validationCpuMilliseconds_ = 0.0;
-            validationCpuSamples_ = 0;
-        }
         if (!validGeneration ||
             !provider.publishUpdate(summary_.probeOrigin)) {
             provider.abortUpdate();
@@ -938,6 +878,23 @@ namespace csah::ibl
             summary_.diffuseSH = {};
             summary_.diffuseSHState = solveDiffuseSHFit(diffuseFit, summary_.diffuseSH) ?
                 classifyDiffuseSH(summary_.diffuseSH) : DiffuseSHState::invalid;
+        }
+        summary_.validationCpuMilliseconds =
+            std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - validationStart)
+                .count();
+        validationCpuMilliseconds_ += summary_.validationCpuMilliseconds;
+        ++validationCpuSamples_;
+        if (!firstValidationTimingLogged_ ||
+            validationCpuSamples_ >= 300) {
+            logging::info(
+                "Feature timing Image Based Lighting validation: CPU compact readback and diffuse SH solve={:.3f} ms over {} samples.",
+                validationCpuMilliseconds_ /
+                    static_cast<double>(validationCpuSamples_),
+                validationCpuSamples_);
+            firstValidationTimingLogged_ = true;
+            validationCpuMilliseconds_ = 0.0;
+            validationCpuSamples_ = 0;
         }
         summary_.pending = false;
         ++summary_.completedReadbacks;

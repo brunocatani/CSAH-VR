@@ -717,6 +717,10 @@ set(IBL_ENVIRONMENT_FILTER_SHADER_SOURCE
   "${ROOT_DIR}/package/Shaders/Community/IBL/FilterEnvironmentCS.hlsl")
 set(IBL_ENVIRONMENT_FILTER_SHADER_ASSET
   "${ROOT_DIR}/package/Shaders/Community/IBL/FilterEnvironmentCS.dxbc")
+set(IBL_ENVIRONMENT_REDUCTION_SHADER_SOURCE
+  "${ROOT_DIR}/package/Shaders/Community/IBL/ReduceEnvironmentCS.hlsl")
+set(IBL_ENVIRONMENT_REDUCTION_SHADER_ASSET
+  "${ROOT_DIR}/package/Shaders/Community/IBL/ReduceEnvironmentCS.dxbc")
 set(IBL_PROJECTION_SHADER_VERIFIER
   "${ROOT_DIR}/tools/verify_ibl_projection_shader.py")
 set(GEOMETRY_HOOK_SOURCE "${RENDERER_HOOK_SOURCE}")
@@ -883,6 +887,8 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
   "${IBL_ENVIRONMENT_UPDATE_SHADER_ASSET}"
   "${IBL_ENVIRONMENT_FILTER_SHADER_SOURCE}"
   "${IBL_ENVIRONMENT_FILTER_SHADER_ASSET}"
+  "${IBL_ENVIRONMENT_REDUCTION_SHADER_SOURCE}"
+  "${IBL_ENVIRONMENT_REDUCTION_SHADER_ASSET}"
   "${IBL_PROJECTION_SHADER_VERIFIER}"
   "${ROOT_DIR}/cmake/VerifyIblFoundation.cmake"
   "${ROOT_DIR}/cmake/VerifyLinearLightingConstantScope.cmake"
