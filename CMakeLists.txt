@@ -1903,6 +1903,7 @@ add_custom_command(
   DEPENDS
     "${SKYLIGHTING_SHADER_GENERATOR}"
     "${SKYLIGHTING_AMBIENT_SHADER_SOURCE}"
+    "${ROOT_DIR}/package/Shaders/Community/ScreenSpaceGI/Ambient.hlsli"
   "${SKYLIGHTING_SAMPLING_SHADER_SOURCE}"
   "${SKYLIGHTING_RECEIVER_SHADER_SOURCE}"
   "${SKYLIGHTING_SUN_SHADER_SOURCE}"
@@ -2275,7 +2276,22 @@ target_compile_options(CSAHCore PRIVATE
   /W4
 )
 
+set(SSGI_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated/ScreenSpaceGI")
+set(SSGI_GENERATED_HEADER "${SSGI_GENERATED_DIR}/ScreenSpaceGIShaders.h")
+file(GLOB SSGI_SHADER_SOURCES CONFIGURE_DEPENDS "${ROOT_DIR}/package/Shaders/Community/ScreenSpaceGI/*.hlsl" "${ROOT_DIR}/package/Shaders/Community/ScreenSpaceGI/*.hlsli")
+add_custom_command(OUTPUT "${SSGI_GENERATED_HEADER}"
+  COMMAND "${Python3_EXECUTABLE}" "${ROOT_DIR}/tools/generate_screen_space_gi_shaders.py"
+    --root "${ROOT_DIR}" --fxc "${CSAH_FXC_EXECUTABLE}" --output "${SSGI_GENERATED_HEADER}"
+  DEPENDS "${ROOT_DIR}/tools/generate_screen_space_gi_shaders.py" ${SSGI_SHADER_SOURCES}
+    "${ROOT_DIR}/package/Shaders/Community/Common/Fo4VrDepth.hlsli"
+  VERBATIM)
+add_custom_target(ScreenSpaceGIShaders DEPENDS "${SSGI_GENERATED_HEADER}")
+
 add_library(${PROJECT_NAME} SHARED
+  "${SOURCE_DIR}/Features/screen_space_gi/ScreenSpaceGIRuntime.cpp"
+  "${SOURCE_DIR}/Features/screen_space_gi/ScreenSpaceGIRuntime.h"
+  "${SOURCE_DIR}/Features/screen_space_gi/ScreenSpaceGISettings.cpp"
+  "${SOURCE_DIR}/Features/screen_space_gi/ScreenSpaceGISettings.h"
   "${SOURCE_DIR}/Features/terrain_variation/TerrainVariationRuntime.cpp"
   "${SOURCE_DIR}/Features/terrain_variation/TerrainVariationRuntime.h"
   "${SOURCE_DIR}/Features/terrain_variation/TerrainVariationSettings.cpp"
@@ -2546,6 +2562,7 @@ add_library(${PROJECT_NAME} SHARED
   "${SOURCE_DIR}/support/NearAllocation.h"
 )
 add_dependencies(${PROJECT_NAME}
+  ScreenSpaceGIShaders
   VanillaFixesShaders
   UpscalingShaders
   VanillaReflectionPatchTool
@@ -2605,6 +2622,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
   "${CONTACT_SHADOW_GENERATED_DIR}"
   "${VOLUMETRIC_GENERATED_DIR}"
   "${SKYLIGHTING_GENERATED_DIR}"
+  "${SSGI_GENERATED_DIR}"
   "${FILMIC_TONEMAPPING_GENERATED_DIR}"
   "${BLOOM_GLARE_GENERATED_DIR}"
   "${SUBSURFACE_SCATTERING_GENERATED_DIR}"
@@ -3381,6 +3399,18 @@ if(BUILD_CSAH_TESTS)
     CommonLibF4::CommonLibF4 d3d11 dxguid shell32 spdlog::spdlog)
   add_test(NAME CSAH.IblEnvironmentUpdater
     COMMAND CSAHIblEnvironmentUpdaterTests "${ROOT_DIR}")
+
+  add_executable(CSAHScreenSpaceGITests "${ROOT_DIR}/tests/ScreenSpaceGITests.cpp"
+    "${SOURCE_DIR}/Features/screen_space_gi/ScreenSpaceGIRuntime.cpp" "${SOURCE_DIR}/render/ComputeStateScope.cpp")
+  add_dependencies(CSAHScreenSpaceGITests ScreenSpaceGIShaders SkylightingShaders)
+  target_compile_features(CSAHScreenSpaceGITests PRIVATE cxx_std_23)
+  target_compile_options(CSAHScreenSpaceGITests PRIVATE /Zi)
+  target_link_options(CSAHScreenSpaceGITests PRIVATE /DEBUG:FULL)
+  target_compile_definitions(CSAHScreenSpaceGITests PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_include_directories(CSAHScreenSpaceGITests PRIVATE "${SOURCE_DIR}" "${SSGI_GENERATED_DIR}" "${SKYLIGHTING_GENERATED_DIR}")
+  target_precompile_headers(CSAHScreenSpaceGITests PRIVATE "${SOURCE_DIR}/PCH.h")
+  target_link_libraries(CSAHScreenSpaceGITests PRIVATE CommonLibF4::CommonLibF4 d3d11 d3dcompiler spdlog::spdlog)
+  add_test(NAME CSAH.ScreenSpaceGI COMMAND CSAHScreenSpaceGITests "${ROOT_DIR}")
 
   add_executable(CSAHTerrainVariationTests "${ROOT_DIR}/tests/TerrainVariationTests.cpp"
     "${SOURCE_DIR}/Features/terrain_variation/TerrainVariationRuntime.cpp")

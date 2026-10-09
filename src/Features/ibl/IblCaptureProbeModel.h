@@ -16,6 +16,8 @@ namespace csah::ibl
     {
         bool isDFComposite{};
         std::uint16_t environmentContractPlusOne{};
+        bool tiledDiffuse{};
+        bool deferredDiffuse{};
     };
 
     struct CaptureProbePassState

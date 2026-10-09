@@ -249,6 +249,135 @@
       "label": "Tuning",
       "pages": [
         {
+          "id": "screen-space-gi",
+          "label": "Screen Space GI",
+          "groups": [
+            {
+              "id": "ssgi-lighting",
+              "label": "Ambient Occlusion and Indirect Light",
+              "description": "Uses visible surfaces and prior-frame lighting. Off-screen geometry cannot contribute. Starts disabled for independent visual testing.",
+              "controls": [
+                {
+                  "id": "ssgi-bEnabled",
+                  "type": "toggle",
+                  "label": "Screen Space AO and GI",
+                  "default": false,
+                  "binding": {
+                    "type": "ini",
+                    "root": "documents",
+                    "path": "Mods_Config/CSAH/CSAH.ini",
+                    "section": "ScreenSpaceGI",
+                    "key": "bEnabled"
+                  }
+                },
+                {
+                  "id": "ssgi-bIndirectLight",
+                  "type": "toggle",
+                  "label": "Indirect Diffuse Light",
+                  "default": true,
+                  "binding": {
+                    "type": "ini",
+                    "root": "documents",
+                    "path": "Mods_Config/CSAH/CSAH.ini",
+                    "section": "ScreenSpaceGI",
+                    "key": "bIndirectLight"
+                  }
+                },
+                {
+                  "id": "ssgi-bExperimentalSpecular",
+                  "type": "toggle",
+                  "label": "Experimental Specular GI",
+                  "default": false,
+                  "binding": {
+                    "type": "ini",
+                    "root": "documents",
+                    "path": "Mods_Config/CSAH/CSAH.ini",
+                    "section": "ScreenSpaceGI",
+                    "key": "bExperimentalSpecular"
+                  }
+                },
+                {
+                  "id": "ssgi-bTemporal",
+                  "type": "toggle",
+                  "label": "Temporal Accumulation",
+                  "default": true,
+                  "binding": {
+                    "type": "ini",
+                    "root": "documents",
+                    "path": "Mods_Config/CSAH/CSAH.ini",
+                    "section": "ScreenSpaceGI",
+                    "key": "bTemporal"
+                  }
+                },
+                {
+                  "id": "ssgi-fRadius",
+                  "type": "slider",
+                  "label": "Sampling Radius",
+                  "default": 256,
+                  "min": 16,
+                  "max": 1024,
+                  "step": 16,
+                  "binding": {
+                    "type": "ini",
+                    "root": "documents",
+                    "path": "Mods_Config/CSAH/CSAH.ini",
+                    "section": "ScreenSpaceGI",
+                    "key": "fRadius"
+                  }
+                },
+                {
+                  "id": "ssgi-fThickness",
+                  "type": "slider",
+                  "label": "Surface Thickness",
+                  "default": 32,
+                  "min": 1,
+                  "max": 256,
+                  "step": 1,
+                  "binding": {
+                    "type": "ini",
+                    "root": "documents",
+                    "path": "Mods_Config/CSAH/CSAH.ini",
+                    "section": "ScreenSpaceGI",
+                    "key": "fThickness"
+                  }
+                },
+                {
+                  "id": "ssgi-fAOPower",
+                  "type": "slider",
+                  "label": "Ambient Occlusion Strength",
+                  "default": 2,
+                  "min": 0,
+                  "max": 4,
+                  "step": 0.1,
+                  "binding": {
+                    "type": "ini",
+                    "root": "documents",
+                    "path": "Mods_Config/CSAH/CSAH.ini",
+                    "section": "ScreenSpaceGI",
+                    "key": "fAOPower"
+                  }
+                },
+                {
+                  "id": "ssgi-fGIStrength",
+                  "type": "slider",
+                  "label": "Indirect Light Strength",
+                  "default": 1,
+                  "min": 0,
+                  "max": 4,
+                  "step": 0.1,
+                  "binding": {
+                    "type": "ini",
+                    "root": "documents",
+                    "path": "Mods_Config/CSAH/CSAH.ini",
+                    "section": "ScreenSpaceGI",
+                    "key": "fGIStrength"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
           "id": "terrain-variation-tuning",
           "label": "Terrain Variation",
           "groups": [

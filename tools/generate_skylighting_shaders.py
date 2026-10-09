@@ -149,6 +149,7 @@ def declaration_contract(
     resource_declaration: list[int] | None = None
     far_resource_declaration: list[int] | None = None
     diagnostic_declaration: list[int] | None = None
+    gi_declarations = []
     for start, end in instructions(words):
         opcode = words[start] & 0x7FF
         operands = executable_operands(words, start, end)
@@ -176,6 +177,8 @@ def declaration_contract(
                 (SKYLIGHTING_FAR_PROBE_SLOT,)
         ):
             far_resource_declaration = words[start:end]
+        if opcode == OPCODE_DCL_RESOURCE and operands and operands[0].immediate_indices[0] in range(57,65):
+            gi_declarations.append(words[start:end])
         if (
             opcode == OPCODE_DCL_UNORDERED_ACCESS_VIEW_RAW
             and operands
@@ -212,6 +215,7 @@ def declaration_contract(
             far_resource_declaration,
             constant_declaration,
             diagnostic_declaration,
+            *gi_declarations,
         ],
         transform[:-1],
         temp_count,
@@ -276,6 +280,8 @@ def remap_template_instruction(
                 target = diffuse_visibility_temp
             elif operand.immediate_indices == (1,):
                 target = specular_visibility_temp
+            elif operand.immediate_indices in ((2,), (3,)):
+                target = specular_visibility_temp + operand.immediate_indices[0] - 1
             else:
                 raise ContractError(
                     "Skylighting template output contract changed"
@@ -295,7 +301,7 @@ def remap_template_instruction(
         range(first_template_temp, first_template_temp + template_temp_count)
     )
     allowed_temps.update(
-        (diffuse_visibility_temp, specular_visibility_temp)
+        (diffuse_visibility_temp, specular_visibility_temp, specular_visibility_temp+1, specular_visibility_temp+2)
     )
     for operand in flatten_operands(
         executable_operands(result, 0, len(result))
@@ -329,16 +335,17 @@ def temp_scalar(register: int, component: int = 0) -> list[int]:
     return [0x0010000A | (component << 4), register]
 
 
-def multiply_output_rgb(
+def compose_output_rgb(
     output_register: int,
     value_temp: int,
     visibility_temp: int,
 ) -> list[int]:
     result = [
-        MUL_OPCODE,
+        0x32,  # mad: native ambient * visibility + screen-space irradiance
         *output_mask(output_register, 0x7),
         *temp_swizzle(value_temp, 0x246),
-        *temp_scalar(visibility_temp),
+        *temp_swizzle(visibility_temp, 0x246),
+        *temp_swizzle(visibility_temp + 2, 0x246),
     ]
     result[0] |= len(result) << 24
     return result
@@ -402,6 +409,8 @@ def patch_ambient_shader(original: bytes, template: bytes) -> bytes:
         raise ContractError("ambient native b2/b8/b12 contract changed")
     if not REQUIRED_NATIVE_SAMPLER_SLOTS.issubset(samplers):
         raise ContractError("ambient native s1/s2/s3 contract changed")
+    if resources.intersection(range(57,65)):
+        raise ContractError("ambient shader owns a Screen Space GI slot")
     if SKYLIGHTING_PROBE_SLOT in resources:
         raise ContractError("ambient shader unexpectedly owns t50")
     if SKYLIGHTING_FAR_PROBE_SLOT in resources:
@@ -436,7 +445,7 @@ def patch_ambient_shader(original: bytes, template: bytes) -> bytes:
     for declaration in declarations:
         prefix.extend(declaration)
     updated_temps = words[temp_declaration[0] : temp_declaration[1]]
-    updated_temps[1] = specular_visibility_temp + 1
+    updated_temps[1] = specular_visibility_temp + 3
 
     rewritten: list[int] = []
     ret_count = 0
@@ -446,7 +455,7 @@ def patch_ambient_shader(original: bytes, template: bytes) -> bytes:
             ret_count += 1
             rewritten.extend(transformed)
             rewritten.extend(
-                multiply_output_rgb(
+                compose_output_rgb(
                     0,
                     output_temps[0],
                     diffuse_visibility_temp,
@@ -454,7 +463,7 @@ def patch_ambient_shader(original: bytes, template: bytes) -> bytes:
             )
             rewritten.extend(move_output_alpha(0, output_temps[0]))
             rewritten.extend(
-                multiply_output_rgb(
+                compose_output_rgb(
                     1,
                     output_temps[1],
                     specular_visibility_temp,

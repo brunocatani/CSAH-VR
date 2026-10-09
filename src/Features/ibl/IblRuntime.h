@@ -247,6 +247,8 @@ namespace csah::ibl
             Microsoft::WRL::ComPtr<ID3D11PixelShader> owner;
             std::atomic<ID3D11PixelShader*> shader{};
             std::atomic<std::uint16_t> contractPlusOne{};
+            std::atomic_bool tiledDiffuse{};
+            std::atomic_bool deferredDiffuse{};
         };
 
         static constexpr std::size_t kSceneRadianceCandidateCount = 3;

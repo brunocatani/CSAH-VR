@@ -1,3 +1,4 @@
+#include "render/DxbcTextureSlots.h"
 #include "Features/skylighting/SkylightingRuntime.h"
 #include "Features/ibl/IblRuntime.h"
 
@@ -978,6 +979,8 @@ namespace csah::ibl
                 slot.contractPlusOne.store(
                     binding.environmentContractPlusOne,
                     std::memory_order_relaxed);
+                slot.tiledDiffuse.store(render::declaresTexture2D(bytecode,bytecodeSize,11),std::memory_order_relaxed);
+                slot.deferredDiffuse.store(render::declaresTexture2D(bytecode,bytecodeSize,5),std::memory_order_relaxed);
                 slot.shader.store(shader, std::memory_order_release);
                 matchingCaptureShaders_.fetch_add(
                     1,
@@ -1020,7 +1023,9 @@ namespace csah::ibl
             if (candidate == shader) {
                 return {
                     true,
-                    slot.contractPlusOne.load(std::memory_order_relaxed)
+                    slot.contractPlusOne.load(std::memory_order_relaxed),
+                    slot.tiledDiffuse.load(std::memory_order_relaxed),
+                    slot.deferredDiffuse.load(std::memory_order_relaxed)
                 };
             }
         }

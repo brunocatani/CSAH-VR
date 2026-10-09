@@ -24,11 +24,14 @@ struct PixelOutput
 {
     float4 DiffuseVisibility : SV_Target0;
     float4 SpecularVisibility : SV_Target1;
+    float4 IndirectDiffuse : SV_Target2;
+    float4 IndirectSpecular : SV_Target3;
 };
 
 #include "SkylightingSampling.hlsli"
 
 #include "SkylightingReceiver.hlsli"
+#include "../ScreenSpaceGI/Ambient.hlsli"
 
 PixelOutput PSMain(PixelInput input)
 {
@@ -228,5 +231,10 @@ PixelOutput PSMain(PixelInput input)
             }
         }
     }
+    float3 ao,gi,specularGI;
+    ScreenSpaceAmbient(input.Position.xy,input.Eye,ao,gi,specularGI);
+    output.DiffuseVisibility.rgb*=ao;
+    output.IndirectDiffuse=float4(gi,0);
+    output.IndirectSpecular=float4(specularGI,0);
     return output;
 }

@@ -1,6 +1,7 @@
 #include "Features/dlaa/DlaaEngineHooks.h"
 
 #include "Features/dlaa/DlaaRuntime.h"
+#include "Features/screen_space_gi/ScreenSpaceGIRuntime.h"
 #include "support/Logger.h"
 #include "support/NearAllocation.h"
 
@@ -267,6 +268,7 @@ namespace csah::dlaa
             originalPreRender(manager, minimum, maximum, target, settling);
             if (manager == executableImage + kDynamicResolutionManagerRva) {
                 auto* graphics = executableImage + kGraphicsStateRva;
+                screen_space_gi::Runtime::get().beginFrame();
                 Runtime::get().onPreRender(
                     manager,
                     reinterpret_cast<float*>(graphics + kJitterXOffset),

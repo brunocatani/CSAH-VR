@@ -1,3 +1,4 @@
+#include "Features/screen_space_gi/ScreenSpaceGIRuntime.h"
 #include "render/D3D11Hooks.h"
 
 #include "Features/basic_wetness/BasicWetnessRuntime.h"
@@ -352,6 +353,8 @@ namespace csah::render
             activeIblMaterialBinding{};
         thread_local ibl::CaptureProbePassState activeIblCaptureProbePass{};
         thread_local bool activeWorldCameraComposite{};
+        thread_local bool activeWorldCompositeTiled{};
+        thread_local bool activeWorldCompositeDiffuse{};
         thread_local ID3D11DeviceContext* activeWorldCameraContext{};
 
         class RecursionGuard final
@@ -1843,13 +1846,13 @@ namespace csah::render
         void retireDisabledFeatureBindings(
             ID3D11DeviceContext* context) noexcept
         {
-            const auto skylightingOwnsAmbient =
+            const auto visibilityOwnsAmbient =
                 activeReplacementBinding.family ==
                     linear_lighting::ReplacementShaderFamily::dFLightAmbient &&
-                skylighting::Runtime::get().requested();
+                (skylighting::Runtime::get().requested() || screen_space_gi::Runtime::get().requested());
             if (activeReplacementBinding.family !=
                     linear_lighting::ReplacementShaderFamily::none &&
-                !skylightingOwnsAmbient &&
+                !visibilityOwnsAmbient &&
                 !linear_lighting::Runtime::get()
                      .replacementFeaturesEnabled()) {
                 if (originalPSSetShader && activeReplacementOriginal) {
@@ -2266,8 +2269,11 @@ namespace csah::render
         void recordActiveIblCaptureProbe(
             ID3D11DeviceContext* context) noexcept
         {
-            if (activeWorldCameraComposite && activeWorldCameraContext == context)
+            if (activeWorldCameraComposite && activeWorldCameraContext == context) {
                 dlaa::Runtime::get().onWorldCompositeDraw(context);
+                if(activeWorldCompositeDiffuse) screen_space_gi::Runtime::get().captureRadiance(context,activeWorldCompositeTiled,
+                    pbr::Runtime::get().requested()?surface_classification::Runtime::get().pbrMaterialShaderResourceView():nullptr);
+            }
             if (activeIblCaptureProbePass.lastEnvironmentContractPlusOne == 0) {
                 return;
             }
@@ -3080,6 +3086,8 @@ namespace csah::render
                 iblRuntime.captureProbeBindingForShader(shader);
             activeWorldCameraComposite = engineCaptureBinding.isDFComposite && classInstanceCount == 0;
             activeWorldCameraContext = context;
+            activeWorldCompositeTiled = engineCaptureBinding.tiledDiffuse;
+            activeWorldCompositeDiffuse = engineCaptureBinding.deferredDiffuse;
             shader = vanilla_fixes::selectSslrPixelShaderForBinding(shader);
             shader = vanilla_fixes::
                 selectSurfaceAnchoredCubemapPixelShaderForBinding(shader);
@@ -3243,9 +3251,9 @@ namespace csah::render
             const auto replacementFeaturesActive =
                 !exclusiveDirectionalDiagnostic &&
                 replacementRuntime.replacementFeaturesEnabled();
-            const auto skylightingFeatureActive =
+            const auto ambientVisibilityFeatureActive =
                 !exclusiveDirectionalDiagnostic &&
-                skylightingRuntime.requested();
+                (skylightingRuntime.requested() || screen_space_gi::Runtime::get().requested());
             const auto iblFeatureActive =
                 !exclusiveDirectionalDiagnostic && iblRuntime.featureEnabled();
             const auto contactShadowFeatureActive =
@@ -3296,7 +3304,7 @@ namespace csah::render
                     dflightCompositorActive);
             }
             if (!replacementFeaturesActive && !iblFeatureActive &&
-                !skylightingFeatureActive &&
+                !ambientVisibilityFeatureActive &&
                 !materialCompositorActive &&
                 !filmicTonemappingFeatureActive &&
                 !qualificationActive) {
@@ -3381,7 +3389,7 @@ namespace csah::render
                         {},
                     };
                 if (!contactShadowSelection.binding &&
-                    skylightingFeatureActive && classInstanceCount == 0 &&
+                    ambientVisibilityFeatureActive && classInstanceCount == 0 &&
                     selected.binding.family ==
                         linear_lighting::ReplacementShaderFamily::none) {
                     selected =
@@ -3632,6 +3640,9 @@ namespace csah::render
                     activeReplacementBinding.family ==
                         linear_lighting::ReplacementShaderFamily::
                             dFLightAmbient);
+            const auto giBindings=screen_space_gi::Runtime::get().scopeAmbient(context,
+                activeReplacementBinding.family==linear_lighting::ReplacementShaderFamily::dFLightAmbient,
+                pbr::Runtime::get().requested()?surface_classification::Runtime::get().pbrMaterialShaderResourceView():nullptr);
             const auto terrainBindings=terrain_variation::Runtime::get().scopeDraw(context,
                 activeReplacementBinding.family==linear_lighting::ReplacementShaderFamily::material &&
                 activeSurfaceClassCode==static_cast<std::uint32_t>(surface_classification::SurfaceClassCode::terrain));
@@ -3728,6 +3739,9 @@ namespace csah::render
                     activeReplacementBinding.family ==
                         linear_lighting::ReplacementShaderFamily::
                             dFLightAmbient);
+            const auto giBindings=screen_space_gi::Runtime::get().scopeAmbient(context,
+                activeReplacementBinding.family==linear_lighting::ReplacementShaderFamily::dFLightAmbient,
+                pbr::Runtime::get().requested()?surface_classification::Runtime::get().pbrMaterialShaderResourceView():nullptr);
             const auto terrainBindings=terrain_variation::Runtime::get().scopeDraw(context,
                 activeReplacementBinding.family==linear_lighting::ReplacementShaderFamily::material &&
                 activeSurfaceClassCode==static_cast<std::uint32_t>(surface_classification::SurfaceClassCode::terrain));
@@ -3836,6 +3850,9 @@ namespace csah::render
                     activeReplacementBinding.family ==
                         linear_lighting::ReplacementShaderFamily::
                             dFLightAmbient);
+            const auto giBindings=screen_space_gi::Runtime::get().scopeAmbient(context,
+                activeReplacementBinding.family==linear_lighting::ReplacementShaderFamily::dFLightAmbient,
+                pbr::Runtime::get().requested()?surface_classification::Runtime::get().pbrMaterialShaderResourceView():nullptr);
             const auto terrainBindings=terrain_variation::Runtime::get().scopeDraw(context,
                 activeReplacementBinding.family==linear_lighting::ReplacementShaderFamily::material &&
                 activeSurfaceClassCode==static_cast<std::uint32_t>(surface_classification::SurfaceClassCode::terrain));
@@ -3946,6 +3963,9 @@ namespace csah::render
                     activeReplacementBinding.family ==
                         linear_lighting::ReplacementShaderFamily::
                             dFLightAmbient);
+            const auto giBindings=screen_space_gi::Runtime::get().scopeAmbient(context,
+                activeReplacementBinding.family==linear_lighting::ReplacementShaderFamily::dFLightAmbient,
+                pbr::Runtime::get().requested()?surface_classification::Runtime::get().pbrMaterialShaderResourceView():nullptr);
             const auto terrainBindings=terrain_variation::Runtime::get().scopeDraw(context,
                 activeReplacementBinding.family==linear_lighting::ReplacementShaderFamily::material &&
                 activeSurfaceClassCode==static_cast<std::uint32_t>(surface_classification::SurfaceClassCode::terrain));
@@ -4694,6 +4714,7 @@ namespace csah::render
                 *immediateContext);
             lod_blending::Runtime::get().onDeviceCreated(*device, *immediateContext);
             terrain_variation::Runtime::get().onDeviceCreated(*device, *immediateContext);
+            screen_space_gi::Runtime::get().onDeviceCreated(*device, *immediateContext);
             basic_wetness::Runtime::get().onDeviceCreated(
                 *device,
                 *immediateContext);

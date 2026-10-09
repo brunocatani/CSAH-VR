@@ -1,3 +1,4 @@
+#include "Features/screen_space_gi/ScreenSpaceGIRuntime.h"
 #include "settings/SharedSettingsRuntime.h"
 
 #include "Features/basic_wetness/BasicWetnessRuntime.h"
@@ -116,6 +117,7 @@ namespace csah::shared_settings
                 .basicWetness = basic_wetness::loadSettings(path),
                 .lodBlending = lod_blending::loadSettings(path),
                 .terrainVariation = terrain_variation::loadSettings(path),
+                .screenSpaceGI = screen_space_gi::loadSettings(path),
                 .cloudShadows = cloud_shadows::loadSettings(path),
                 .volumetricLighting =
                     volumetric_lighting::loadSettings(path),
@@ -183,6 +185,7 @@ namespace csah::shared_settings
                 subsurface_scattering::Runtime::get().applySettings(
                     next.subsurfaceScattering);
             }
+            if(changes.screenSpaceGI) screen_space_gi::Runtime::get().applySettings(next.screenSpaceGI);
             if(changes.terrainVariation) terrain_variation::Runtime::get().applySettings(next.terrainVariation);
             if(changes.lodBlending) lod_blending::Runtime::get().applySettings(next.lodBlending);
             if (changes.basicWetness) {

@@ -1,3 +1,4 @@
+#include "Features/screen_space_gi/ScreenSpaceGIRuntime.h"
 #include "PCH.h"
 
 #include "Features/basic_wetness/BasicWetnessRuntime.h"
@@ -260,6 +261,7 @@ namespace
         }
         case F4SE::MessagingInterface::kPreLoadGame:
             csah::sky_sync::Runtime::get().onWorldEnding();
+            csah::screen_space_gi::Runtime::get().resetHistory();
             break;
         case F4SE::MessagingInterface::kPostLoadGame:
             csah::native_shadows::onWorldReady("PostLoadGame");
@@ -420,6 +422,7 @@ extern "C" __declspec(dllexport) bool F4SEAPI F4SEPlugin_Load(
         const auto subsurfaceScatteringSettings =
             csah::subsurface_scattering::loadSettings();
         const auto terrainVariationSettings=csah::terrain_variation::loadSettings();
+        const auto screenSpaceGISettings=csah::screen_space_gi::loadSettings();
         const auto lodBlendingSettings = csah::lod_blending::loadSettings();
         const auto basicWetnessSettings =
             csah::basic_wetness::loadSettings();
@@ -469,6 +472,7 @@ extern "C" __declspec(dllexport) bool F4SEAPI F4SEPlugin_Load(
             subsurfaceScatteringSettings);
         csah::lod_blending::Runtime::get().applySettings(lodBlendingSettings);
         csah::terrain_variation::Runtime::get().applySettings(terrainVariationSettings);
+        csah::screen_space_gi::Runtime::get().applySettings(screenSpaceGISettings);
         csah::basic_wetness::Runtime::get().applySettings(
             basicWetnessSettings);
         csah::pbr::Runtime::get().applySettings(pbrSettings);
