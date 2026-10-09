@@ -1,6 +1,7 @@
 #include "Features/ibl/IblEnvironmentUpdater.h"
 
 #include "render/ComputeStateScope.h"
+#include "render/Fo4VrCamera.h"
 #include "render/DebugResourceName.h"
 #include "support/Logger.h"
 
@@ -18,7 +19,7 @@ namespace csah::ibl
     {
         using Microsoft::WRL::ComPtr;
 
-        constexpr std::uint32_t kMinimumSceneConstantRows = 82;
+        constexpr std::uint32_t kMinimumSceneConstantRows = render::kFo4VrCameraRows;
         constexpr UINT kThreadGroupExtent = 8;
         // Ten float4 rows per face, matching ReduceEnvironmentCS.hlsl.
         constexpr UINT kReductionRows = 10;
@@ -39,13 +40,8 @@ namespace csah::ibl
             std::uint32_t eye,
             Float3& origin) noexcept
         {
-            const auto& cameraRelativeOrigin = sceneRows[59U + eye];
-            const auto& adjustment = sceneRows[80U + eye];
-            origin = {
-                cameraRelativeOrigin[0] + adjustment[0],
-                cameraRelativeOrigin[1] + adjustment[1],
-                cameraRelativeOrigin[2] + adjustment[2],
-            };
+            const auto& eyeOrigin = sceneRows[render::kFo4VrCurrentEyeOriginRow + eye];
+            origin = {eyeOrigin[0], eyeOrigin[1], eyeOrigin[2]};
             return finiteOrigin(origin);
         }
 

@@ -1,3 +1,5 @@
+#include "../Common/Fo4VrDepth.hlsli"
+
 // Shared with the directional DFLight transform so direct and environment
 // material response use the same GGX/Fresnel approximations.
 #include "../PBR/PbrCommon.hlsli"
@@ -59,7 +61,7 @@ cbuffer IblMaterialConstants : register(b5)
 // persistent per-eye position adjustment.
 cbuffer Fo4VrSceneConstants : register(b12)
 {
-    float4 Scene[85];
+    float4 Scene[77];
 };
 
 cbuffer BasicWetnessSettings : register(b9)
@@ -102,14 +104,13 @@ bool ReconstructReceiverWorldPosition(
 
     const uint eye = packedUv.x >= 0.5f ? 1u : 0u;
     const float localX = frac(packedUv.x * 2.0f);
-    const float mappedDepth = depth <= 0.01f ?
-        depth * 100.0f : depth * 1.01f - 0.01f;
+    const float mappedDepth = Fo4VrProjectionDepth(depth);
     const float4 clipPosition = float4(
         localX * 2.0f - 1.0f,
         1.0f - packedUv.y * 2.0f,
         mappedDepth,
         1.0f);
-    const uint inverseProjectionBase = 32u + eye * 4u;
+    const uint inverseProjectionBase = Fo4VrInverseProjectionBase(depth, eye);
     float4 homogeneousView;
     homogeneousView.x = dot(
         Scene[inverseProjectionBase], clipPosition);
@@ -139,10 +140,8 @@ bool ReconstructReceiverWorldPosition(
         dot(Scene[20].xyz, midpointRelativeView),
         dot(Scene[21].xyz, midpointRelativeView),
         dot(Scene[22].xyz, midpointRelativeView));
-    receiverWorldPosition = midpointOrigin + midpointRelativeWorld +
-        Scene[80u + eye].xyz;
-    const float3 persistentEyeOrigin = eyeOrigin + Scene[80u + eye].xyz;
-    const float3 eyeVector = persistentEyeOrigin - receiverWorldPosition;
+    receiverWorldPosition = midpointOrigin + midpointRelativeWorld;
+    const float3 eyeVector = eyeOrigin - receiverWorldPosition;
     const float eyeDistanceSquared = dot(eyeVector, eyeVector);
     if (!(all(receiverWorldPosition == receiverWorldPosition) &&
           all(abs(receiverWorldPosition) < 8000000.0f) &&

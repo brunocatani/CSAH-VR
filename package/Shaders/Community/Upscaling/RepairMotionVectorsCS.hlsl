@@ -6,7 +6,7 @@ cbuffer MotionRepairConstants : register(b0)
     uint ResetHistory;
     float HistoryWeight;
     float FarDepthStart;
-    uint Padding;
+    uint DepthInverted;
 };
 
 Texture2D<float2> MotionInput : register(t0);
@@ -16,6 +16,7 @@ RWTexture2D<float2> MotionOutput : register(u0);
 
 float LinearDepth(float depth)
 {
+    if (DepthInverted != 0) depth = 1.0f - depth;
     const float denominator = max(
         FarPlane - saturate(depth) * (FarPlane - NearPlane),
         1.0e-4);
@@ -52,11 +53,12 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
                     continue;
 
                 const float neighborDepth = DepthInput.Load(int3(neighbor, 0));
-                if (neighborDepth >= centerDepth)
+                const float neighborLinearDepth = LinearDepth(neighborDepth);
+                if (neighborLinearDepth >= centerLinearDepth)
                     continue;
 
                 const float depthDifference = abs(
-                    centerLinearDepth - LinearDepth(neighborDepth));
+                    centerLinearDepth - neighborLinearDepth);
                 const float weight = rcp(1.0 + depthDifference);
                 weightedMotion += MotionInput.Load(int3(neighbor, 0)) * weight;
                 weightSum += weight;

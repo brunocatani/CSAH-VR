@@ -196,7 +196,7 @@ def compile_template(
         "PreviousPublishedProbeOrigin",
         "ReconstructReceiverWorldPosition",
         "CorrectProbeDirection",
-        "Scene[80u + eye].xyz",
+        "Fo4VrInverseProjectionBase(depth, eye)",
         "lerp(vanilla.xyz, published, weight)",
         "ComplexMaterialWeight",
         "PbrFeatureParams0",
@@ -239,7 +239,7 @@ def compile_template(
     for required in (
         "dcl_constantbuffer CB5[7], immediateIndexed",
         "dcl_constantbuffer CB9[2], immediateIndexed",
-        "dcl_constantbuffer CB12[82], dynamicIndexed",
+        "dcl_constantbuffer CB12[61], dynamicIndexed",
         "dcl_sampler s3, mode_default",
         "dcl_sampler s8, mode_default",
         "dcl_resource_texture2d (float,float,float,float) t7",

@@ -108,6 +108,7 @@ namespace csah::dlaa
             Microsoft::WRL::ComPtr<ID3D11Texture2D> sceneColor;
             Microsoft::WRL::ComPtr<ID3D11Texture2D> outputColor;
             Microsoft::WRL::ComPtr<ID3D11Texture2D> depth;
+            Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> depthView;
             Microsoft::WRL::ComPtr<ID3D11Texture2D> motionVectors;
             std::uint32_t packedWidth{};
             std::uint32_t eyeWidth{};
@@ -115,7 +116,7 @@ namespace csah::dlaa
 
             [[nodiscard]] explicit operator bool() const noexcept
             {
-                return sceneColor && outputColor && depth && motionVectors &&
+                return sceneColor && outputColor && depth && depthView && motionVectors &&
                     packedWidth != 0 && eyeWidth != 0 && height != 0;
             }
         };
@@ -125,6 +126,7 @@ namespace csah::dlaa
             Microsoft::WRL::ComPtr<ID3D11Texture2D> colorInput;
             Microsoft::WRL::ComPtr<ID3D11Texture2D> depthInput;
             Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> depthInputView;
+            Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView> depthOutput;
             Microsoft::WRL::ComPtr<ID3D11Texture2D> motionInput;
             Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> motionInputView;
             Microsoft::WRL::ComPtr<ID3D11Texture2D> motionHistory;
@@ -177,7 +179,8 @@ namespace csah::dlaa
         void captureQualificationResources() noexcept;
         void queueQualificationProbe(
             const char* label,
-            ID3D11Resource* resource) noexcept;
+            ID3D11Resource* resource,
+            ID3D11ShaderResourceView* depthView = nullptr) noexcept;
         void consumeQualificationProbes() noexcept;
         [[nodiscard]] bool capturePixelShaderIdentity() noexcept;
         void updateQualificationState() noexcept;
@@ -188,6 +191,7 @@ namespace csah::dlaa
             std::uint32_t inputHeight,
             std::uint32_t outputWidth,
             std::uint32_t outputHeight) noexcept;
+        [[nodiscard]] bool ensureDepthPreparationResources() noexcept;
         [[nodiscard]] bool prepareEyeInputs(
             ID3D11Texture2D* currentTaaMask) noexcept;
         [[nodiscard]] ID3D11ShaderResourceView* resolveTaaMaskView(
@@ -232,6 +236,8 @@ namespace csah::dlaa
         Microsoft::WRL::ComPtr<ID3D11ComputeShader> motionRepairShader_;
         Microsoft::WRL::ComPtr<ID3D11Buffer> motionRepairConstants_;
         Microsoft::WRL::ComPtr<ID3D11ComputeShader> reactiveMaskShader_;
+        Microsoft::WRL::ComPtr<ID3D11ComputeShader> depthPreparationShader_;
+        Microsoft::WRL::ComPtr<ID3D11Buffer> depthPreparationConstants_;
         Microsoft::WRL::ComPtr<ID3D11Buffer> reactiveMaskConstants_;
         static constexpr std::size_t kTaaMaskViewCacheCount = 4;
         std::array<TaaMaskViewCacheEntry, kTaaMaskViewCacheCount>

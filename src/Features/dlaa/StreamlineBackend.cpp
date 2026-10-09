@@ -544,12 +544,11 @@ namespace csah::dlaa
             constants.cameraFOV = source.cameraFovRadians;
             constants.cameraAspectRatio = source.cameraAspectRatio;
             constants.motionVectorsInvalidValue = -FLT_MAX;
-            // FO4VR uses reversed depth: the far plane/sky clears to 0 and
-            // values grow toward the camera. Streamline defines
-            // depthInverted exactly as "closer is higher", so this must be
-            // true for NGX to reconstruct geometry and reject history
-            // correctly.
-            constants.depthInverted = sl::Boolean::eTrue;
+            // Depth preparation publishes the selected world projection's
+            // domain. Its endpoints, not a cleared texture sample, establish
+            // the direction supplied to Streamline.
+            constants.depthInverted = source.depthInverted ?
+                sl::Boolean::eTrue : sl::Boolean::eFalse;
             constants.cameraMotionIncluded = sl::Boolean::eTrue;
             constants.motionVectors3D = sl::Boolean::eFalse;
             constants.reset = source.reset ?

@@ -1,3 +1,5 @@
+#include "../Common/Fo4VrDepth.hlsli"
+
 // Shared stereo capture with deterministic nearest-surface reprojection.
 // Depth/owner/resolve passes adapt the DynamicCubemapF4 1.3.1 approach (GPL-3.0).
 Texture2D<float3> ReflectionFreeRadiance : register(t0);
@@ -26,35 +28,17 @@ cbuffer EnvironmentUpdateConstants : register(b11)
     uint PreviousProbeOriginValid;
 };
 
-// The exact FO4VR DFComposite draw binds an 85-float4 buffer at b12. Local
-// material DXBC independently proves c0..c2 rotate world vectors into the
-// current view, c4..c11 are the ordinary per-eye projections, c32..c39 are
-// the ordinary per-eye inverse projections, and c59/c60 are the live per-eye
-// origins. The verified 85-row VR layout carries persistent camera-position
-// adjustments at c80/c81. Do not use the compressed c63..c70 rows here: the
-// headset-qualified GPFIX world cache proved that they do not preserve a
-// stable world-direction key under HMD rotation.
+// Native uploader 141D93910 writes 77 rows. Current eye origins are 59/60;
+// first-person inverse projections are 40..47. Allocation padding is not data.
 cbuffer Fo4VrSceneConstants : register(b12)
 {
-    float4 Scene[85];
+    float4 Scene[77];
 };
 
 static const float PositionEpsilon = 1.0e-5f;
 static const float MinimumCaptureDistance = 16.5f;
 static const float MaximumCaptureDistance = 2000000.0f;
 groupshared float4 SharedCameraOrigins[2];
-
-bool CameraPositionAdjust(uint eye, out float3 adjustment)
-{
-    adjustment = Scene[80u + eye].xyz;
-    const bool finite = all(adjustment == adjustment) &&
-        all(abs(adjustment) < MaximumCaptureDistance * 4.0f);
-    if (!finite)
-    {
-        adjustment = 0.0f;
-    }
-    return finite;
-}
 
 bool CameraOrigin(uint eye, out float3 origin)
 {
@@ -86,14 +70,13 @@ bool ReconstructPersistentWorldPosition(
         return false;
     }
 
-    const float mappedDepth = depth <= 0.01f ?
-        depth * 100.0f : depth * 1.01f - 0.01f;
+    const float mappedDepth = Fo4VrProjectionDepth(depth);
     const float4 clipPosition = float4(
         localUv.x * 2.0f - 1.0f,
         1.0f - localUv.y * 2.0f,
         mappedDepth,
         1.0f);
-    const uint inverseProjectionBase = 32u + eye * 4u;
+    const uint inverseProjectionBase = Fo4VrInverseProjectionBase(depth, eye);
     const float4 homogeneousView = float4(
         dot(Scene[inverseProjectionBase + 0u], clipPosition),
         dot(Scene[inverseProjectionBase + 1u], clipPosition),
@@ -123,8 +106,7 @@ bool ReconstructPersistentWorldPosition(
         dot(Scene[20u].xyz, midpointRelativeView),
         dot(Scene[21u].xyz, midpointRelativeView),
         dot(Scene[22u].xyz, midpointRelativeView));
-    worldPosition = midpointOrigin + midpointRelativeWorld +
-        Scene[80u + eye].xyz;
+    worldPosition = midpointOrigin + midpointRelativeWorld;
     return distance > 0.0f && distance < MaximumCaptureDistance &&
         all(worldPosition == worldPosition) &&
         all(abs(worldPosition) < MaximumCaptureDistance * 4.0f);
@@ -216,7 +198,9 @@ bool SampleObservedRadiance(float2 uv, uint eye, out float3 radiance)
                 const int2 coordinate = clamp(base + int2(x, y),
                     int2(eyeStart, 0), int2(eyeEnd, (int)SourceExtent.y - 1));
                 const float3 sample = ReflectionFreeRadiance.Load(int3(coordinate, 0));
-                if (!all(isfinite(sample)) || any(sample < 0.0f) || any(sample >= 65504.0f))
+                const float sampleDepth = SceneDepth.Load(int3(coordinate, 0));
+                if (Fo4VrFirstPersonDepth(sampleDepth) ||
+                    !all(isfinite(sample)) || any(sample < 0.0f) || any(sample >= 65504.0f))
                     observed = false;
                 else
                     radiance += sample * weight;
@@ -250,9 +234,9 @@ bool SampleEye(
     packedUv.x = clamp(packedUv.x, eyeMinimum, eyeMaximum);
     packedUv.y = clamp(packedUv.y, halfTexel.y, 1.0f - halfTexel.y);
 
-    // Both zero-depth sky and finite surfaces are valid radiance. Finite
-    // positions are converted from camera-relative to persistent coordinates;
-    // malformed samples fail closed.
+    // Both zero-depth sky and finite world surfaces can supply radiance.
+    // First-person taps are excluded before interpolation. Finite positions
+    // use the shared world-coordinate camera contract.
     const float depth = SceneDepth.SampleLevel(
         LinearClampSampler, packedUv, 0.0f);
     const bool validDepth = depth == depth && depth >= 0.0f && depth <= 1.0f;
@@ -265,13 +249,14 @@ bool SampleEye(
     }
 
     float distance;
-    if (ReconstructPersistentWorldPosition(
-            localUv,
-            depth,
-            eye,
-            worldPosition,
-            distance))
+    if (depth > PositionEpsilon && depth < 1.0f - PositionEpsilon)
     {
+        if (!ReconstructPersistentWorldPosition(localUv, depth, eye, worldPosition, distance))
+        {
+            radiance = 0.0f;
+            weight = 0.0f;
+            return false;
+        }
         // Hands, weapons, and headset-adjacent geometry must not become the
         // environment reflected by the world around the player.
         if (distance < MinimumCaptureDistance)
@@ -351,26 +336,18 @@ void main(
 
     float3 cameraOrigins[2];
     bool cameraOriginValid[2];
-    float3 cameraPositionAdjusts[2];
-    bool cameraPositionAdjustValid[2];
     cameraOrigins[0] = SharedCameraOrigins[0].xyz;
     cameraOrigins[1] = SharedCameraOrigins[1].xyz;
     cameraOriginValid[0] = SharedCameraOrigins[0].w > 0.0f;
     cameraOriginValid[1] = SharedCameraOrigins[1].w > 0.0f;
-    cameraPositionAdjustValid[0] = CameraPositionAdjust(
-        0u, cameraPositionAdjusts[0]);
-    cameraPositionAdjustValid[1] = CameraPositionAdjust(
-        1u, cameraPositionAdjusts[1]);
     float3 cameraCenter = 0.0f;
     float cameraCount = 0.0f;
     [unroll]
     for (uint cameraIndex = 0u; cameraIndex < 2u; ++cameraIndex)
     {
-        if (cameraOriginValid[cameraIndex] &&
-            cameraPositionAdjustValid[cameraIndex])
+        if (cameraOriginValid[cameraIndex])
         {
-            cameraCenter += cameraOrigins[cameraIndex] +
-                cameraPositionAdjusts[cameraIndex];
+            cameraCenter += cameraOrigins[cameraIndex];
             cameraCount += 1.0f;
         }
     }

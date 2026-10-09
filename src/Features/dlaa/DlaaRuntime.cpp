@@ -3,6 +3,9 @@
 
 #include "GeneratedUpscalingComposeShader.h"
 #include "GeneratedUpscalingMotionRepairShader.h"
+#include "GeneratedUpscalingDepthShader.h"
+#include "render/Fo4VrDepth.h"
+#include "render/DebugResourceName.h"
 #include "GeneratedUpscalingReactiveMaskShader.h"
 
 #include "render/ComputeStateScope.h"
@@ -78,7 +81,7 @@ namespace csah::dlaa
             std::uint32_t resetHistory{};
             float historyWeight{};
             float farDepthStart{};
-            std::uint32_t padding{};
+            std::uint32_t depthInverted{};
         };
 
         static_assert(sizeof(MotionRepairConstants) == 32);
@@ -458,6 +461,8 @@ namespace csah::dlaa
         clearRenderResources(false);
         compositorShader_.Reset();
         compositorConstants_.Reset();
+        depthPreparationShader_.Reset();
+        depthPreparationConstants_.Reset();
         motionRepairShader_.Reset();
         motionRepairConstants_.Reset();
         reactiveMaskShader_.Reset();
@@ -640,19 +645,19 @@ namespace csah::dlaa
                     true,
                     std::memory_order_relaxed)) {
                 logging::info(
-                    "DLAA rejected the first containing camera-map candidate: resource={}, byteWidth={}, mapType={}, matchesBoundB12={}, screen=({},{},{},{}), projectionParameters=({},{},{},{}), finiteProjection={}, finiteCurrentUnjittered={}, finitePreviousUnjittered={}. Vanilla TAA remains active.",
+                    "DLAA rejected the first containing camera-map candidate: resource={}, byteWidth={}, mapType={}, matchesBoundB12={}, shaderParameters50=({},{},{},{}), shaderParameters48=({},{},{},{}), finiteProjection={}, finiteCurrentUnjittered={}, finitePreviousUnjittered={}. Vanilla TAA remains active.",
                     static_cast<const void*>(pending.resource),
                     pending.byteWidth,
                     static_cast<std::uint32_t>(pending.mapType),
                     pending.matchesBoundCamera,
-                    candidate.screenParameters.x,
-                    candidate.screenParameters.y,
-                    candidate.screenParameters.z,
-                    candidate.screenParameters.w,
-                    candidate.projectionParameters.x,
-                    candidate.projectionParameters.y,
-                    candidate.projectionParameters.z,
-                    candidate.projectionParameters.w,
+                    candidate.shaderParameters50.x,
+                    candidate.shaderParameters50.y,
+                    candidate.shaderParameters50.z,
+                    candidate.shaderParameters50.w,
+                    candidate.shaderParameters48.x,
+                    candidate.shaderParameters48.y,
+                    candidate.shaderParameters48.z,
+                    candidate.shaderParameters48.w,
                     finiteMatrix(candidate.projection[0]) &&
                         finiteMatrix(candidate.projection[1]),
                     finiteMatrix(candidate.viewProjectionUnjittered[0]) &&
@@ -674,32 +679,35 @@ namespace csah::dlaa
                 true,
                 std::memory_order_relaxed)) {
             logging::info(
-                "DLAA qualified the exact FO4VR 0x4D0 stereo camera prefix (depth parameters=({},{},{},{}), live screen vector=({},{},{},{}); packed extent is resource-derived).",
-                candidate.projectionParameters.x,
-                candidate.projectionParameters.y,
-                candidate.projectionParameters.z,
-                candidate.projectionParameters.w,
-                candidate.screenParameters.x,
-                candidate.screenParameters.y,
-                candidate.screenParameters.z,
-                candidate.screenParameters.w);
+                "DLAA qualified the native stereo camera prefix (shader parameters48=({},{},{},{}), shader parameters50=({},{},{},{}); clip planes are projection-derived.",
+                candidate.shaderParameters48.x,
+                candidate.shaderParameters48.y,
+                candidate.shaderParameters48.z,
+                candidate.shaderParameters48.w,
+                candidate.shaderParameters50.x,
+                candidate.shaderParameters50.y,
+                candidate.shaderParameters50.z,
+                candidate.shaderParameters50.w);
         }
     }
 
     bool Runtime::validateCameraFrame(
         const Fo4VrFrameBuffer& frame) const noexcept
     {
-        const auto nearPlane = frame.projectionParameters.x;
-        const auto farPlane = frame.projectionParameters.y;
-        return std::isfinite(nearPlane) && std::isfinite(farPlane) &&
-            nearPlane > 0.0f && nearPlane < 10.0f &&
-            farPlane > nearPlane && farPlane < 1000000.0f &&
+        const auto leftPlanes = render::projectionPlanes(frame.projection[0]);
+        const auto rightPlanes = render::projectionPlanes(frame.projection[1]);
+        for (const auto& position : frame.currentEyePosition) {
+            if (!std::isfinite(position.x) || !std::isfinite(position.y) || !std::isfinite(position.z)) return false;
+        }
+        return leftPlanes.valid && rightPlanes.valid &&
             finiteMatrix(frame.projection[0]) &&
             finiteMatrix(frame.projection[1]) &&
             maximumAbsoluteElement(frame.projection[0]) > 0.01f &&
             maximumAbsoluteElement(frame.projection[1]) > 0.01f &&
             finiteMatrix(frame.inverseProjection[0]) &&
             finiteMatrix(frame.inverseProjection[1]) &&
+            finiteMatrix(frame.inverseFirstPersonProjection[0]) &&
+            finiteMatrix(frame.inverseFirstPersonProjection[1]) &&
             maximumAbsoluteElement(frame.inverseProjection[0]) > 0.01f &&
             maximumAbsoluteElement(frame.inverseProjection[1]) > 0.01f &&
             finiteMatrix(frame.viewProjectionUnjittered[0]) &&
@@ -1015,6 +1023,7 @@ namespace csah::dlaa
         Microsoft::WRL::ComPtr<ID3D11Texture2D> sceneColor;
         Microsoft::WRL::ComPtr<ID3D11Texture2D> motionVectors;
         Microsoft::WRL::ComPtr<ID3D11Texture2D> depth;
+        Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> depthSourceView;
         D3D11_TEXTURE2D_DESC sceneDescription{};
         D3D11_TEXTURE2D_DESC motionDescription{};
         D3D11_TEXTURE2D_DESC depthDescription{};
@@ -1046,8 +1055,16 @@ namespace csah::dlaa
                     motionVectors);
                 break;
             case 3:
-                queueQualificationProbe("PS.SRV3", resource);
+                queueQualificationProbe("PS.SRV3", resource, view);
                 depthMatchesTarget = resource == depthTargetResource;
+                {
+                    D3D11_SHADER_RESOURCE_VIEW_DESC description{};
+                    view->GetDesc(&description);
+                    if (description.Format == DXGI_FORMAT_R24_UNORM_X8_TYPELESS &&
+                        description.ViewDimension == D3D11_SRV_DIMENSION_TEXTURE2D &&
+                        description.Texture2D.MostDetailedMip == 0 && description.Texture2D.MipLevels == 1)
+                        depthSourceView = view;
+                }
                 (void)textureDescription(
                     resource,
                     depthDescription,
@@ -1078,7 +1095,7 @@ namespace csah::dlaa
                 value.SampleDesc.Count == 1;
         };
         const auto resourceTuple = sceneColor && taaMask &&
-            outputColor && motionVectors && depth && depthMatchesTarget &&
+            outputColor && motionVectors && depth && depthSourceView && depthMatchesTarget &&
             packedWidth >= 2 && (packedWidth % 2u) == 0 &&
             sceneDescription.Height != 0 &&
             sceneDescription.Format == DXGI_FORMAT_R11G11B10_FLOAT &&
@@ -1137,6 +1154,7 @@ namespace csah::dlaa
                 .sceneColor = std::move(sceneColor),
                 .outputColor = std::move(outputColor),
                 .depth = std::move(depth),
+                .depthView = std::move(depthSourceView),
                 .motionVectors = std::move(motionVectors),
                 .packedWidth = packedWidth,
                 .eyeWidth = eyeWidth,
@@ -1258,7 +1276,8 @@ namespace csah::dlaa
 
     void Runtime::queueQualificationProbe(
         const char* label,
-        ID3D11Resource* resource) noexcept
+        ID3D11Resource* resource,
+        ID3D11ShaderResourceView* depthView) noexcept
     {
         if (!device_ || !context_ || !label || !resource) {
             return;
@@ -1304,12 +1323,23 @@ namespace csah::dlaa
             return;
         }
 
+        const auto nativeDepth = sourceDescription.Format == DXGI_FORMAT_R24G8_TYPELESS;
+        if (nativeDepth && (!depthView || !ensureDepthPreparationResources())) return;
+        if (nativeDepth) {
+            D3D11_SHADER_RESOURCE_VIEW_DESC viewDescription{};
+            depthView->GetDesc(&viewDescription);
+            if (viewDescription.Format != DXGI_FORMAT_R24_UNORM_X8_TYPELESS ||
+                viewDescription.ViewDimension != D3D11_SRV_DIMENSION_TEXTURE2D ||
+                viewDescription.Texture2D.MostDetailedMip != 0) return;
+        }
+        const auto probeFormat = nativeDepth ? DXGI_FORMAT_R32_FLOAT : sourceDescription.Format;
         D3D11_TEXTURE2D_DESC probeDescription{};
         probeDescription.Width = kProbeSampleCount;
         probeDescription.Height = 1;
         probeDescription.MipLevels = 1;
         probeDescription.ArraySize = 1;
-        probeDescription.Format = sourceDescription.Format;
+        probeDescription.Format = probeFormat;
+        probeDescription.BindFlags = nativeDepth ? D3D11_BIND_UNORDERED_ACCESS : 0;
         probeDescription.SampleDesc.Count = 1;
         probeDescription.Usage = D3D11_USAGE_DEFAULT;
         Microsoft::WRL::ComPtr<ID3D11Texture2D> transfer;
@@ -1320,6 +1350,7 @@ namespace csah::dlaa
             return;
         }
         probeDescription.Usage = D3D11_USAGE_STAGING;
+        probeDescription.BindFlags = 0;
         probeDescription.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
         Microsoft::WRL::ComPtr<ID3D11Texture2D> readback;
         if (FAILED(device_->CreateTexture2D(
@@ -1329,36 +1360,68 @@ namespace csah::dlaa
             return;
         }
 
-        const auto eyeWidth = sourceDescription.Width / 2;
-        for (UINT index = 0; index < kProbeSampleCount; ++index) {
-            const auto eye = index / (kProbeSampleCount / 2);
-            const auto local = index % (kProbeSampleCount / 2);
-            const auto column = local % 4;
-            const auto row = local / 4;
-            const auto x = (std::min)(
-                eye * eyeWidth +
+        if (nativeDepth) {
+            // Cropped depth-stencil copies are rejected by D3D11. Gather the
+            // same sixteen samples through the native depth SRV instead.
+            Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView> output;
+            if (FAILED(device_->CreateUnorderedAccessView(transfer.Get(), nullptr, &output))) return;
+            render::ScopedComputeState restore(context_.Get(), {
+                .firstShaderResource = 0, .shaderResourceCount = 1,
+                .firstUnorderedAccess = 0, .unorderedAccessCount = 1,
+                .firstConstantBuffer = 0, .constantBufferCount = 1});
+            if (!restore.captured()) return;
+            render::DepthPreparationConstants constants{};
+            constants.width = kProbeSampleCount;
+            constants.height = 1;
+            constants.rawProbe = 1;
+            D3D11_MAPPED_SUBRESOURCE mapped{};
+            if (FAILED(context_->Map(depthPreparationConstants_.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped))) return;
+            if (!mapped.pData) {
+                context_->Unmap(depthPreparationConstants_.Get(), 0);
+                return;
+            }
+            std::memcpy(mapped.pData, &constants, sizeof(constants));
+            context_->Unmap(depthPreparationConstants_.Get(), 0);
+            auto* buffer = depthPreparationConstants_.Get();
+            auto* uav = output.Get();
+            context_->CSSetShader(depthPreparationShader_.Get(), nullptr, 0);
+            context_->CSSetShaderResources(0, 1, &depthView);
+            context_->CSSetConstantBuffers(0, 1, &buffer);
+            context_->CSSetUnorderedAccessViews(0, 1, &uav, nullptr);
+            context_->Dispatch((kProbeSampleCount + 7) / 8, 1, 1);
+            if (!restore.restore()) return;
+        } else {
+            const auto eyeWidth = sourceDescription.Width / 2;
+            for (UINT index = 0; index < kProbeSampleCount; ++index) {
+                const auto eye = index / (kProbeSampleCount / 2);
+                const auto local = index % (kProbeSampleCount / 2);
+                const auto column = local % 4;
+                const auto row = local / 4;
+                const auto x = (std::min)(
+                    eye * eyeWidth +
+                        static_cast<UINT>(
+                            ((2ull * column + 1ull) * eyeWidth) / 8ull),
+                    sourceDescription.Width - 1);
+                const auto y = (std::min)(
                     static_cast<UINT>(
-                        ((2ull * column + 1ull) * eyeWidth) / 8ull),
-                sourceDescription.Width - 1);
-            const auto y = (std::min)(
-                static_cast<UINT>(
-                    ((2ull * row + 1ull) * sourceDescription.Height) / 4ull),
-                sourceDescription.Height - 1);
-            const D3D11_BOX sourceBox{ x, y, 0, x + 1, y + 1, 1 };
-            context_->CopySubresourceRegion(
-                transfer.Get(),
-                0,
-                index,
-                0,
-                0,
-                source,
-                0,
-                &sourceBox);
+                        ((2ull * row + 1ull) * sourceDescription.Height) / 4ull),
+                    sourceDescription.Height - 1);
+                const D3D11_BOX sourceBox{ x, y, 0, x + 1, y + 1, 1 };
+                context_->CopySubresourceRegion(
+                    transfer.Get(),
+                    0,
+                    index,
+                    0,
+                    0,
+                    source,
+                    0,
+                    &sourceBox);
+            }
         }
         context_->CopyResource(readback.Get(), transfer.Get());
         *probe = {
             .label = label,
-            .format = sourceDescription.Format,
+            .format = probeFormat,
             .transfer = std::move(transfer),
             .readback = std::move(readback),
             .polls = 0,
@@ -1511,16 +1574,17 @@ namespace csah::dlaa
                 float maximum{};
                 std::uint32_t zero{};
                 std::uint32_t farRange{};
+                bool validDepth = true;
                 for (UINT index = 0; index < kProbeSampleCount; ++index) {
-                    const auto depth = static_cast<float>(
-                        pixels[index] & 0x00FFFFFFu) / 16777215.0f;
+                    const auto depth = std::bit_cast<float>(pixels[index]);
+                    validDepth = validDepth && std::isfinite(depth) && depth >= 0 && depth <= 1;
                     minimum = (std::min)(minimum, depth);
                     maximum = (std::max)(maximum, depth);
                     zero += depth <= 0.000001f;
                     farRange += depth > 0.000001f && depth <= 0.01f;
                 }
                 logging::info(
-                    "DLAA qualification depth readback '{}': range={}..{}, reversedFarClear={}/{}, reversedFarRange={}/{}.",
+                    "DLAA qualification depth readback '{}': range={}..{}, zeroSamples={}/{}, lowRangeSamples={}/{}.",
                     probe.label,
                     minimum,
                     maximum,
@@ -1528,12 +1592,11 @@ namespace csah::dlaa
                     kProbeSampleCount,
                     farRange,
                     kProbeSampleCount);
-                // A cleared 0.0 sample is a valid far/sky value in FO4VR's
-                // reversed-depth convention. The exact shader and
-                // resource tuple establish identity; the readback gate only
-                // needs to prove that the resource is readable.
+                // A readable cleared resource is not evidence of its depth
+                // direction. Projection-derived conversion owns that contract;
+                // this probe only verifies access to the qualified resource.
                 if (std::strcmp(probe.label, "PS.SRV3") == 0) {
-                    depthContentObserved_ = true;
+                    depthContentObserved_ = validDepth;
                 }
             }
             context_->Unmap(probe.readback.Get(), 0);
@@ -1791,6 +1854,24 @@ namespace csah::dlaa
         return valid;
     }
 
+    bool Runtime::ensureDepthPreparationResources() noexcept
+    {
+        if (!device_) return false;
+        if (!depthPreparationShader_ && FAILED(device_->CreateComputeShader(
+                csah_upscaling_depth_cs, sizeof(csah_upscaling_depth_cs), nullptr,
+                &depthPreparationShader_))) return false;
+        if (!depthPreparationConstants_) {
+            D3D11_BUFFER_DESC description{};
+            description.ByteWidth = sizeof(render::DepthPreparationConstants);
+            description.Usage = D3D11_USAGE_DYNAMIC;
+            description.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+            description.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+            if (FAILED(device_->CreateBuffer(&description, nullptr, &depthPreparationConstants_))) return false;
+        }
+
+        return true;
+    }
+
     bool Runtime::ensureEyeResources(
         std::uint32_t inputWidth,
         std::uint32_t inputHeight,
@@ -1802,7 +1883,7 @@ namespace csah::dlaa
             return false;
         }
         const auto ready = [=](const EyeResources& eye) noexcept {
-            return eye.colorInput && eye.depthInput && eye.depthInputView &&
+            return eye.colorInput && eye.depthInput && eye.depthInputView && eye.depthOutput &&
                 eye.motionInput && eye.motionInputView && eye.motionHistory &&
                 eye.motionHistoryView && eye.motionHistoryUav &&
                 eye.motionOutput && eye.motionOutputView &&
@@ -1816,6 +1897,8 @@ namespace csah::dlaa
         if (ready(eyeResources_[0]) && ready(eyeResources_[1])) {
             return true;
         }
+
+        if (!ensureDepthPreparationResources()) return false;
 
         if (!motionRepairShader_ && FAILED(device_->CreateComputeShader(
                 csah_upscaling_motion_repair_cs,
@@ -1863,12 +1946,13 @@ namespace csah::dlaa
         D3D11_TEXTURE2D_DESC motionTemplate{};
         qualifiedResources_.sceneColor->GetDesc(&colorTemplate);
         qualifiedResources_.depth->GetDesc(&depthTemplate);
+        depthTemplate.Format = DXGI_FORMAT_R32_FLOAT;
         qualifiedResources_.motionVectors->GetDesc(&motionTemplate);
 
         const auto createInput = [this, inputWidth, inputHeight](
                                      const D3D11_TEXTURE2D_DESC& source,
                                      Microsoft::WRL::ComPtr<ID3D11Texture2D>&
-                                         texture) noexcept {
+                                         texture, bool writable = false) noexcept {
             auto description = source;
             description.Width = inputWidth;
             description.Height = inputHeight;
@@ -1876,7 +1960,7 @@ namespace csah::dlaa
             description.ArraySize = 1;
             description.SampleDesc = { 1, 0 };
             description.Usage = D3D11_USAGE_DEFAULT;
-            description.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+            description.BindFlags = D3D11_BIND_SHADER_RESOURCE | (writable ? D3D11_BIND_UNORDERED_ACCESS : 0);
             description.CPUAccessFlags = 0;
             description.MiscFlags = 0;
             return SUCCEEDED(device_->CreateTexture2D(
@@ -1917,18 +2001,19 @@ namespace csah::dlaa
         std::array<EyeResources, 2> created{};
         for (auto& eye : created) {
             if (!createInput(colorTemplate, eye.colorInput) ||
-                !createInput(depthTemplate, eye.depthInput) ||
+                !createInput(depthTemplate, eye.depthInput, true) ||
                 !createInput(motionTemplate, eye.motionInput)) {
                 return false;
             }
             D3D11_SHADER_RESOURCE_VIEW_DESC depthViewDescription{};
-            depthViewDescription.Format = DXGI_FORMAT_R24_UNORM_X8_TYPELESS;
+            depthViewDescription.Format = DXGI_FORMAT_R32_FLOAT;
             depthViewDescription.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
             depthViewDescription.Texture2D.MipLevels = 1;
             if (FAILED(device_->CreateShaderResourceView(
                     eye.depthInput.Get(),
                     &depthViewDescription,
                     eye.depthInputView.GetAddressOf())) ||
+                FAILED(device_->CreateUnorderedAccessView(eye.depthInput.Get(), nullptr, &eye.depthOutput)) ||
                 FAILED(device_->CreateShaderResourceView(
                     eye.motionInput.Get(),
                     nullptr,
@@ -2008,6 +2093,8 @@ namespace csah::dlaa
             eye.outputWidth = outputWidth;
             eye.outputHeight = outputHeight;
         }
+        render::nameResource(created[0].depthInput.Get(), "CSAH / Upscaling / Left world-projection depth");
+        render::nameResource(created[1].depthInput.Get(), "CSAH / Upscaling / Right world-projection depth");
         eyeResources_ = std::move(created);
         resetHistory_ = true;
         logging::info(
@@ -2068,6 +2155,7 @@ namespace csah::dlaa
         ID3D11Texture2D* currentTaaMask) noexcept
     {
         if (!context_ || !qualifiedResources_ || !evaluationGeometry_.valid ||
+            !depthPreparationShader_ || !depthPreparationConstants_ ||
             !motionRepairShader_ || !motionRepairConstants_ ||
             !reactiveMaskShader_ || !reactiveMaskConstants_) {
             return false;
@@ -2103,15 +2191,45 @@ namespace csah::dlaa
                 qualifiedResources_.sceneColor.Get(),
                 0,
                 &sourceRegion);
-            context_->CopySubresourceRegion(
-                destination.depthInput.Get(),
-                0,
-                0,
-                0,
-                0,
-                qualifiedResources_.depth.Get(),
-                0,
-                &sourceRegion);
+            const auto planes = render::projectionPlanes(cameraFrame_.projection[eye]);
+            if (!planes.valid) return false;
+            render::DepthPreparationConstants depthConstants{
+                .width = evaluationGeometry_.inputWidth,
+                .height = evaluationGeometry_.inputHeight,
+                .sourceLeft = sourceLeft,
+                .sourceTop = sourceTop,
+                .localUvScaleBias = settings_.mode == Mode::centerDlaa ? Float4{
+                    1.0F / qualifiedResources_.eyeWidth, 1.0F / qualifiedResources_.height,
+                    static_cast<float>(evaluationGeometry_.center.left) / qualifiedResources_.eyeWidth,
+                    static_cast<float>(sourceTop) / qualifiedResources_.height} : Float4{
+                    1.0F / evaluationGeometry_.inputWidth, 1.0F / evaluationGeometry_.inputHeight, 0, 0},
+                .firstPersonToWorldZ = render::rowThroughMatrix(cameraFrame_.projection[eye][2],
+                    cameraFrame_.inverseFirstPersonProjection[eye]),
+                .firstPersonToWorldW = render::rowThroughMatrix(cameraFrame_.projection[eye][3],
+                    cameraFrame_.inverseFirstPersonProjection[eye]),
+                .farDepth = planes.inverted ? 0.0F : 1.0F,
+            };
+            D3D11_MAPPED_SUBRESOURCE mappedDepth{};
+            if (FAILED(context_->Map(depthPreparationConstants_.Get(), 0,
+                    D3D11_MAP_WRITE_DISCARD, 0, &mappedDepth))) return false;
+            if (!mappedDepth.pData) {
+                context_->Unmap(depthPreparationConstants_.Get(), 0);
+                return false;
+            }
+            std::memcpy(mappedDepth.pData, &depthConstants, sizeof(depthConstants));
+            context_->Unmap(depthPreparationConstants_.Get(), 0);
+            auto* depthBuffer = depthPreparationConstants_.Get();
+            auto* depthSource = qualifiedResources_.depthView.Get();
+            auto* depthOutput = destination.depthOutput.Get();
+            context_->CSSetShader(depthPreparationShader_.Get(), nullptr, 0);
+            context_->CSSetConstantBuffers(0, 1, &depthBuffer);
+            context_->CSSetShaderResources(0, 1, &depthSource);
+            context_->CSSetUnorderedAccessViews(0, 1, &depthOutput, nullptr);
+            context_->Dispatch((depthConstants.width + 7) / 8, (depthConstants.height + 7) / 8, 1);
+            depthSource = nullptr;
+            depthOutput = nullptr;
+            context_->CSSetShaderResources(0, 1, &depthSource);
+            context_->CSSetUnorderedAccessViews(0, 1, &depthOutput, nullptr);
             context_->CopySubresourceRegion(
                 destination.motionInput.Get(),
                 0,
@@ -2122,6 +2240,10 @@ namespace csah::dlaa
                 0,
                 &sourceRegion);
         }
+
+        ID3D11Buffer* nullDepthConstants{};
+        context_->CSSetConstantBuffers(0, 1, &nullDepthConstants);
+        context_->CSSetShader(nullptr, nullptr, 0);
 
         if (isDlssMode(settings_.mode)) {
             auto* taaMaskView = resolveTaaMaskView(currentTaaMask);
@@ -2177,32 +2299,31 @@ namespace csah::dlaa
         if (!settings_.motionVectorRepair) {
             return true;
         }
-        D3D11_MAPPED_SUBRESOURCE mapped{};
-        if (FAILED(context_->Map(
-                motionRepairConstants_.Get(),
-                0,
-                D3D11_MAP_WRITE_DISCARD,
-                0,
-                &mapped)) ||
-            !mapped.pData) {
-            return false;
-        }
-        const MotionRepairConstants constants{
-            .width = evaluationGeometry_.inputWidth,
-            .height = evaluationGeometry_.inputHeight,
-            .nearPlane = cameraFrame_.projectionParameters.x,
-            .farPlane = cameraFrame_.projectionParameters.y,
-            .resetHistory = resetHistory_ ? 1u : 0u,
-            .historyWeight = 0.1f,
-            .farDepthStart = 10240.0f,
-        };
-        std::memcpy(mapped.pData, &constants, sizeof(constants));
-        context_->Unmap(motionRepairConstants_.Get(), 0);
-
         ID3D11Buffer* constantBuffer = motionRepairConstants_.Get();
         context_->CSSetShader(motionRepairShader_.Get(), nullptr, 0);
         context_->CSSetConstantBuffers(0, 1, &constantBuffer);
-        for (auto& eye : eyeResources_) {
+        for (std::size_t eyeIndex = 0; eyeIndex < eyeResources_.size(); ++eyeIndex) {
+            auto& eye = eyeResources_[eyeIndex];
+            const auto planes = render::projectionPlanes(cameraFrame_.projection[eyeIndex]);
+            if (!planes.valid) return false;
+            D3D11_MAPPED_SUBRESOURCE mapped{};
+            if (FAILED(context_->Map(motionRepairConstants_.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped))) return false;
+            if (!mapped.pData) {
+                context_->Unmap(motionRepairConstants_.Get(), 0);
+                return false;
+            }
+            const MotionRepairConstants constants{
+                .width = evaluationGeometry_.inputWidth,
+                .height = evaluationGeometry_.inputHeight,
+                .nearPlane = planes.nearPlane,
+                .farPlane = planes.farPlane,
+                .resetHistory = resetHistory_ ? 1u : 0u,
+                .historyWeight = 0.1f,
+                .farDepthStart = 10240.0f,
+                .depthInverted = planes.inverted ? 1u : 0u,
+            };
+            std::memcpy(mapped.pData, &constants, sizeof(constants));
+            context_->Unmap(motionRepairConstants_.Get(), 0);
             std::array<ID3D11ShaderResourceView*, 3> sources{
                 eye.motionInputView.Get(),
                 eye.depthInputView.Get(),
@@ -2728,9 +2849,9 @@ namespace csah::dlaa
                     std::memory_order_relaxed);
                 return false;
             }
-            const auto& position = eye == 0 ?
-                cameraFrame_.positionAdjustLeft :
-                cameraFrame_.positionAdjustRight;
+            const auto& position = cameraFrame_.currentEyePosition[eye];
+            const auto planes = render::projectionPlanes(cameraFrame_.projection[eye]);
+            if (!planes.valid) return false;
             frame.constants[eye] = {
                 .cameraViewToClip = projection,
                 .currentViewProjection = transposeForStreamline(
@@ -2741,8 +2862,8 @@ namespace csah::dlaa
                 .cameraUp = cameraUp,
                 .cameraForward = cameraForward,
                 .cameraPosition = { position.x, position.y, position.z },
-                .cameraNear = cameraFrame_.projectionParameters.x,
-                .cameraFar = cameraFrame_.projectionParameters.y,
+                .cameraNear = planes.nearPlane,
+                .cameraFar = planes.farPlane,
                 .cameraFovRadians = 2.0f * std::atan(1.0f / verticalScale),
                 .cameraAspectRatio =
                     static_cast<float>(qualifiedResources_.eyeWidth) /
@@ -2759,6 +2880,7 @@ namespace csah::dlaa
                         static_cast<float>(qualifiedResources_.height) /
                             static_cast<float>(evaluationGeometry_.inputHeight) :
                         1.0f,
+                .depthInverted = planes.inverted,
                 .reset = resetHistory_,
             };
         }

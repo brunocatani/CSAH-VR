@@ -88,7 +88,7 @@ foreach(required IN ITEMS
     "cameraBufferIdentity_.store(candidate"
     "resource != boundCamera"
     "cameraIdentityMatches_.fetch_add"
-    "nearPlane > 0.0f"
+    "render::projectionPlanes(frame.projection[0])"
     "maximumAbsoluteElement(frame.inverseProjection[0])"
     "D3D11_MAP_FLAG_DO_NOT_WAIT"
     "DLAA qualification motion readback"
@@ -209,7 +209,7 @@ foreach(required IN ITEMS
     "static_assert(sizeof(Fo4VrFrameBuffer) == 0x4D0)"
     "static_assert(offsetof(Fo4VrFrameBuffer, projection) == 0x40)"
     "static_assert(offsetof(Fo4VrFrameBuffer, inverseView) == 0x140)"
-    "static_assert(offsetof(Fo4VrFrameBuffer, projectionParameters) == 0x300)"
+    "static_assert(offsetof(Fo4VrFrameBuffer, shaderParameters48) == 0x300)"
     "previousViewProjectionUnjittered) == 0x330)"
     "static_assert(offsetof(Fo4VrFrameBuffer, viewProjectionUnjittered) == 0x3F0)")
   string(FIND "${frame}" "${required}" found)
@@ -267,7 +267,7 @@ foreach(required IN ITEMS
     "options.colorBuffersHDR = sl::Boolean::eFalse"
     "options.useAutoExposure = isDlssMode(frame.mode) ?"
     "options.alphaUpscalingEnabled = sl::Boolean::eFalse"
-    "constants.depthInverted = sl::Boolean::eTrue"
+    "constants.depthInverted = source.depthInverted ?"
     "const auto optionsChanged = !optionsKey.valid"
     "source.inputLeft"
     "state.setConstants"
@@ -295,12 +295,7 @@ if(NOT disabled_auto_exposure EQUAL -1)
     "DLSS exposure regression: auto exposure was disabled without a tagged exposure texture")
 endif()
 
-string(FIND "${streamline}"
-  "constants.depthInverted = sl::Boolean::eFalse" non_inverted_depth)
-if(NOT non_inverted_depth EQUAL -1)
-  message(FATAL_ERROR
-    "DLAA Streamline depth regression: FO4VR reversed depth was tagged as non-inverted")
-endif()
+
 
 foreach(required IN ITEMS
     "bEnabled"
@@ -341,7 +336,7 @@ foreach(required IN ITEMS
     "RWTexture2D<float2> MotionOutput"
     "LinearDepth(float depth)"
     "centerLinearDepth > FarDepthStart"
-    "neighborDepth >= centerDepth"
+    "neighborLinearDepth >= centerLinearDepth"
     "MotionHistory.Load"
     "ResetHistory == 0")
   string(FIND "${motionRepair}" "${required}" found)

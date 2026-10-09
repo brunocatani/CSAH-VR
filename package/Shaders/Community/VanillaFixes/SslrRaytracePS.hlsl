@@ -19,7 +19,7 @@ cbuffer SslrEnvironmentParameters : register(b11)
 
 cbuffer CameraParameters : register(b12)
 {
-    float4 CameraData[85];
+    float4 CameraData[77];
 };
 
 Texture2D<float> DepthTexture : register(t0);
@@ -233,14 +233,7 @@ bool receiverWorldPosition(
     const float3 midpointRelativeWorld = transformRows(
         20u,
         receiverView + eyeToMidpointView);
-    float3 persistentAdjust = CameraData[80u + (rightEye ? 1u : 0u)].xyz;
-    if (!all(isfinite(persistentAdjust)) ||
-        any(abs(persistentAdjust) >= 8000000.0f))
-    {
-        persistentAdjust = 0.0f;
-    }
-    receiverWorld = midpointOrigin + midpointRelativeWorld +
-        persistentAdjust;
+    receiverWorld = midpointOrigin + midpointRelativeWorld;
     return all(isfinite(receiverWorld)) &&
         all(abs(receiverWorld) < 8000000.0f);
 }

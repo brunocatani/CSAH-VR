@@ -194,10 +194,13 @@ namespace
 
     [[nodiscard]] ComPtr<ID3D11Buffer> createSceneConstants(
         ID3D11Device& device,
-        float forwardSign = 1.0F, float originX = 0.0F)
+        float forwardSign = 1.0F, float originX = 0.0F, bool invalidInverse = false)
     {
         std::array<Float4, 85> rows{};
         rows[59].x = rows[60].x = originX;
+        // Bytes after the native written prefix must never influence lighting.
+        for (std::size_t row = 77; row < rows.size(); ++row)
+            rows[row] = {std::numeric_limits<float>::quiet_NaN(), -9000000.0F, 9000000.0F, 0};
         // Match the updater's ordinary view/projection inputs. The retired
         // compressed projection rows at 63..70 are not consumed by the shader.
         rows[0] = { forwardSign, 0.0f, 0.0f, 0.0f };
@@ -221,6 +224,7 @@ namespace
             rows[inverseBase + 3] = {
                 0.0f, 0.0f, -1.0f / nearPlane, 1.0f / nearPlane };
         }
+        if (invalidInverse) for (std::size_t row = 32; row < 40; ++row) rows[row] = {};
         D3D11_BUFFER_DESC description{};
         description.ByteWidth = static_cast<UINT>(sizeof(rows));
         description.Usage = D3D11_USAGE_IMMUTABLE;
@@ -849,6 +853,18 @@ namespace
         finish(d3d, updater, provider);
         require(updater.snapshot().coveredSamples > 0 && updater.snapshot().peak == 0,
             "legitimate black surfaces were treated as missing");
+        const auto firstPersonDepth = createPackedDepth(*d3d.device.Get(), 83886U);
+        require(updater.dispatchUpdate(d3d.context.Get(), provider, radiance.Get(), firstPersonDepth.Get(),
+            constants.Get(), false), "first-person exclusion dispatch failed");
+        finish(d3d, updater, provider);
+        require(updater.snapshot().coveredSamples == 0 && updater.snapshot().peak == 0,
+            "first-person pixels contaminated the shared world environment");
+        const auto invalidCamera = createSceneConstants(*d3d.device.Get(), 1.0F, 0.0F, true);
+        require(updater.dispatchUpdate(d3d.context.Get(), provider, radiance.Get(), depth.Get(),
+            invalidCamera.Get(), false), "invalid inverse projection dispatch failed");
+        finish(d3d, updater, provider);
+        require(updater.snapshot().coveredSamples == 0 && updater.snapshot().peak == 0,
+            "malformed finite geometry became a sky observation");
         std::cout << "signed render-target clear, partial coverage, bilinear validity and true black radiance passed\n";
         std::cout << "nearest-depth reprojection, owner ties, sky disocclusion, persistent unseen history and teleport reset passed\n";
 

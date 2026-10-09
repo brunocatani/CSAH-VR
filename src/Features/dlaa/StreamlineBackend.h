@@ -56,6 +56,7 @@ namespace csah::dlaa
         float jitterPixelsY{};
         float motionVectorScaleX{ 1.0f };
         float motionVectorScaleY{ 1.0f };
+        bool depthInverted{};
         bool reset{};
     };
 

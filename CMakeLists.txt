@@ -126,7 +126,7 @@ set(SOURCE_ROOT "${ROOT_DIR}")
 set(D3D11_HOOK_SOURCE "${SOURCE_DIR}/render/D3D11Hooks.cpp")
 set(DLAA_SOURCE_DIR "${SOURCE_DIR}/Features/dlaa")
 set(DLAA_RUNTIME_SOURCE "${DLAA_SOURCE_DIR}/DlaaRuntime.cpp")
-set(DLAA_FRAME_HEADER "${DLAA_SOURCE_DIR}/Fo4VrFrameBuffer.h")
+set(DLAA_FRAME_HEADER "${SOURCE_DIR}/render/Fo4VrCamera.h")
 set(DLAA_ENGINE_HOOK_SOURCE "${DLAA_SOURCE_DIR}/DlaaEngineHooks.cpp")
 set(DLAA_D3D11_HOOK_SOURCE "${DLAA_SOURCE_DIR}/DlaaD3D11Hooks.cpp")
 set(DLAA_STREAMLINE_SOURCE "${DLAA_SOURCE_DIR}/StreamlineBackend.cpp")
@@ -143,6 +143,12 @@ set(UPSCALING_MOTION_SHADER_BINARY
   "${DLAA_GENERATED_DIR}/RepairMotionVectorsCS.dxbc")
 set(UPSCALING_MOTION_SHADER_HEADER
   "${DLAA_GENERATED_DIR}/GeneratedUpscalingMotionRepairShader.h")
+set(UPSCALING_DEPTH_SHADER_SOURCE
+  "${ROOT_DIR}/package/Shaders/Community/Upscaling/PrepareDepthCS.hlsl")
+set(UPSCALING_DEPTH_SHADER_BINARY
+  "${DLAA_GENERATED_DIR}/PrepareDepthCS.dxbc")
+set(UPSCALING_DEPTH_SHADER_HEADER
+  "${DLAA_GENERATED_DIR}/GeneratedUpscalingDepthShader.h")
 set(UPSCALING_REACTIVE_SHADER_SOURCE
   "${ROOT_DIR}/package/Shaders/Community/Upscaling/BuildReactiveMaskCS.hlsl")
 set(UPSCALING_REACTIVE_SHADER_BINARY
@@ -152,6 +158,7 @@ set(UPSCALING_REACTIVE_SHADER_HEADER
 set_source_files_properties(
   "${UPSCALING_COMPOSE_SHADER_SOURCE}"
   "${UPSCALING_MOTION_SHADER_SOURCE}"
+  "${UPSCALING_DEPTH_SHADER_SOURCE}"
   "${UPSCALING_REACTIVE_SHADER_SOURCE}"
   PROPERTIES HEADER_FILE_ONLY TRUE)
 set(DLAA_VERIFY_SCRIPT "${ROOT_DIR}/cmake/VerifyDlaa.cmake")
@@ -768,7 +775,7 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
   "${DLAA_SOURCE_DIR}/DlaaSettings.h"
   "${DLAA_SETTINGS_STORE_SOURCE}"
   "${DLAA_SOURCE_DIR}/DlaaSettingsStore.h"
-  "${DLAA_SOURCE_DIR}/Fo4VrFrameBuffer.h"
+  "${SOURCE_DIR}/render/Fo4VrCamera.h"
   "${DLAA_ENGINE_HOOK_SOURCE}"
   "${DLAA_SOURCE_DIR}/DlaaEngineHooks.h"
   "${DLAA_D3D11_HOOK_SOURCE}"
@@ -777,6 +784,7 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
   "${DLAA_SOURCE_DIR}/StreamlineBackend.h"
   "${UPSCALING_COMPOSE_SHADER_SOURCE}"
   "${UPSCALING_MOTION_SHADER_SOURCE}"
+  "${UPSCALING_DEPTH_SHADER_SOURCE}"
   "${UPSCALING_REACTIVE_SHADER_SOURCE}"
   "${DLAA_VERIFY_SCRIPT}"
   "${ROOT_DIR}/cmake/TestVerifyDlaaNegative.cmake"
@@ -1009,7 +1017,7 @@ add_custom_target(VerifyDlaa ALL
     "-DDLAA_ENGINE_SOURCE=${DLAA_ENGINE_HOOK_SOURCE}"
     "-DDLAA_D3D_SOURCE=${DLAA_D3D11_HOOK_SOURCE}"
     "-DDLAA_RUNTIME_SOURCE=${DLAA_RUNTIME_SOURCE}"
-    "-DDLAA_FRAME_HEADER=${DLAA_SOURCE_DIR}/Fo4VrFrameBuffer.h"
+    "-DDLAA_FRAME_HEADER=${SOURCE_DIR}/render/Fo4VrCamera.h"
     "-DDLAA_STREAMLINE_SOURCE=${DLAA_STREAMLINE_SOURCE}"
     "-DDLAA_SETTINGS_SOURCE=${DLAA_SETTINGS_STORE_SOURCE}"
     "-DUPSCALING_COMPOSE_SHADER_SOURCE=${UPSCALING_COMPOSE_SHADER_SOURCE}"
@@ -1023,7 +1031,7 @@ add_custom_target(VerifyDlaa ALL
     "-DDLAA_ENGINE_SOURCE=${DLAA_ENGINE_HOOK_SOURCE}"
     "-DDLAA_D3D_SOURCE=${DLAA_D3D11_HOOK_SOURCE}"
     "-DDLAA_RUNTIME_SOURCE=${DLAA_RUNTIME_SOURCE}"
-    "-DDLAA_FRAME_HEADER=${DLAA_SOURCE_DIR}/Fo4VrFrameBuffer.h"
+    "-DDLAA_FRAME_HEADER=${SOURCE_DIR}/render/Fo4VrCamera.h"
     "-DDLAA_STREAMLINE_SOURCE=${DLAA_STREAMLINE_SOURCE}"
     "-DDLAA_SETTINGS_SOURCE=${DLAA_SETTINGS_STORE_SOURCE}"
     "-DUPSCALING_COMPOSE_SHADER_SOURCE=${UPSCALING_COMPOSE_SHADER_SOURCE}"
@@ -1532,8 +1540,20 @@ add_custom_command(
   DEPENDS "${UPSCALING_REACTIVE_SHADER_SOURCE}"
   COMMENT "Compiling FO4VR TAA-derived DLSS reactive mask"
   VERBATIM)
+add_custom_command(
+  OUTPUT "${UPSCALING_DEPTH_SHADER_BINARY}" "${UPSCALING_DEPTH_SHADER_HEADER}"
+  COMMAND "${CMAKE_COMMAND}" -E make_directory "${DLAA_GENERATED_DIR}"
+  COMMAND "${CSAH_FXC_EXECUTABLE}" /nologo /T cs_5_0 /E main /O3 /Ges /WX
+    "/Fo${UPSCALING_DEPTH_SHADER_BINARY}" "/Fh${UPSCALING_DEPTH_SHADER_HEADER}"
+    /Vncsah_upscaling_depth_cs "${UPSCALING_DEPTH_SHADER_SOURCE}"
+  DEPENDS "${UPSCALING_DEPTH_SHADER_SOURCE}"
+    "${ROOT_DIR}/package/Shaders/Community/Common/Fo4VrDepth.hlsli"
+  COMMENT "Compiling stereo world/first-person depth preparation"
+  VERBATIM)
 add_custom_target(UpscalingShaders
   DEPENDS
+    "${UPSCALING_DEPTH_SHADER_BINARY}"
+    "${UPSCALING_DEPTH_SHADER_HEADER}"
     "${UPSCALING_COMPOSE_SHADER_BINARY}"
     "${UPSCALING_COMPOSE_SHADER_HEADER}"
     "${UPSCALING_MOTION_SHADER_BINARY}"
@@ -2415,7 +2435,7 @@ add_library(${PROJECT_NAME} SHARED
   "${DLAA_SOURCE_DIR}/DlaaSettings.h"
   "${DLAA_SETTINGS_STORE_SOURCE}"
   "${DLAA_SOURCE_DIR}/DlaaSettingsStore.h"
-  "${DLAA_SOURCE_DIR}/Fo4VrFrameBuffer.h"
+  "${SOURCE_DIR}/render/Fo4VrCamera.h"
   "${DLAA_ENGINE_HOOK_SOURCE}"
   "${DLAA_SOURCE_DIR}/DlaaEngineHooks.h"
   "${DLAA_D3D11_HOOK_SOURCE}"
@@ -3311,6 +3331,13 @@ if(BUILD_CSAH_TESTS)
   target_precompile_headers(CSAHSkylightingResourceTests PRIVATE "${SOURCE_DIR}/PCH.h")
   target_link_libraries(CSAHSkylightingResourceTests PRIVATE CommonLibF4::CommonLibF4 d3d11 dxguid shell32 spdlog::spdlog)
   add_test(NAME CSAH.SkylightingResources COMMAND CSAHSkylightingResourceTests)
+
+  add_executable(CSAHFo4VrDepthTests "${ROOT_DIR}/tests/Fo4VrDepthTests.cpp")
+  target_compile_features(CSAHFo4VrDepthTests PRIVATE cxx_std_23)
+  target_compile_definitions(CSAHFo4VrDepthTests PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_include_directories(CSAHFo4VrDepthTests PRIVATE "${SOURCE_DIR}")
+  target_link_libraries(CSAHFo4VrDepthTests PRIVATE d3d11 d3dcompiler)
+  add_test(NAME CSAH.Fo4VrDepth COMMAND CSAHFo4VrDepthTests "${ROOT_DIR}")
 
   add_executable(CSAHRenderDocCaptureTests
     "${ROOT_DIR}/tests/RenderDocCaptureTests.cpp"
