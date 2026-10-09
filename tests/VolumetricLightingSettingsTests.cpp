@@ -146,10 +146,13 @@ int main()
         .windSpeed = 3.0f,
         .maxDistance = 4096.0f,
         .temporalWeight = 0.75f,
+        .heightFog=true, .heightFogDensity=1.5f, .heightFogHeight=128, .heightFogFalloff=512, .heightFogStart=256, .heightFogOpacity=.75f, .heightFogWeather=.5f, .heightFogVolume=.25f,
     };
     require(saveSettings(ini.path(), roundTrip), "save round trip");
     require(loadSettings(ini.path()) == roundTrip, "round trip");
 
+    require(WritePrivateProfileStringW(L"CommunityShaders",L"bEnabled",L"0",ini.path().c_str())!=FALSE,"master off");
+    const auto off=loadSettings(ini.path());require(!off.enabled && !off.heightFog,"master gate must disable both fog and shafts");
     std::cout << "Volumetric Lighting settings tests passed.\n";
     return EXIT_SUCCESS;
 }

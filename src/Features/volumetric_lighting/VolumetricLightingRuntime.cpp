@@ -1,3 +1,4 @@
+#include "VolumetricHeightFogPS.h"
 #include "Features/volumetric_lighting/VolumetricLightingRuntime.h"
 
 #include "Features/cloud_shadows/CloudShadowRuntime.h"
@@ -139,6 +140,8 @@ namespace csah::volumetric_lighting
             ComPtr<ID3D11PixelShader> blurHorizontalPixel;
             ComPtr<ID3D11PixelShader> blurVerticalPixel;
             ComPtr<ID3D11PixelShader> compositePixel;
+            ComPtr<ID3D11PixelShader> heightFogPixel;
+            ComPtr<ID3D11Buffer> heightFogConstants;
             ComPtr<ID3D11Buffer> frameConstants;
             ComPtr<ID3D11Buffer> temporalConstants;
             ComPtr<ID3D11Buffer> qualificationOutput;
@@ -190,6 +193,14 @@ namespace csah::volumetric_lighting
             std::atomic<float> windSpeed{};
             std::atomic<float> maxDistance{ 3000.0f };
             std::atomic<float> temporalWeight{ 0.90f };
+            std::atomic<bool> heightFog{false};
+            std::atomic<float> heightFogDensity{0.5f};
+            std::atomic<float> heightFogHeight{0};
+            std::atomic<float> heightFogFalloff{1024};
+            std::atomic<float> heightFogStart{128};
+            std::atomic<float> heightFogOpacity{0.9f};
+            std::atomic<float> heightFogWeather{1};
+            std::atomic<float> heightFogVolume{0};
             std::atomic_bool diagnosticSuppressed{};
             std::atomic_bool started{};
             std::atomic_bool nativeContractValid{};
@@ -259,6 +270,14 @@ namespace csah::volumetric_lighting
                     std::memory_order_relaxed),
                 .temporalWeight = value.temporalWeight.load(
                     std::memory_order_relaxed),
+                .heightFog=value.heightFog.load(std::memory_order_relaxed),
+                .heightFogDensity=value.heightFogDensity.load(std::memory_order_relaxed),
+                .heightFogHeight=value.heightFogHeight.load(std::memory_order_relaxed),
+                .heightFogFalloff=value.heightFogFalloff.load(std::memory_order_relaxed),
+                .heightFogStart=value.heightFogStart.load(std::memory_order_relaxed),
+                .heightFogOpacity=value.heightFogOpacity.load(std::memory_order_relaxed),
+                .heightFogWeather=value.heightFogWeather.load(std::memory_order_relaxed),
+                .heightFogVolume=value.heightFogVolume.load(std::memory_order_relaxed),
             });
         }
 
@@ -636,7 +655,10 @@ namespace csah::volumetric_lighting
                     gpu.compositePixel.ReleaseAndGetAddressOf());
             }
 
+            if(SUCCEEDED(result)) result=gpu.device->CreatePixelShader(csah_height_fog_ps,sizeof(csah_height_fog_ps),nullptr,&gpu.heightFogPixel);
             D3D11_BUFFER_DESC buffer{};
+            buffer.ByteWidth=32;buffer.BindFlags=D3D11_BIND_CONSTANT_BUFFER;
+            if(SUCCEEDED(result)) result=gpu.device->CreateBuffer(&buffer,nullptr,&gpu.heightFogConstants);
             buffer.ByteWidth = sizeof(FrameConstants);
             buffer.Usage = D3D11_USAGE_DYNAMIC;
             buffer.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
@@ -1235,7 +1257,7 @@ namespace csah::volumetric_lighting
         writeBoolean(value.settingValue, true);
         const auto available = value.started.load(std::memory_order_acquire) &&
             value.engineDataValid.load(std::memory_order_acquire) &&
-            value.enabled.load(std::memory_order_acquire) &&
+            (value.enabled.load(std::memory_order_acquire) || value.heightFog.load(std::memory_order_acquire)) &&
             !value.diagnosticSuppressed.load(std::memory_order_acquire) &&
             !value.gpuFailed.load(std::memory_order_acquire);
         writeBoolean(value.availabilityValue, available);
@@ -1288,6 +1310,14 @@ namespace csah::volumetric_lighting
         value.maxDistance.store(safe.maxDistance, std::memory_order_relaxed);
         value.temporalWeight.store(
             safe.temporalWeight, std::memory_order_relaxed);
+        value.heightFog.store(safe.heightFog,std::memory_order_relaxed);
+        value.heightFogDensity.store(safe.heightFogDensity,std::memory_order_relaxed);
+        value.heightFogHeight.store(safe.heightFogHeight,std::memory_order_relaxed);
+        value.heightFogFalloff.store(safe.heightFogFalloff,std::memory_order_relaxed);
+        value.heightFogStart.store(safe.heightFogStart,std::memory_order_relaxed);
+        value.heightFogOpacity.store(safe.heightFogOpacity,std::memory_order_relaxed);
+        value.heightFogWeather.store(safe.heightFogWeather,std::memory_order_relaxed);
+        value.heightFogVolume.store(safe.heightFogVolume,std::memory_order_relaxed);
         value.settingsRevision.fetch_add(1, std::memory_order_release);
         applyNativeGate();
     }
@@ -1309,7 +1339,7 @@ namespace csah::volumetric_lighting
         return value.started.load(std::memory_order_acquire) &&
             value.nativeContractValid.load(std::memory_order_acquire) &&
             value.engineDataValid.load(std::memory_order_acquire) &&
-            value.enabled.load(std::memory_order_acquire) &&
+            (value.enabled.load(std::memory_order_acquire) || value.heightFog.load(std::memory_order_acquire)) &&
             !value.diagnosticSuppressed.load(std::memory_order_acquire) &&
             !value.gpuFailed.load(std::memory_order_acquire);
     }
@@ -1538,6 +1568,21 @@ namespace csah::volumetric_lighting
             return;
         }
 
+        const auto settings = readSettings(value);
+        const bool heightFog=settings.heightFog && bufferAtLeast(frame.cameraConstants.Get(),77u*16u) && heightFogExterior();
+        const std::array<float,8> fogParameters{settings.heightFogDensity*0.0001f,settings.heightFogFalloff,settings.heightFogHeight,settings.heightFogStart,
+            heightFog?1.0f:0.0f,settings.heightFogWeather,settings.heightFogOpacity,settings.heightFogVolume};
+        context->UpdateSubresource(gpu.heightFogConstants.Get(),0,nullptr,fogParameters.data(),0,0);
+        if(!settings.enabled) {
+            if(!heightFog) return;
+            InternalRenderScope internal;StateScope restore(context);context->SetPredication(nullptr,FALSE);
+            bindFullscreen(gpu,context,outputDescription.Width,outputDescription.Height);
+            auto* target=outputTarget.Get();context->OMSetRenderTargets(1,&target,nullptr);
+            context->PSSetShader(gpu.heightFogPixel.Get(),nullptr,0);
+            const std::array<ID3D11ShaderResourceView*,2> sources{sceneSource.Get(),frame.depth.Get()};context->PSSetShaderResources(0,2,sources.data());
+            const std::array<ID3D11Buffer*,5> constants{frame.lightConstants.Get(),frame.stereoConstants.Get(),frame.cameraConstants.Get(),nullptr,gpu.heightFogConstants.Get()};context->PSSetConstantBuffers(0,5,constants.data());
+            context->Draw(3,0);clearPixelResources(context);return;
+        }
         const auto camera = captureStereoFrame();
         if (!camera.valid) {
             value.rejectedFrames.fetch_add(1, std::memory_order_relaxed);
@@ -1559,7 +1604,6 @@ namespace csah::volumetric_lighting
             return;
         }
 
-        const auto settings = readSettings(value);
         if (!ensureSizeResources(
                 gpu,
                 outputDescription.Width,
@@ -1787,8 +1831,8 @@ namespace csah::volumetric_lighting
                 0,
                 static_cast<UINT>(compositeSources.size()),
                 compositeSources.data());
-            const std::array<ID3D11Buffer*, 2> compositeConstants{
-                imageSpaceConstants.Get(), gpu.frameConstants.Get()
+            const std::array<ID3D11Buffer*, 5> compositeConstants{
+                imageSpaceConstants.Get(), gpu.frameConstants.Get(),frame.cameraConstants.Get(),frame.stereoConstants.Get(),gpu.heightFogConstants.Get()
             };
             context->PSSetConstantBuffers(
                 0,

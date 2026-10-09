@@ -201,8 +201,10 @@ float DensityNoise(float3 position)
 
 float SampleDensity(uint eye, float3 relativePosition)
 {
-    const float3 worldPosition =
-        relativePosition + EyeOrigin[eye].xyz + WindParams.xyz;
+    // inverse-projection gives VIEW coordinates. Rotate before adding the
+    // absolute eye origin, otherwise the fog density rotates with the headset.
+    const float3 worldPosition = float3(dot(Camera[20].xyz,relativePosition),
+        dot(Camera[21].xyz,relativePosition),dot(Camera[22].xyz,relativePosition)) + EyeOrigin[eye].xyz + WindParams.xyz;
     const float noise = DensityNoise(worldPosition * VolumeParams.z);
     const float altitude = 1.0f - 0.75f * smoothstep(
         0.0f, 1.0f, saturate(worldPosition.z * (2.0f / 300.0f)));

@@ -74,12 +74,14 @@ foreach(tabIndex RANGE 0 ${lastTab})
   endforeach()
 endforeach()
 
-if(NOT controlCount EQUAL 167)
+if(NOT controlCount EQUAL 175)
   message(FATAL_ERROR
-    "CSAH PALM settings coverage changed: expected 167 controls, found ${controlCount}")
+    "CSAH PALM settings coverage changed: expected 175 controls, found ${controlCount}")
 endif()
 
 foreach(required IN ITEMS
+    height-fog-bHeightFogEnabled height-fog-fHeightFogDensity height-fog-fHeightFogHeight height-fog-fHeightFogFalloff
+    height-fog-fHeightFogStart height-fog-fHeightFogOpacity height-fog-fHeightFogWeather height-fog-fHeightFogVolume
     terrain-shadows-bEnabled terrain-shadows-fStrength
     community-shaders linear-lighting native-darkness ibl dynamic-cubemaps diffuse-ibl skylighting sky-sync
     bloom physical-glare bloom-threshold bloom-intensity bloom-radius

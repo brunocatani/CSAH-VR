@@ -19,6 +19,15 @@ namespace csah::volumetric_lighting
         float maxDistance{ 3000.0f };
         float temporalWeight{ 0.90f };
 
+        bool heightFog{false};
+        float heightFogDensity{0.5f};
+        float heightFogHeight{0};
+        float heightFogFalloff{1024};
+        float heightFogStart{128};
+        float heightFogOpacity{0.9f};
+        float heightFogWeather{1};
+        float heightFogVolume{0};
+
         [[nodiscard]] bool operator==(const Settings&) const noexcept = default;
     };
 
@@ -51,6 +60,13 @@ namespace csah::volumetric_lighting
             result.maxDistance, defaults.maxDistance, 256.0f, 20000.0f);
         result.temporalWeight = finiteClamp(
             result.temporalWeight, defaults.temporalWeight, 0.0f, 0.98f);
+        result.heightFogDensity=finiteClamp(result.heightFogDensity,defaults.heightFogDensity,0.0f,10.0f);
+        result.heightFogHeight=finiteClamp(result.heightFogHeight,defaults.heightFogHeight,-22000.0f,22000.0f);
+        result.heightFogFalloff=finiteClamp(result.heightFogFalloff,defaults.heightFogFalloff,64.0f,16384.0f);
+        result.heightFogStart=finiteClamp(result.heightFogStart,defaults.heightFogStart,0.0f,20000.0f);
+        result.heightFogOpacity=finiteClamp(result.heightFogOpacity,defaults.heightFogOpacity,0.0f,1.0f);
+        result.heightFogWeather=finiteClamp(result.heightFogWeather,defaults.heightFogWeather,0.0f,1.0f);
+        result.heightFogVolume=finiteClamp(result.heightFogVolume,defaults.heightFogVolume,0.0f,1.0f);
         return result;
     }
 }

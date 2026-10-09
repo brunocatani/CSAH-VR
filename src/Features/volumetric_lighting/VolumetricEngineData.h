@@ -21,5 +21,6 @@ namespace csah::volumetric_lighting
 
     [[nodiscard]] bool initializeEngineData() noexcept;
     [[nodiscard]] StereoFrame captureStereoFrame() noexcept;
+    [[nodiscard]] bool heightFogExterior() noexcept;
     [[nodiscard]] WeatherFrame captureWeatherFrame() noexcept;
 }

@@ -1,3 +1,4 @@
+#include "HeightFog.hlsli"
 cbuffer ImageSpaceConstants : register(b0)
 {
     float4 Reserved0;
@@ -115,5 +116,11 @@ float4 main(PixelInput input) : SV_Target0
     const float3 scene = max(
         SceneColor.Load(int3(fullCoordinate, 0)),
         0.0f.xxx);
-    return float4(scene + radiance, 1.0f);
+    float volumeVisibility=1;
+    if(HeightFogControl.x>.5 && HeightFogControl.w>0 && fullReceiverDepth>.01) {
+        float distance=length(HeightFogViewPosition(input.position.xy/float2(fullWidth,fullHeight),min(fullReceiverDepth,.99999),eye));
+        float unoccluded=1-exp(-min(distance,VolumeParams.x)/max(VolumeParams.y,1));
+        volumeVisibility=saturate(filtered/max(unoccluded,1e-4));
+    }
+    return float4(ApplyHeightFog(scene+ radiance,input.position.xy/float2(fullWidth,fullHeight),fullReceiverDepth,eye,volumeVisibility),1);
 }

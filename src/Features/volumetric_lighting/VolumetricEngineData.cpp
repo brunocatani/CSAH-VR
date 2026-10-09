@@ -595,6 +595,16 @@ namespace csah::volumetric_lighting
         return output;
     }
 
+    bool heightFogExterior() noexcept
+    {
+        if(!gInitialized.load(std::memory_order_acquire)) return false;
+        std::uintptr_t tes{},interior{},world{};
+        // 1400F5360 uses TES+58 for interiors; 1400F8A10 resolves +D8 world.
+        return readMemory(gModuleBase+kTesSingletonCellRva,&tes,sizeof(tes)) && tes &&
+            readMemory(tes+0x58,&interior,sizeof(interior)) && !interior &&
+            readMemory(tes+0xd8,&world,sizeof(world)) && world;
+    }
+
     WeatherFrame captureWeatherFrame() noexcept
     {
         WeatherFrame output;

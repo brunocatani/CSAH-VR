@@ -105,7 +105,7 @@ namespace csah::volumetric_lighting
             error) {
             return defaults;
         }
-        return master_settings::gate(path, sanitize({
+        auto result = sanitize({
             .enabled = readBoolean(path, L"bEnabled", defaults.enabled),
             .quality = readUnsigned(path, L"iQuality", defaults.quality),
             .intensity = readFloat(path, L"fIntensity", defaults.intensity),
@@ -122,7 +122,17 @@ namespace csah::volumetric_lighting
                 path, L"fMaxDistance", defaults.maxDistance),
             .temporalWeight = readFloat(
                 path, L"fTemporalWeight", defaults.temporalWeight),
-        }));
+            .heightFog = readBoolean(path,L"bHeightFogEnabled",defaults.heightFog),
+            .heightFogDensity = readFloat(path,L"fHeightFogDensity",defaults.heightFogDensity),
+            .heightFogHeight = readFloat(path,L"fHeightFogHeight",defaults.heightFogHeight),
+            .heightFogFalloff = readFloat(path,L"fHeightFogFalloff",defaults.heightFogFalloff),
+            .heightFogStart = readFloat(path,L"fHeightFogStart",defaults.heightFogStart),
+            .heightFogOpacity = readFloat(path,L"fHeightFogOpacity",defaults.heightFogOpacity),
+            .heightFogWeather = readFloat(path,L"fHeightFogWeather",defaults.heightFogWeather),
+            .heightFogVolume = readFloat(path,L"fHeightFogVolume",defaults.heightFogVolume),
+        });
+        if(!master_settings::enabled(path)) {result.enabled=false;result.heightFog=false;}
+        return result;
     }
 
     Settings loadSettings() noexcept
@@ -183,6 +193,14 @@ namespace csah::volumetric_lighting
         success = writeFloat(
                       path, L"fTemporalWeight", safe.temporalWeight) &&
             success;
+        success=writeValue(path,L"bHeightFogEnabled",safe.heightFog?L"1":L"0") && success;
+        success=writeFloat(path,L"fHeightFogDensity",safe.heightFogDensity) && success;
+        success=writeFloat(path,L"fHeightFogHeight",safe.heightFogHeight) && success;
+        success=writeFloat(path,L"fHeightFogFalloff",safe.heightFogFalloff) && success;
+        success=writeFloat(path,L"fHeightFogStart",safe.heightFogStart) && success;
+        success=writeFloat(path,L"fHeightFogOpacity",safe.heightFogOpacity) && success;
+        success=writeFloat(path,L"fHeightFogWeather",safe.heightFogWeather) && success;
+        success=writeFloat(path,L"fHeightFogVolume",safe.heightFogVolume) && success;
         return success;
     }
 

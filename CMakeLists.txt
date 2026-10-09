@@ -1852,8 +1852,17 @@ add_custom_command(
     "${VOLUMETRIC_TEMPORAL_SHADER_SOURCE}"
     "${VOLUMETRIC_BLUR_SHADER_SOURCE}"
     "${VOLUMETRIC_COMPOSITE_SHADER_SOURCE}"
+    "${VOLUMETRIC_SHADER_DIR}/HeightFog.hlsli" "${VOLUMETRIC_SHADER_DIR}/HeightFogMath.hlsli"
   COMMENT "Compiling full stereo Volumetric Lighting suite"
   VERBATIM)
+set(HEIGHT_FOG_HEADER "${VOLUMETRIC_GENERATED_DIR}/VolumetricHeightFogPS.h")
+add_custom_command(OUTPUT "${HEIGHT_FOG_HEADER}"
+  COMMAND "${CMAKE_COMMAND}" -E make_directory "${VOLUMETRIC_GENERATED_DIR}"
+  COMMAND "${CSAH_FXC_EXECUTABLE}" /nologo /T ps_5_0 /E main /O3 /Ges /WX
+    /Vncsah_height_fog_ps /Fh "${HEIGHT_FOG_HEADER}" "${VOLUMETRIC_SHADER_DIR}/HeightFogPS.hlsl"
+  DEPENDS "${VOLUMETRIC_SHADER_DIR}/HeightFogPS.hlsl" "${VOLUMETRIC_SHADER_DIR}/HeightFog.hlsli"
+    "${VOLUMETRIC_SHADER_DIR}/HeightFogMath.hlsli" VERBATIM)
+add_custom_target(HeightFogShader DEPENDS "${HEIGHT_FOG_HEADER}")
 add_custom_target(VolumetricLightingShaders
   DEPENDS
     "${VOLUMETRIC_HOST_SHADER_BINARY}"
@@ -2599,6 +2608,7 @@ add_dependencies(${PROJECT_NAME}
   VanillaReflectionPatchTool
   ContactShadowShader
   VolumetricLightingShaders
+  HeightFogShader
   SkylightingShaders
   FilmicTonemappingShader
   BloomGlareShaders
@@ -3433,6 +3443,11 @@ if(BUILD_CSAH_TESTS)
   add_test(NAME CSAH.IblEnvironmentUpdater
     COMMAND CSAHIblEnvironmentUpdaterTests "${ROOT_DIR}")
 
+  add_executable(CSAHHeightFogTests "${ROOT_DIR}/tests/HeightFogTests.cpp")
+  target_compile_features(CSAHHeightFogTests PRIVATE cxx_std_23)
+  target_compile_definitions(CSAHHeightFogTests PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_link_libraries(CSAHHeightFogTests PRIVATE d3d11 d3dcompiler)
+  add_test(NAME CSAH.HeightFog COMMAND CSAHHeightFogTests "${ROOT_DIR}")
   add_executable(CSAHTerrainShadowTests "${ROOT_DIR}/tests/TerrainShadowTests.cpp")
   target_compile_features(CSAHTerrainShadowTests PRIVATE cxx_std_23)
   target_compile_definitions(CSAHTerrainShadowTests PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
