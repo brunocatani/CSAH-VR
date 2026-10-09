@@ -1,3 +1,4 @@
+#include "Features/water_effects/WaterEffectsRuntime.h"
 #include "Features/screen_space_gi/ScreenSpaceGIRuntime.h"
 #include "PCH.h"
 
@@ -423,6 +424,7 @@ extern "C" __declspec(dllexport) bool F4SEAPI F4SEPlugin_Load(
             csah::subsurface_scattering::loadSettings();
         const auto terrainVariationSettings=csah::terrain_variation::loadSettings();
         const auto screenSpaceGISettings=csah::screen_space_gi::loadSettings();
+        const auto waterEffectsSettings=csah::water_effects::loadSettings();
         const auto lodBlendingSettings = csah::lod_blending::loadSettings();
         const auto basicWetnessSettings =
             csah::basic_wetness::loadSettings();
@@ -473,6 +475,7 @@ extern "C" __declspec(dllexport) bool F4SEAPI F4SEPlugin_Load(
         csah::lod_blending::Runtime::get().applySettings(lodBlendingSettings);
         csah::terrain_variation::Runtime::get().applySettings(terrainVariationSettings);
         csah::screen_space_gi::Runtime::get().applySettings(screenSpaceGISettings);
+        csah::water_effects::Runtime::get().applySettings(waterEffectsSettings);
         csah::basic_wetness::Runtime::get().applySettings(
             basicWetnessSettings);
         csah::pbr::Runtime::get().applySettings(pbrSettings);

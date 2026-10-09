@@ -74,9 +74,9 @@ foreach(tabIndex RANGE 0 ${lastTab})
   endforeach()
 endforeach()
 
-if(NOT controlCount EQUAL 157)
+if(NOT controlCount EQUAL 159)
   message(FATAL_ERROR
-    "CSAH PALM settings coverage changed: expected 157 controls, found ${controlCount}")
+    "CSAH PALM settings coverage changed: expected 159 controls, found ${controlCount}")
 endif()
 
 foreach(required IN ITEMS
@@ -135,6 +135,7 @@ foreach(required IN ITEMS
     "lod_blending::Runtime::get().applySettings"
     "terrain_variation::Runtime::get().applySettings"
     "screen_space_gi::Runtime::get().applySettings"
+    "water_effects::Runtime::get().applySettings"
     "pbr::Runtime::get().applySettings"
     "volumetric_lighting::Runtime::get().start"
     "bloom_glare::Runtime::get().applySettings"
@@ -162,6 +163,7 @@ foreach(required IN ITEMS
     "lod_blending::Runtime::get().applySettings"
     "terrain_variation::Runtime::get().applySettings"
     "screen_space_gi::Runtime::get().applySettings"
+    "water_effects::Runtime::get().applySettings"
     "pbr::Runtime::get().applySettings"
     "cloud_shadows::Runtime::get().applySettings"
     "volumetric_lighting::Runtime::get().applySettings"
@@ -236,4 +238,4 @@ foreach(relativePath IN ITEMS
 endforeach()
 
 message(STATUS
-  "Verified PALM settings ownership: 157 shared-INI controls, direct runtime publication, no wrist provider or assets")
+  "Verified PALM settings ownership: 159 shared-INI controls, direct runtime publication, no wrist provider or assets")

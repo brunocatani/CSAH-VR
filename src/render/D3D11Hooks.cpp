@@ -1,3 +1,4 @@
+#include "Features/water_effects/WaterEffectsRuntime.h"
 #include "Features/screen_space_gi/ScreenSpaceGIRuntime.h"
 #include "render/D3D11Hooks.h"
 
@@ -3643,6 +3644,8 @@ namespace csah::render
             const auto giBindings=screen_space_gi::Runtime::get().scopeAmbient(context,
                 activeReplacementBinding.family==linear_lighting::ReplacementShaderFamily::dFLightAmbient,
                 pbr::Runtime::get().requested()?surface_classification::Runtime::get().pbrMaterialShaderResourceView():nullptr);
+            const auto waterBindings=water_effects::Runtime::get().scopeDraw(context,
+                activeReplacementBinding.family==linear_lighting::ReplacementShaderFamily::water);
             const auto terrainBindings=terrain_variation::Runtime::get().scopeDraw(context,
                 activeReplacementBinding.family==linear_lighting::ReplacementShaderFamily::material &&
                 activeSurfaceClassCode==static_cast<std::uint32_t>(surface_classification::SurfaceClassCode::terrain));
@@ -3742,6 +3745,8 @@ namespace csah::render
             const auto giBindings=screen_space_gi::Runtime::get().scopeAmbient(context,
                 activeReplacementBinding.family==linear_lighting::ReplacementShaderFamily::dFLightAmbient,
                 pbr::Runtime::get().requested()?surface_classification::Runtime::get().pbrMaterialShaderResourceView():nullptr);
+            const auto waterBindings=water_effects::Runtime::get().scopeDraw(context,
+                activeReplacementBinding.family==linear_lighting::ReplacementShaderFamily::water);
             const auto terrainBindings=terrain_variation::Runtime::get().scopeDraw(context,
                 activeReplacementBinding.family==linear_lighting::ReplacementShaderFamily::material &&
                 activeSurfaceClassCode==static_cast<std::uint32_t>(surface_classification::SurfaceClassCode::terrain));
@@ -3853,6 +3858,8 @@ namespace csah::render
             const auto giBindings=screen_space_gi::Runtime::get().scopeAmbient(context,
                 activeReplacementBinding.family==linear_lighting::ReplacementShaderFamily::dFLightAmbient,
                 pbr::Runtime::get().requested()?surface_classification::Runtime::get().pbrMaterialShaderResourceView():nullptr);
+            const auto waterBindings=water_effects::Runtime::get().scopeDraw(context,
+                activeReplacementBinding.family==linear_lighting::ReplacementShaderFamily::water);
             const auto terrainBindings=terrain_variation::Runtime::get().scopeDraw(context,
                 activeReplacementBinding.family==linear_lighting::ReplacementShaderFamily::material &&
                 activeSurfaceClassCode==static_cast<std::uint32_t>(surface_classification::SurfaceClassCode::terrain));
@@ -3966,6 +3973,8 @@ namespace csah::render
             const auto giBindings=screen_space_gi::Runtime::get().scopeAmbient(context,
                 activeReplacementBinding.family==linear_lighting::ReplacementShaderFamily::dFLightAmbient,
                 pbr::Runtime::get().requested()?surface_classification::Runtime::get().pbrMaterialShaderResourceView():nullptr);
+            const auto waterBindings=water_effects::Runtime::get().scopeDraw(context,
+                activeReplacementBinding.family==linear_lighting::ReplacementShaderFamily::water);
             const auto terrainBindings=terrain_variation::Runtime::get().scopeDraw(context,
                 activeReplacementBinding.family==linear_lighting::ReplacementShaderFamily::material &&
                 activeSurfaceClassCode==static_cast<std::uint32_t>(surface_classification::SurfaceClassCode::terrain));
@@ -4714,6 +4723,7 @@ namespace csah::render
                 *immediateContext);
             lod_blending::Runtime::get().onDeviceCreated(*device, *immediateContext);
             terrain_variation::Runtime::get().onDeviceCreated(*device, *immediateContext);
+            water_effects::Runtime::get().onDeviceCreated(*device, *immediateContext);
             screen_space_gi::Runtime::get().onDeviceCreated(*device, *immediateContext);
             basic_wetness::Runtime::get().onDeviceCreated(
                 *device,

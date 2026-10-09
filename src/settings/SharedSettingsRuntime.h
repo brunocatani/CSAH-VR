@@ -4,6 +4,7 @@
 #include "Features/lod_blending/LodBlendingSettings.h"
 #include "Features/terrain_variation/TerrainVariationSettings.h"
 #include "Features/screen_space_gi/ScreenSpaceGISettings.h"
+#include "Features/water_effects/WaterEffectsSettings.h"
 #include "Features/bloom_glare/BloomGlareSettings.h"
 #include "Features/cloud_shadows/CloudShadowSettings.h"
 #include "Features/complex_materials/ComplexParallaxSettings.h"
@@ -45,6 +46,7 @@ namespace csah::shared_settings
         lod_blending::Settings lodBlending{};
         terrain_variation::Settings terrainVariation{};
         screen_space_gi::Settings screenSpaceGI{};
+        water_effects::Settings waterEffects{};
         cloud_shadows::Settings cloudShadows{};
         volumetric_lighting::Settings volumetricLighting{};
         vanilla_fixes::Settings vanillaFixes{};
@@ -74,6 +76,7 @@ namespace csah::shared_settings
         bool lodBlending{};
         bool terrainVariation{};
         bool screenSpaceGI{};
+        bool waterEffects{};
         bool cloudShadows{};
         bool volumetricLighting{};
         bool vanillaFixesGate{};
@@ -106,6 +109,7 @@ namespace csah::shared_settings
                 static_cast<std::size_t>(lodBlending) +
                 static_cast<std::size_t>(terrainVariation) +
                 static_cast<std::size_t>(screenSpaceGI) +
+                static_cast<std::size_t>(waterEffects) +
                 static_cast<std::size_t>(cloudShadows) +
                 static_cast<std::size_t>(volumetricLighting) +
                 static_cast<std::size_t>(vanillaFixes) +
@@ -141,6 +145,7 @@ namespace csah::shared_settings
             .lodBlending = previous.lodBlending != next.lodBlending,
             .terrainVariation = previous.terrainVariation != next.terrainVariation,
             .screenSpaceGI = previous.screenSpaceGI != next.screenSpaceGI,
+            .waterEffects = previous.waterEffects != next.waterEffects,
             .cloudShadows = previous.cloudShadows != next.cloudShadows,
             .volumetricLighting = previous.volumetricLighting !=
                 next.volumetricLighting,

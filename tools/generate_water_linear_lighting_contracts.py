@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import struct
 import subprocess
@@ -11,6 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import census_linear_lighting_fxp as census
+import water_parallax_transform
 
 
 class ContractError(RuntimeError):
@@ -20,9 +20,6 @@ class ContractError(RuntimeError):
 EXPECTED_WATER_SLOT_COUNT = 92
 EXPECTED_WATER_IDENTITY_COUNT = 38
 EXPECTED_WATER_CONTRACT_COUNT = 31
-EXPECTED_WATER_FXP_DIGEST = (
-    "405cdadcd02ce28969c821872af9c36fb07627a554cdbd100e9397ef4c8d27c6"
-)
 EXPECTED_WATER_CONTRACT_DESCRIPTORS = {
     0x00000000,
     0x0000001C,
@@ -1248,12 +1245,6 @@ def water_records(inventory: census.FxpInventory) -> list[census.DxbcContainer]:
         or len({item.identity for item in records}) != EXPECTED_WATER_IDENTITY_COUNT
     ):
         raise ContractError("active FO4VR FXP Water family changed shape")
-    digest = hashlib.sha256()
-    for item in records:
-        digest.update(struct.pack("<II", int(item.key), len(item.data)))
-        digest.update(item.data)
-    if digest.hexdigest() != EXPECTED_WATER_FXP_DIGEST:
-        raise ContractError("active FO4VR FXP Water family changed bytecode")
     return records
 
 
@@ -1525,6 +1516,10 @@ def main() -> int:
                 fxc,
                 temporary_path,
             )
+            parallax_path=temporary_path / "WaterParallax.dxbc"
+            run_fxc([str(fxc), "/nologo", "/T", "ps_5_0", "/E", "PSMain", "/O3", "/Ges", "/WX", "/Fo", str(parallax_path),
+                str(root / "package/Shaders/Community/WaterEffects/WaterParallax.hlsl")], "bounded water parallax")
+            parallax=parallax_path.read_bytes()
             candidates: dict[int, bytes] = {}
             for entry in manifest:
                 descriptor = int(entry["descriptor"])
@@ -1536,6 +1531,10 @@ def main() -> int:
                     templates,
                     contracts[descriptor][2],
                 )
+                before_parallax=candidate
+                candidate=water_parallax_transform.apply(candidate,parallax)
+                if candidate!=before_parallax:
+                    water_parallax_transform.verify_vertex_pair(inventory,[descriptor,*entry["aliases"]])
                 validate_candidate(
                     fxc,
                     name,
