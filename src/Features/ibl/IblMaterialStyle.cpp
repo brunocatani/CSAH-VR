@@ -1,4 +1,5 @@
 #include "Features/ibl/IblMaterialStyle.h"
+#include "Features/ibl/IblReferenceLoad.h"
 #include "render/ComputeStateScope.h"
 #include "support/Logger.h"
 #ifdef MEM_RELEASE
@@ -39,18 +40,41 @@ namespace csah::ibl
     void MaterialStyle::loadReference() noexcept
     {
         try {
-            // Raw FO4VR constructor and destruction/binding witnesses were
-            // rechecked at 141C24220, 141C24180 and 14287D816 (2026-10-08).
-            REL::Relocation<std::uintptr_t> create{ REL::ID(1071950) };
-            const auto expected = reinterpret_cast<std::uintptr_t>(GetModuleHandleW(nullptr)) + 0x01C24220;
-            constexpr unsigned char prefix[]{ 0x48, 0x89, 0x5C, 0x24, 0x18, 0x48, 0x89, 0x6C, 0x24, 0x20 };
-            if (create.address() != expected || !readable(reinterpret_cast<void*>(expected), sizeof(prefix)) ||
-                std::memcmp(reinterpret_cast<void*>(expected), prefix, sizeof(prefix)) != 0) {
-                logging::warn("Cubemap style reference: VR texture loader entry unavailable; native material fallback retained.");
+            // Raw FO4VR evidence: 141C245CA..141C245D7 attaches the stream
+            // before 141C246A4 calls the renderer. The filename-only factory
+            // at 141C24220 never attaches one; renderer 1429391F0 then passes
+            // null to 141C12C50 and crashes at 141C12DC1.
+            const auto image = reinterpret_cast<std::uintptr_t>(GetModuleHandleW(nullptr));
+            const auto verifiedEntry = [&](std::uint64_t id, std::uintptr_t rva, const auto& prefix) {
+                REL::Relocation<std::uintptr_t> entry{ REL::ID(id) };
+                const auto expected = image + rva;
+                return entry.address() == expected &&
+                    readable(reinterpret_cast<void*>(expected), sizeof(prefix)) &&
+                    std::memcmp(reinterpret_cast<void*>(expected), prefix, sizeof(prefix)) == 0;
+            };
+            constexpr unsigned char openPrefix[]{ 0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x6C, 0x24, 0x10 };
+            constexpr unsigned char closePrefix[]{ 0x53, 0x48, 0x83, 0xEC, 0x20, 0x48, 0x8B, 0x51, 0x18 };
+            constexpr unsigned char createPrefix[]{ 0x53, 0x55, 0x57, 0x41, 0x54, 0x41, 0x55, 0x48, 0x83, 0xEC, 0x20 };
+            if (!verifiedEntry(1198116, 0x01C12B50, openPrefix) ||
+                !verifiedEntry(1516202, 0x01C12E10, closePrefix) ||
+                !verifiedEntry(685580, 0x01C24500, createPrefix)) {
+                logging::warn("Cubemap style reference: VR stream/texture loader entries unavailable; native material fallback retained.");
                 return;
             }
-            RE::BSFixedString path("textures\\shared\\cubemaps\\mipblur_DefaultOutside1.dds");
-            RE::NiPointer<RE::NiTexture> texture{ RE::NiTexture::Create(path, false, false) };
+            constexpr auto path = "textures\\shared\\cubemaps\\mipblur_DefaultOutside1.dds";
+            logging::info("Cubemap style reference: opening '{}' before stream-backed texture creation.", path);
+            RE::BSResourceNiBinaryStream opened(path);
+            if (!opened.stream || opened.lastError != RE::BSResource::ErrorCode::kNone) {
+                logging::warn("Cubemap style reference: resource open failed (stream={}, error={}); texture creation skipped.",
+                    static_cast<bool>(opened.stream), static_cast<unsigned>(opened.lastError));
+                return;
+            }
+            logging::info("Cubemap style reference: resource stream is ready; creating the texture through the verified stream overload.");
+            RE::NiPointer<RE::NiTexture> texture{ createTextureFromOpenedStream(
+                opened, path,
+                [](auto& stream, const char* name, bool isDdx, bool isSrgb, bool allowDegrade) {
+                    return RE::NiTexture::Create(stream, name, isDdx, isSrgb, allowDegrade);
+                }) };
             if (!texture || !readable(texture.get(), 0x40) ||
                 !readable(texture->rendererTexture, sizeof(void*))) {
                 logging::warn("Cubemap style reference: texture/rendererTexture unavailable.");

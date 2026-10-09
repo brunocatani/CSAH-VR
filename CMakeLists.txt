@@ -3233,6 +3233,11 @@ if(BUILD_CSAH_TESTS)
   target_link_libraries(CSAHIblMaterialStyleTests PRIVATE d3d11)
   add_test(NAME CSAH.IblMaterialStyle COMMAND CSAHIblMaterialStyleTests "${ROOT_DIR}")
 
+  add_executable(CSAHIblReferenceLoadTests "${ROOT_DIR}/tests/IblReferenceLoadTests.cpp")
+  target_compile_features(CSAHIblReferenceLoadTests PRIVATE cxx_std_23)
+  target_include_directories(CSAHIblReferenceLoadTests PRIVATE "${SOURCE_DIR}")
+  add_test(NAME CSAH.IblReferenceLoad COMMAND CSAHIblReferenceLoadTests)
+
   add_executable(CSAHIblProviderTests
     "${ROOT_DIR}/tests/IblProviderTests.cpp"
     "${IBL_PROVIDER_MODEL}"
