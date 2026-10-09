@@ -1,4 +1,5 @@
 #include "Features/dlaa/DlaaRuntime.h"
+#include "Features/dlaa/DlaaCameraValidation.h"
 #include "diagnostics/RenderDocCapture.h"
 
 #include "GeneratedUpscalingComposeShader.h"
@@ -347,19 +348,6 @@ namespace csah::dlaa
             return true;
         }
 
-        [[nodiscard]] float maximumAbsoluteElement(
-            const Matrix4& matrix) noexcept
-        {
-            float maximum{};
-            for (const auto& row : matrix) {
-                maximum = (std::max)(maximum, std::abs(row.x));
-                maximum = (std::max)(maximum, std::abs(row.y));
-                maximum = (std::max)(maximum, std::abs(row.z));
-                maximum = (std::max)(maximum, std::abs(row.w));
-            }
-            return maximum;
-        }
-
         [[nodiscard]] float halfToFloat(std::uint16_t value) noexcept
         {
             const auto sign = static_cast<std::uint32_t>(value & 0x8000u)
@@ -457,6 +445,7 @@ namespace csah::dlaa
         cameraBufferQualified_.store(false, std::memory_order_release);
         cameraBuffer_.Reset();
         worldCameraCapture_.reset();
+        worldCameraDiagnosticLogged_ = postCameraDiagnosticLogged_ = missingWorldCameraLogged_ = false;
         pendingCameraMap = {};
         cameraBufferIdentity_.store(nullptr, std::memory_order_release);
         qualificationProbes_ = {};
@@ -538,6 +527,7 @@ namespace csah::dlaa
         if (!qualificationResetRequested_.exchange(false, std::memory_order_acq_rel)) return;
         const auto hardResetOnLoad = settings_.hardResetOnLoad;
         worldCameraCapture_.reset();
+        worldCameraDiagnosticLogged_ = postCameraDiagnosticLogged_ = missingWorldCameraLogged_ = false;
         pendingCameraMap = {};
         cameraBufferQualified_.store(false, std::memory_order_release);
         restoreDynamicResolutionIfOwned();
@@ -649,8 +639,12 @@ namespace csah::dlaa
             sizeof(candidate));
         const auto pending = pendingCameraMap;
         pendingCameraMap = {};
+        // Preserve the raw upload for diagnosis at the actual world draw.
+        // Staging never publishes a camera: the same validation runs again
+        // before a confirmed world snapshot can reach the upscaler.
+        worldCameraCapture_.observe(static_cast<ID3D11Buffer*>(resource), candidate,
+            postRenderCalls_.load(std::memory_order_relaxed));
         if (!validateCameraFrame(candidate)) {
-            worldCameraCapture_.reset();
             cameraValidationFailures_.fetch_add(1, std::memory_order_relaxed);
             if (!cameraBufferQualified_.load(std::memory_order_acquire) &&
                 !firstCameraValidationFailureLogged_.exchange(
@@ -681,8 +675,6 @@ namespace csah::dlaa
             }
             return;
         }
-        worldCameraCapture_.observe(static_cast<ID3D11Buffer*>(resource), candidate,
-            postRenderCalls_.load(std::memory_order_relaxed));
         mappedCameraFrames_.fetch_add(1, std::memory_order_relaxed);
     }
 
@@ -707,12 +699,29 @@ namespace csah::dlaa
         Microsoft::WRL::ComPtr<ID3D11Buffer> camera;
         context->PSGetConstantBuffers(12, 1, camera.GetAddressOf());
         const auto frame = postRenderCalls_.load(std::memory_order_relaxed);
-        if (!worldCameraCapture_.confirm(camera.Get(), frame, cameraFrame_)) {
+        Fo4VrFrameBuffer candidate{};
+        if (!worldCameraCapture_.confirm(camera.Get(), frame, candidate)) {
+            if (!missingWorldCameraLogged_) {
+                missingWorldCameraLogged_ = true;
+                logging::info("DLAA world-camera diagnostic: no current upload matched world b12 (bound={}, tracked={}, frame={}).",
+                    static_cast<const void*>(camera.Get()), static_cast<const void*>(cameraBuffer_.Get()), frame);
+            }
             cameraBufferQualified_.store(false, std::memory_order_release);
             operational_.store(false, std::memory_order_release);
             resetHistory_ = true;
             return;
         }
+        if (!worldCameraDiagnosticLogged_ && sceneContentObserved_ && motionContentObserved_) {
+            worldCameraDiagnosticLogged_ = true;
+            logCameraSnapshot(candidate, "world-composite");
+        }
+        if (!validateCameraFrame(candidate)) {
+            cameraBufferQualified_.store(false, std::memory_order_release);
+            operational_.store(false, std::memory_order_release);
+            resetHistory_ = true;
+            return;
+        }
+        cameraFrame_ = candidate;
         lastValidCameraPostCall_.store(frame, std::memory_order_release);
         cameraBufferQualified_.store(true, std::memory_order_release);
         if (!firstCameraQualifiedLogged_.exchange(true, std::memory_order_relaxed)) {
@@ -725,26 +734,21 @@ namespace csah::dlaa
     bool Runtime::validateCameraFrame(
         const Fo4VrFrameBuffer& frame) const noexcept
     {
-        const auto leftPlanes = render::projectionPlanes(frame.projection[0]);
-        const auto rightPlanes = render::projectionPlanes(frame.projection[1]);
-        for (const auto& position : frame.currentEyePosition) {
-            if (!std::isfinite(position.x) || !std::isfinite(position.y) || !std::isfinite(position.z)) return false;
-        }
-        return leftPlanes.valid && rightPlanes.valid &&
-            finiteMatrix(frame.projection[0]) &&
-            finiteMatrix(frame.projection[1]) &&
-            maximumAbsoluteElement(frame.projection[0]) > 0.01f &&
-            maximumAbsoluteElement(frame.projection[1]) > 0.01f &&
-            finiteMatrix(frame.inverseProjection[0]) &&
-            finiteMatrix(frame.inverseProjection[1]) &&
-            finiteMatrix(frame.inverseFirstPersonProjection[0]) &&
-            finiteMatrix(frame.inverseFirstPersonProjection[1]) &&
-            maximumAbsoluteElement(frame.inverseProjection[0]) > 0.01f &&
-            maximumAbsoluteElement(frame.inverseProjection[1]) > 0.01f &&
-            finiteMatrix(frame.viewProjectionUnjittered[0]) &&
-            finiteMatrix(frame.viewProjectionUnjittered[1]) &&
-            finiteMatrix(frame.previousViewProjectionUnjittered[0]) &&
-            finiteMatrix(frame.previousViewProjectionUnjittered[1]);
+        return inspectCamera(frame).valid();
+    }
+
+    void Runtime::logCameraSnapshot(const Fo4VrFrameBuffer& frame, const char* boundary) const noexcept
+    {
+        const auto report = inspectCamera(frame);
+        logging::info("DLAA camera diagnostic [{}]: eyeFailures=[0x{:03X},0x{:03X}]; bits: planes=001, projectionNonfinite=002, projectionEmpty=004, inverseNonfinite=008, inverseEmpty=010, firstPersonInverseNonfinite=020, currentHistoryNonfinite=040, previousHistoryNonfinite=080, originNonfinite=100.",
+            boundary, report.eyeFailures[0], report.eyeFailures[1]);
+        const auto rows = std::bit_cast<std::array<render::CameraVector, render::kFo4VrCameraRows>>(frame);
+        // Two bounded snapshots per world session: selected world camera and
+        // the later post-image-space upload. Preserve raw values for replay;
+        // rejecting a map alone cannot identify which camera/pass wrote it.
+        for (std::size_t row = 0; row < rows.size(); ++row)
+            logging::info("DLAA camera diagnostic [{}] b12[{}]=({:.9g},{:.9g},{:.9g},{:.9g}).",
+                boundary, row, rows[row].x, rows[row].y, rows[row].z, rows[row].w);
     }
 
     void Runtime::onPreRender(
@@ -889,6 +893,13 @@ namespace csah::dlaa
         }
         if (!cameraBufferQualified_.load(std::memory_order_acquire)) {
             captureCameraBinding();
+        }
+        if (!postCameraDiagnosticLogged_ && cameraBuffer_ && sceneContentObserved_ && motionContentObserved_) {
+            Fo4VrFrameBuffer candidate{};
+            if (worldCameraCapture_.confirm(cameraBuffer_.Get(), postCall - 1, candidate)) {
+                postCameraDiagnosticLogged_ = true;
+                logCameraSnapshot(candidate, "post-image-space");
+            }
         }
         consumeQualificationProbes();
         if (!renderResourcesQualified_.load(std::memory_order_acquire) &&

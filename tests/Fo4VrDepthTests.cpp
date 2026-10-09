@@ -1,5 +1,6 @@
 #include "render/Fo4VrDepth.h"
 #include "render/WorldCameraCapture.h"
+#include "Features/dlaa/DlaaCameraValidation.h"
 
 #include <Windows.h>
 #include <d3d11.h>
@@ -42,6 +43,27 @@ namespace
 
     void temporalCameraTests(ID3D11Device* device)
     {
+        csah::render::Fo4VrFrameBuffer validFrame{};
+        for (UINT eye = 0; eye < 2; ++eye) {
+            validFrame.projection[eye] = projection(1, 50000);
+            validFrame.inverseProjection[eye] = inverseProjection(validFrame.projection[eye]);
+            validFrame.inverseFirstPersonProjection[eye] = inverseProjection(projection(0.1F, 1000));
+            validFrame.viewProjectionUnjittered[eye] = validFrame.projection[eye];
+            validFrame.previousViewProjectionUnjittered[eye] = validFrame.projection[eye];
+            // Native origin writes fill xyz only. Padding must not reject a camera.
+            validFrame.currentEyePosition[eye].w = std::numeric_limits<float>::quiet_NaN();
+        }
+        require(csah::dlaa::inspectCamera(validFrame).valid(), "valid native perspective rejected by camera diagnostics");
+        auto malformed = validFrame;
+        malformed.inverseFirstPersonProjection[1][2].x = std::numeric_limits<float>::quiet_NaN();
+        auto report = csah::dlaa::inspectCamera(malformed);
+        require(report.eyeFailures[0] == 0 && report.eyeFailures[1] == csah::dlaa::firstPersonInverseNonfinite,
+            "first-person inverse failure was not distinguished from world projection");
+        malformed = validFrame;
+        malformed.projection[0][3].z = 0;
+        report = csah::dlaa::inspectCamera(malformed);
+        require(report.eyeFailures[0] == csah::dlaa::projectionPlanesInvalid && report.eyeFailures[1] == 0,
+            "finite but invalid perspective was not distinguished from nonfinite data");
         // Independently project the four rays through an off-center crop.
         // Both asymmetric eyes must reach exactly the new clip boundaries,
         // while depth and homogeneous w remain unchanged.
@@ -86,6 +108,9 @@ namespace
         capture.observe(world.Get(), candidate, 11);
         require(capture.confirm(world.Get(), 11, published) && published.currentEyePosition[0].x == 456,
             "next world frame did not replace its camera");
+        capture.observe(world.Get(), malformed, 12);
+        require(capture.confirm(world.Get(), 12, published) && !csah::dlaa::inspectCamera(published).valid(),
+            "raw rejected upload was unavailable for world-boundary diagnostics");
         capture.reset();
         require(!capture.confirm(world.Get(), 11, published), "session reset retained a camera candidate");
     }
