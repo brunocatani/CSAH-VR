@@ -3,6 +3,7 @@
 #include "Features/water_effects/WaterEffectsRuntime.h"
 #include "Features/screen_space_gi/ScreenSpaceGIRuntime.h"
 #include "PCH.h"
+#include "render/NativeEmissionRead.h"
 
 #include "Features/basic_wetness/BasicWetnessRuntime.h"
 #include "Features/lod_blending/LodBlendingRuntime.h"
@@ -513,6 +514,9 @@ extern "C" __declspec(dllexport) bool F4SEAPI F4SEPlugin_Load(
         if (!csah::render::installBSLightingGeometryHook()) {
             csah::logging::warn(
                 "Verified BSDF lighting geometry hook was not installed; Linear Lighting replacement remains fail-closed.");
+        }
+        if (!csah::render::native_emission_read::install()) {
+            csah::logging::error("Native material emission compatibility unavailable; flashlight-triggered vegetation rendering is not protected.");
         }
         if (!csah::render::installBSDFPrePassShaderHook()) {
             csah::logging::warn(

@@ -2554,6 +2554,8 @@ add_library(${PROJECT_NAME} SHARED
   "${SOURCE_DIR}/render/BSLightingGeometryHook.h"
   "${DFPREPASS_HOOK_SOURCE}"
   "${SOURCE_DIR}/render/BSDFPrePassShaderHook.h"
+  "${SOURCE_DIR}/render/NativeEmissionRead.cpp"
+  "${SOURCE_DIR}/render/NativeEmissionRead.h"
   "${D3D11_HOOK_SOURCE}"
   "${SOURCE_DIR}/render/D3D11Hooks.h"
   "${DLAA_RUNTIME_SOURCE}"
@@ -2838,6 +2840,11 @@ option(BUILD_CSAH_TESTS
   "Build focused Community Shaders at Home (CSAH) VR tests." OFF)
 if(BUILD_CSAH_TESTS)
   enable_testing()
+  add_executable(CSAHNativeEmissionReadTests tests/NativeEmissionReadTests.cpp)
+  target_compile_features(CSAHNativeEmissionReadTests PRIVATE cxx_std_23)
+  target_compile_definitions(CSAHNativeEmissionReadTests PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_include_directories(CSAHNativeEmissionReadTests PRIVATE "${SOURCE_DIR}")
+  add_test(NAME CSAH.NativeEmissionRead COMMAND CSAHNativeEmissionReadTests)
   find_program(PWSH_EXECUTABLE NAMES pwsh REQUIRED)
 
   add_executable(CSAHUpscalingSettingsTests
