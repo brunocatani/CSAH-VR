@@ -86,7 +86,7 @@ Out main(uint vertex:SV_VertexID,uint eye:SV_InstanceID){Out o;float2 uv=float2(
         vertexGeometry[14].x=1;context->UpdateSubresource(vsGeometry.Get(),0,nullptr,vertexGeometry.data(),0,0);compare(render(patched.Get()),heightBaseline,"incompatible vertex UVs did not retain native sampling");
         cb=nullptr;context->VSSetConstantBuffers(1,1,&cb);compare(render(patched.Get()),heightBaseline,"missing native scales did not retain native water");
         cb=vsMaterial.Get();context->VSSetConstantBuffers(1,1,&cb);vertexGeometry[14].x=0;context->UpdateSubresource(vsGeometry.Get(),0,nullptr,vertexGeometry.data(),0,0);
-        settings.parallax=false;settings.reflectionDistance=4096;runtime.applySettings(settings);
+        settings.parallax=false;settings.reflections=true;settings.reflectionDistance=4096;runtime.applySettings(settings);
         std::array<ComPtr<ID3D11Texture2D>,4> cubes;std::array<ComPtr<ID3D11ShaderResourceView>,4> cubeViews;
         const auto fillCube=[&](UINT cube,bool valid) {
             std::array<V,16> pixels{};

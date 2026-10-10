@@ -56,6 +56,42 @@ namespace
         D3D11_RASTERIZER_DESC rd{};rd.FillMode=D3D11_FILL_SOLID;rd.CullMode=D3D11_CULL_NONE;rd.DepthClipEnable=TRUE;ComPtr<ID3D11RasterizerState> raster;check(device->CreateRasterizerState(&rd,&raster),"raster");context->RSSetState(raster.Get());
         auto& runtime=csah::water_effects::Runtime::get();runtime.onDeviceCreated(device.Get(),context.Get());csah::water_effects::Settings settings;settings.enabled=true;settings.reflections=false;settings.screenReflections=true;runtime.applySettings(settings);
         csah::ibl::SslrEnvironmentView environment;
+        require(!csah::water_effects::Settings{}.reflections && !csah::water_effects::Settings{}.screenReflections,
+            "water reflections must be independent opt-ins");
+        // A global cube can be available throughout all four water modes.
+        ComPtr<ID3D11Texture2D> cube;ComPtr<ID3D11ShaderResourceView> cubeView;
+        D3D11_TEXTURE2D_DESC cubeDesc{};cubeDesc.Width=cubeDesc.Height=cubeDesc.MipLevels=cubeDesc.SampleDesc.Count=1;
+        cubeDesc.ArraySize=6;cubeDesc.Format=DXGI_FORMAT_R32G32B32A32_FLOAT;
+        cubeDesc.BindFlags=D3D11_BIND_SHADER_RESOURCE;cubeDesc.MiscFlags=D3D11_RESOURCE_MISC_TEXTURECUBE;
+        check(device->CreateTexture2D(&cubeDesc,nullptr,&cube),"mode cube");check(device->CreateShaderResourceView(cube.Get(),nullptr,&cubeView),"mode cube view");
+        environment.publishedAvailable=environment.previousAvailable=true;
+        environment.publishedEnvironment=environment.publishedValidity=environment.publishedPosition=cubeView.Get();
+        environment.previousEnvironment=environment.previousValidity=environment.previousPosition=cubeView.Get();
+        D3D11_BUFFER_DESC readDesc{};readDesc.ByteWidth=96;readDesc.Usage=D3D11_USAGE_STAGING;readDesc.CPUAccessFlags=D3D11_CPU_ACCESS_READ;
+        ComPtr<ID3D11Buffer> modeReadback;check(device->CreateBuffer(&readDesc,nullptr,&modeReadback),"mode readback");
+        for(unsigned mode=0;mode<5;mode++) {
+            settings.enabled=mode!=4;settings.reflections=(mode&1)!=0 || mode==4;settings.screenReflections=(mode&2)!=0 || mode==4;
+            runtime.applySettings(settings);
+            const bool expectedCube=settings.enabled&&settings.reflections,expectedFx=settings.enabled&&settings.screenReflections;
+            require(runtime.cubeReflectionsRequested()==expectedCube,"water cube request leaked from FX or global state");
+            {
+                auto binding=runtime.scopeReflections(context.Get(),true,environment);
+                for(UINT slot=69;slot<75;slot++) {ComPtr<ID3D11ShaderResourceView> selected;context->PSGetShaderResources(slot,1,&selected);
+                    require(bool(selected)==expectedCube,"current/previous water cube did not follow its own toggle");}
+                for(UINT slot:{79u,80u}) {ComPtr<ID3D11ShaderResourceView> selected;context->PSGetShaderResources(slot,1,&selected);
+                    require(bool(selected)==expectedFx,"FX scene input did not follow its own toggle");}
+                ComPtr<ID3D11ShaderResourceView> selected;context->PSGetShaderResources(75,1,&selected);
+                require(bool(selected)==(expectedCube||expectedFx),"water master/combined disabled mode is not neutral");
+                if(selected) {
+                    ComPtr<ID3D11Resource> resource;selected->GetResource(&resource);context->CopyResource(modeReadback.Get(),resource.Get());
+                    D3D11_MAPPED_SUBRESOURCE mapped{};check(context->Map(modeReadback.Get(),0,D3D11_MAP_READ,0,&mapped),"mode parameters");
+                    std::array<F4,6> values{};std::memcpy(values.data(),mapped.pData,sizeof(values));context->Unmap(modeReadback.Get(),0);
+                    require(values[0].z==(expectedCube?1.f:0.f) && values[0].y==(expectedCube?1.f:0.f) && values[4].x==(expectedFx?1.f:0.f),
+                        "GPU reflection flags coupled the independent switches");
+                }
+            }
+        }
+        environment={};settings.enabled=true;settings.reflections=false;settings.screenReflections=true;runtime.applySettings(settings);
         const auto draw=[&](){auto* out=rtv.Get();context->OMSetRenderTargets(1,&out,nullptr);{auto binding=runtime.scopeReflections(context.Get(),true,environment);context->Draw(3,0);}context->OMSetRenderTargets(0,nullptr,nullptr);ComPtr<ID3D11ShaderResourceView> a,c;context->PSGetShaderResources(79,1,&a);context->PSGetShaderResources(80,1,&c);require(!a&&!c,"scene aliases leaked");context->CopyResource(readback.Get(),target.Get());D3D11_MAPPED_SUBRESOURCE m{};check(context->Map(readback.Get(),0,D3D11_MAP_READ,0,&m),"readback map");std::vector<F4> result(width*height);for(UINT y=0;y<height;y++)std::memcpy(result.data()+y*width,static_cast<const char*>(m.pData)+y*m.RowPitch,width*sizeof(F4));context->Unmap(readback.Get(),0);return result;};
         const auto reflected=draw();unsigned hits[2]{};
         for(UINT y=0;y<height;y++)for(UINT x=0;x<width;x++){auto p=reflected[y*width+x];require(std::isfinite(p.w),"nonfinite trace");if(p.w>.05f){auto eye=x/(width/2);hits[eye]++;require(eye==0?(p.x>2.9f&&p.y==0):(p.y>2.9f&&p.x==0),"reflection sampled the other eye's colour");}}

@@ -55,6 +55,8 @@ namespace csah::water_effects
         {return requested() && caustics_.load(std::memory_order_relaxed);}
         [[nodiscard]] bool reflectionsRequested() const noexcept
         {return requested() && (reflections_.load(std::memory_order_relaxed) || screenReflections_.load(std::memory_order_relaxed)) && reflectionStrength_.load(std::memory_order_relaxed)>0;}
+        [[nodiscard]] bool cubeReflectionsRequested() const noexcept
+        {return reflectionsRequested() && reflections_.load(std::memory_order_relaxed);}
         void onSkyUpdated(bool worldReady,float seconds) noexcept {world_.capture(causticsRequested(),worldReady,seconds);}
         void resetWorld() noexcept {world_.invalidate();}
         void onDeviceCreated(ID3D11Device* device,ID3D11DeviceContext* context) noexcept;
@@ -81,7 +83,7 @@ namespace csah::water_effects
         std::array<float,24> uploadedReflection_{};
         WorldData world_;
         std::atomic_bool enabled_{};
-        std::atomic_bool parallax_{true},caustics_{true},reflections_{true},screenReflections_{};
+        std::atomic_bool parallax_{true},caustics_{true},reflections_{false},screenReflections_{};
         std::atomic<float> reflectionFlatness_{},reflectionRoughness_{};
         std::atomic<float> scale_{1};
         std::atomic<float> causticStrength_{1};

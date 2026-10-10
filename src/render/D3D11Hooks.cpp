@@ -2284,7 +2284,7 @@ namespace csah::render
         {
             ibl::SslrEnvironmentView environment;
             auto& runtime=water_effects::Runtime::get();
-            if(water && runtime.reflectionsRequested()) (void)ibl::Runtime::get().tryGetWaterEnvironment(environment);
+            if(water && runtime.cubeReflectionsRequested()) (void)ibl::Runtime::get().tryGetWaterEnvironment(environment);
             return runtime.scopeReflections(context,water,environment);
         }
 

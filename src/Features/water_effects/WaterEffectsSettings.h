@@ -9,7 +9,8 @@ namespace csah::water_effects
         bool enabled{false};
         bool parallax{true};
         bool caustics{true};
-        bool reflections{true};
+        // Water cubemaps are an explicit opt-in, independent of global cubemaps and FX reflections.
+        bool reflections{false};
         float parallaxScale{1};
         float causticStrength{1};
         float reflectionStrength{1};

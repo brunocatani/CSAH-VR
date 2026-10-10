@@ -142,7 +142,7 @@ namespace csah::water_effects
     {
         if(!water || !context || context!=context_.Get()) return {nullptr,{},nullptr};
         if(!reflectionsRequested() || !device_ || !ensureReflections()) return {context,{},nullptr};
-        const bool cube=reflections_.load() && environment.publishedAvailable && environment.publishedEnvironment && environment.publishedValidity && environment.publishedPosition;
+        const bool cube=cubeReflectionsRequested() && environment.publishedAvailable && environment.publishedEnvironment && environment.publishedValidity && environment.publishedPosition;
         const bool fx=screenReflections_.load();
         Ptr<ID3D11ShaderResourceView> colour,depth;
         if(fx) {context->PSGetShaderResources(1,1,&colour);context->PSGetShaderResources(7,1,&depth);}
@@ -156,7 +156,7 @@ namespace csah::water_effects
         UINT cw{},ch{},dw{},dh{};
         const bool scene=fx && textureSize(colour.Get(),cw,ch) && textureSize(depth.Get(),dw,dh);
         if(!cube && !fx) return {context,{},nullptr};
-        const bool previous=environment.previousAvailable && environment.previousEnvironment && environment.previousValidity && environment.previousPosition;
+        const bool previous=cube && environment.previousAvailable && environment.previousEnvironment && environment.previousValidity && environment.previousPosition;
         const auto& currentOrigin=environment.publishedProbeOrigin;const auto& oldOrigin=environment.previousProbeOrigin;
         D3D11_VIEWPORT viewport{};UINT viewportCount=1;context->RSGetViewports(&viewportCount,&viewport);
         const std::array<float,24> parameters{
