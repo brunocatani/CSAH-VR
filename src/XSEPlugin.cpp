@@ -1,3 +1,4 @@
+#include "render/NativeShadowProperty.h"
 #include "Features/inverse_square/InverseSquareRuntime.h"
 #include "Features/terrain_shadows/TerrainShadowRuntime.h"
 #include "Features/water_effects/WaterEffectsRuntime.h"
@@ -514,6 +515,9 @@ extern "C" __declspec(dllexport) bool F4SEAPI F4SEPlugin_Load(
         if (!csah::render::installBSLightingGeometryHook()) {
             csah::logging::warn(
                 "Verified BSDF lighting geometry hook was not installed; Linear Lighting replacement remains fail-closed.");
+        }
+        if (!csah::render::native_shadow_property::install()) {
+            csah::logging::error("Native shadow-property guard unavailable; interior shadow dispatch is not protected.");
         }
         if (!csah::render::native_emission_read::install()) {
             csah::logging::error("Native material emission compatibility unavailable; flashlight-triggered vegetation rendering is not protected.");
