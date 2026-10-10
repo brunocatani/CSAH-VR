@@ -743,7 +743,8 @@ namespace csah::ibl
             recordFailure();
             return EnvironmentUpdateConsumeResult::failed;
         }
-        const auto validationStart = std::chrono::steady_clock::now();
+        const bool profiling = render::GpuTimingProfiler::groupRequested(render::GpuTimingProfiler::Group::General);
+        const auto validationStart = profiling ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
         summary_.probeOrigin = {};
         if (resources_.stagingSceneConstants &&
             resources_.sceneConstantsByteWidth >=
@@ -887,22 +888,26 @@ namespace csah::ibl
             summary_.diffuseSHState = solveDiffuseSHFit(diffuseFit, summary_.diffuseSH) ?
                 classifyDiffuseSH(summary_.diffuseSH) : DiffuseSHState::invalid;
         }
-        summary_.validationCpuMilliseconds =
-            std::chrono::duration<double, std::milli>(
-                std::chrono::steady_clock::now() - validationStart)
-                .count();
-        validationCpuMilliseconds_ += summary_.validationCpuMilliseconds;
-        ++validationCpuSamples_;
-        if (!firstValidationTimingLogged_ ||
-            validationCpuSamples_ >= 300) {
-            logging::info(
-                "Feature timing Image Based Lighting validation: CPU compact readback and diffuse SH solve={:.3f} ms over {} samples.",
-                validationCpuMilliseconds_ /
-                    static_cast<double>(validationCpuSamples_),
-                validationCpuSamples_);
-            firstValidationTimingLogged_ = true;
-            validationCpuMilliseconds_ = 0.0;
-            validationCpuSamples_ = 0;
+        if (profiling) {
+            summary_.validationCpuMilliseconds =
+                std::chrono::duration<double, std::milli>(
+                    std::chrono::steady_clock::now() - validationStart)
+                    .count();
+            validationCpuMilliseconds_ += summary_.validationCpuMilliseconds;
+            ++validationCpuSamples_;
+            if (!firstValidationTimingLogged_ ||
+                validationCpuSamples_ >= 300) {
+                logging::info(
+                    "Feature timing Image Based Lighting validation: CPU compact readback and diffuse SH solve={:.3f} ms over {} samples.",
+                    validationCpuMilliseconds_ /
+                        static_cast<double>(validationCpuSamples_),
+                    validationCpuSamples_);
+                firstValidationTimingLogged_ = true;
+                validationCpuMilliseconds_ = 0.0;
+                validationCpuSamples_ = 0;
+            }
+        } else {
+            summary_.validationCpuMilliseconds = 0;
         }
         summary_.pending = false;
         ++summary_.completedReadbacks;

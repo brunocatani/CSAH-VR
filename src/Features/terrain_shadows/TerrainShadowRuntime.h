@@ -46,6 +46,8 @@ namespace csah::terrain_shadows
         std::uint64_t frame_{},updatedFrame_{~0ull},loadedSelection_{};
         unsigned retry_{};
         bool loggedFailure_{};
+        bool parametersUploaded_{};
+        std::array<float,8> uploadedParameters_{};
         template<class T> using Ptr=Microsoft::WRL::ComPtr<T>;
         Ptr<ID3D11Device> device_;Ptr<ID3D11DeviceContext> context_;
         Ptr<ID3D11Texture2D> height_,shadow_;

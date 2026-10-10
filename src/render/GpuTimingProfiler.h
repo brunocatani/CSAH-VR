@@ -23,7 +23,6 @@ namespace csah::render
 
         static constexpr std::size_t kMaximumSegments = 4;
         static constexpr std::size_t kSlotCount = 8;
-        static constexpr std::uint32_t kMaximumReports = 6;
 
         class Scope final
         {
@@ -63,6 +62,7 @@ namespace csah::render
             std::uint32_t reportSampleCount = 120,
             std::uint32_t sampleStride = 1,
             Group group = Group::General) noexcept;
+        [[nodiscard]] static bool groupRequested(Group group) noexcept;
         static void setOnDemandGroups(std::uint32_t groups) noexcept;
         void reset() noexcept;
         [[nodiscard]] Scope begin() noexcept;
@@ -82,6 +82,7 @@ namespace csah::render
             std::uint64_t collectionRevision{};
         };
 
+        bool ensureQueries() noexcept;
         void mark(Scope& scope) noexcept;
         void finish(Scope& scope) noexcept;
         void discard(Slot& slot) noexcept;
@@ -105,10 +106,9 @@ namespace csah::render
         double accumulatedCpuMilliseconds_{};
         std::uint64_t completedCpuSamples_{};
         std::chrono::steady_clock::time_point nextReport_{};
-        std::uint32_t reportsEmitted_{};
         std::uint64_t collectionRequestRevision_{};
         Group group_{ Group::General };
-        bool continuousCollection_{};
         bool collecting_{};
+        bool queryAllocationAttempted_{};
     };
 }

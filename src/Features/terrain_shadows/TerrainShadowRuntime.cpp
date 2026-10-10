@@ -1,6 +1,7 @@
 #include "Features/terrain_shadows/TerrainShadowRuntime.h"
 #include "render/ComputeStateScope.h"
 #include "support/Logger.h"
+#include "support/ReadableMemory.h"
 #include "TerrainShadowUpdate.h"
 #include <algorithm>
 #include <cmath>
@@ -81,9 +82,7 @@ namespace csah::terrain_shadows
             // native terrain ctor 1407AF59F consumes that same slot as map name.
             std::uintptr_t name{};std::array<char,256> buffer{};
             if(!read(world+0x208,name) || !name) break;
-            bool complete=false;
-            for(std::size_t i=0;i<buffer.size();i++) {if(!read(name+i,buffer[i])) break;if(!buffer[i]) {complete=true;break;}}
-            if(!complete) break;
+            if(!support::readCString(name,buffer.data(),buffer.size())) break;
             for(std::size_t i=0;i<maps_.size();i++) if(_stricmp(buffer.data(),maps_[i].name.c_str())==0) {publish(static_cast<std::uint32_t>(i+1));return;}
             break;
         }
@@ -91,7 +90,7 @@ namespace csah::terrain_shadows
     }
     void Runtime::onDeviceCreated(ID3D11Device* d,ID3D11DeviceContext* c) noexcept
     {
-        device_=d;context_=c;loadedSelection_=0;updatedFrame_=~0ull;retry_=0;loggedFailure_=false;
+        device_=d;context_=c;parametersUploaded_=false;loadedSelection_=0;updatedFrame_=~0ull;retry_=0;loggedFailure_=false;
         height_.Reset();shadow_.Reset();heightView_.Reset();shadowView_.Reset();shadowWrite_.Reset();parameters_.Reset();parameterView_.Reset();updateParameters_.Reset();compute_.Reset();
     }
     bool Runtime::createResources(const Map& m) noexcept
@@ -149,7 +148,10 @@ namespace csah::terrain_shadows
         }
         const std::array<float,8> parameters{float(map.west)*4096,float(map.south)*4096,4096.0f/map.samples,256,
             float(map.width),float(map.height),strength_.load(),1};
-        c->UpdateSubresource(parameters_.Get(),0,nullptr,parameters.data(),0,0);
+        if(!parametersUploaded_ || uploadedParameters_!=parameters) {
+            c->UpdateSubresource(parameters_.Get(),0,nullptr,parameters.data(),0,0);
+            uploadedParameters_=parameters;parametersUploaded_=true;
+        }
         return {c,shadowView_.Get(),parameterView_.Get()};
     }
 }

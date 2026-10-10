@@ -1627,7 +1627,7 @@ namespace csah::ibl
                     activeCaptureProbeSessionId_;
                 const auto update = environmentUpdater_.snapshot();
                 if (update.dispatches == 1 ||
-                    (update.dispatches % 300) == 0) {
+                    (render::GpuTimingProfiler::groupRequested(render::GpuTimingProfiler::Group::General) && (update.dispatches % 300) == 0)) {
                     logging::info(
                         "Dynamic Cubemaps stereo generation {} dispatched into the private radiance/validity/position back chain with position-aware history={} and bounded scene-linear GGX filtering; publication awaits nonblocking validation.",
                         update.generation,
@@ -2305,8 +2305,8 @@ namespace csah::ibl
                     std::memory_order_relaxed);
             }
             if (lastLoggedEnvironmentUpdateGeneration_ == 0 ||
-                update.generation >=
-                    lastLoggedEnvironmentUpdateGeneration_ + 300) {
+                (render::GpuTimingProfiler::groupRequested(render::GpuTimingProfiler::Group::General) &&
+                    update.generation >= lastLoggedEnvironmentUpdateGeneration_ + 300)) {
                 lastLoggedEnvironmentUpdateGeneration_ =
                     update.generation;
                 logging::info(

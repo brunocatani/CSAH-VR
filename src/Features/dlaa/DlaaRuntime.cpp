@@ -13,6 +13,7 @@
 #include "GeneratedUpscalingReactiveMaskShader.h"
 
 #include "render/ComputeStateScope.h"
+#include "render/GpuTimingProfiler.h"
 #include "support/Logger.h"
 
 #include <Windows.h>
@@ -2685,6 +2686,8 @@ namespace csah::dlaa
     Runtime::GpuTimingSlot* Runtime::beginGpuTiming() noexcept
     {
         consumeGpuTimingQueries();
+        if (!settings_.verboseDiagnostics &&
+            !render::GpuTimingProfiler::groupRequested(render::GpuTimingProfiler::Group::General)) return nullptr;
         if (!context_ || !ensureGpuTimingQueries()) {
             return nullptr;
         }
@@ -2896,7 +2899,12 @@ namespace csah::dlaa
             };
         }
 
-        const auto captureStart = std::chrono::steady_clock::now();
+        const bool profiling = settings_.verboseDiagnostics ||
+            render::GpuTimingProfiler::groupRequested(render::GpuTimingProfiler::Group::General);
+        const auto timingNow = [profiling]() noexcept {
+            return profiling ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+        };
+        const auto captureStart = timingNow();
         render::ScopedComputeState computeState(
             context_.Get(),
             {
@@ -2912,7 +2920,7 @@ namespace csah::dlaa
                     D3D11_COMMONSHADER_CONSTANT_BUFFER_API_SLOT_COUNT,
             });
         ScopedImageSpaceBindings imageState(context_.Get());
-        const auto captureEnd = std::chrono::steady_clock::now();
+        const auto captureEnd = timingNow();
         if (!computeState.captured() || !imageState.captured()) {
             operational_.store(false, std::memory_order_release);
             resetHistory_ = true;
@@ -2968,9 +2976,9 @@ namespace csah::dlaa
                 .inputTop = 0,
             };
         }
-        const auto evaluateStart = std::chrono::steady_clock::now();
+        const auto evaluateStart = timingNow();
         const auto evaluated = evaluateStreamlineDlaa(frame);
-        const auto evaluateEnd = std::chrono::steady_clock::now();
+        const auto evaluateEnd = timingNow();
         if (settings_.motionVectorRepair) {
             for (auto& eye : eyeResources_) {
                 std::swap(eye.motionHistory, eye.motionOutput);
@@ -2996,7 +3004,7 @@ namespace csah::dlaa
                 "DLAA.Compare.OutputRight",
                 eyeResources_[1].outputColor.Get());
         }
-        const auto commitStart = std::chrono::steady_clock::now();
+        const auto commitStart = timingNow();
         bool publicationSucceeded{ true };
         if (evaluated && wasOperational) {
             const auto compose = settings_.mode == Mode::centerDlaa ||
@@ -3042,26 +3050,28 @@ namespace csah::dlaa
                     eyeResources_[1].outputColor.Get());
             }
         }
-        const auto commitEnd = std::chrono::steady_clock::now();
+        const auto commitEnd = timingNow();
         if (gpuTiming) {
             context_->End(gpuTiming->afterCommit.Get());
             context_->End(gpuTiming->disjoint.Get());
         }
-        const auto restoreStart = std::chrono::steady_clock::now();
+        const auto restoreStart = timingNow();
         const auto imageRestored = imageState.restore();
         const auto computeRestored = computeState.restore();
-        const auto restoreEnd = std::chrono::steady_clock::now();
+        const auto restoreEnd = timingNow();
         const auto microseconds = [](auto begin, auto end) noexcept {
             return std::chrono::duration<double, std::micro>(end - begin)
                 .count();
         };
-        recordCpuTiming(
-            microseconds(captureStart, captureEnd),
-            microseconds(evaluateStart, evaluateEnd),
-            microseconds(commitStart, commitEnd),
-            microseconds(restoreStart, restoreEnd));
-        consumeGpuTimingQueries();
-        logPerformanceTimingsIfReady();
+        if (profiling) {
+            recordCpuTiming(
+                microseconds(captureStart, captureEnd),
+                microseconds(evaluateStart, evaluateEnd),
+                microseconds(commitStart, commitEnd),
+                microseconds(restoreStart, restoreEnd));
+            consumeGpuTimingQueries();
+            logPerformanceTimingsIfReady();
+        }
         if (!evaluated || !publicationSucceeded || !imageRestored ||
             !computeRestored) {
             operational_.store(false, std::memory_order_release);

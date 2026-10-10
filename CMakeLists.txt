@@ -3184,6 +3184,14 @@ if(BUILD_CSAH_TESTS)
       "-DPLUGIN_SOURCE=${PLUGIN_SOURCE}"
       -P "${NATIVE_SHADOW_VERIFY_SCRIPT}")
 
+  add_executable(CSAHRenderOverheadTests "${ROOT_DIR}/tests/RenderOverheadTests.cpp"
+    "${SOURCE_DIR}/render/GpuTimingProfiler.cpp")
+  target_compile_features(CSAHRenderOverheadTests PRIVATE cxx_std_23)
+  target_compile_definitions(CSAHRenderOverheadTests PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_include_directories(CSAHRenderOverheadTests PRIVATE "${SOURCE_DIR}")
+  target_link_libraries(CSAHRenderOverheadTests PRIVATE d3d11 spdlog::spdlog)
+  add_test(NAME CSAH.RenderOverhead COMMAND CSAHRenderOverheadTests)
+
   add_executable(CSAHCloudGeometryCaptureTests "${ROOT_DIR}/tests/CloudGeometryCaptureTests.cpp"
     "${SOURCE_DIR}/Features/cloud_shadows/CloudGeometryCapture.cpp"
     "${SOURCE_DIR}/Features/cloud_shadows/CloudShadowRuntime.cpp"
@@ -3581,6 +3589,7 @@ if(BUILD_CSAH_TESTS)
   add_executable(CSAHUpscalingRecoveryTests
     "${ROOT_DIR}/tests/UpscalingRecoveryTests.cpp"
     "${SOURCE_DIR}/Features/dlaa/DlaaRuntime.cpp"
+    "${GPU_TIMING_PROFILER_SOURCE}"
     "${SOURCE_DIR}/Features/volumetric_lighting/VolumetricStateScope.cpp"
     "${IBL_COMPUTE_STATE_SCOPE_SOURCE}")
   add_dependencies(CSAHUpscalingRecoveryTests UpscalingShaders)

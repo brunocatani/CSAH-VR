@@ -142,13 +142,13 @@ namespace csah::ibl
         ComPtr<ID3D11ShaderResourceView> original;
         context->PSGetShaderResources(8, 1, &original);
         if (!original) return nullptr;
-        D3D11_SHADER_RESOURCE_VIEW_DESC desc{};
-        original->GetDesc(&desc);
-        if (desc.ViewDimension != D3D11_SRV_DIMENSION_TEXTURECUBEARRAY ||
-            desc.TextureCubeArray.NumCubes == 0 || desc.TextureCubeArray.NumCubes > 341) return nullptr;
         Entry* entry{};
         for (auto& candidate : entries_) if (candidate.original.Get() == original.Get()) { entry = &candidate; break; }
         if (!entry) {
+            D3D11_SHADER_RESOURCE_VIEW_DESC desc{};
+            original->GetDesc(&desc);
+            if (desc.ViewDimension != D3D11_SRV_DIMENSION_TEXTURECUBEARRAY ||
+                desc.TextureCubeArray.NumCubes == 0 || desc.TextureCubeArray.NumCubes > 341) return nullptr;
             auto& candidate = entries_[nextEntry_++ % entries_.size()];
             candidate = {};
             candidate.cubes = desc.TextureCubeArray.NumCubes;

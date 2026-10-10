@@ -90,34 +90,8 @@ namespace csah::render
             return false;
         }
 
-        std::array<Slot, kSlotCount> created{};
-        const D3D11_QUERY_DESC disjointDescription{
-            .Query = D3D11_QUERY_TIMESTAMP_DISJOINT,
-            .MiscFlags = 0,
-        };
-        const D3D11_QUERY_DESC timestampDescription{
-            .Query = D3D11_QUERY_TIMESTAMP,
-            .MiscFlags = 0,
-        };
-        for (auto& slot : created) {
-            if (FAILED(device->CreateQuery(
-                    &disjointDescription,
-                    slot.disjoint.GetAddressOf()))) {
-                return false;
-            }
-            for (std::uint32_t point = 0;
-                 point <= segmentCount;
-                 ++point) {
-                if (FAILED(device->CreateQuery(
-                        &timestampDescription,
-                        slot.timestamps[point].GetAddressOf()))) {
-                    return false;
-                }
-            }
-        }
         device_ = device;
         context_ = context;
-        slots_ = std::move(created);
         labels_ = labels;
         name_ = name;
         segmentCount_ = segmentCount;
@@ -128,11 +102,51 @@ namespace csah::render
             collectionRequestRevision.load(std::memory_order_acquire);
         const auto requestedGroups =
             onDemandGroups.load(std::memory_order_acquire);
-        continuousCollection_ =
+        collecting_ =
             (requestedGroups & static_cast<std::uint32_t>(group_)) != 0;
         nextReport_ = std::chrono::steady_clock::now() +
             std::chrono::seconds(5);
-        collecting_ = requestedGroups == 0 || continuousCollection_;
+        return true;
+    }
+
+    bool GpuTimingProfiler::groupRequested(Group group) noexcept
+    {
+        return (onDemandGroups.load(std::memory_order_acquire) & static_cast<std::uint32_t>(group)) != 0;
+    }
+
+    bool GpuTimingProfiler::ensureQueries() noexcept
+    {
+        if (slots_[0].disjoint) return true;
+        if (queryAllocationAttempted_ || !device_) return false;
+        queryAllocationAttempted_ = true;
+        std::array<Slot, kSlotCount> created{};
+        const D3D11_QUERY_DESC disjointDescription{
+            .Query = D3D11_QUERY_TIMESTAMP_DISJOINT,
+            .MiscFlags = 0,
+        };
+        const D3D11_QUERY_DESC timestampDescription{
+            .Query = D3D11_QUERY_TIMESTAMP,
+            .MiscFlags = 0,
+        };
+        for (auto& slot : created) {
+            if (FAILED(device_->CreateQuery(
+                    &disjointDescription,
+                    slot.disjoint.GetAddressOf()))) {
+                try { spdlog::warn("GPU timing query allocation failed for {}; rendering continues without timing.", name_); } catch (...) {}
+                return false;
+            }
+            for (std::uint32_t point = 0;
+                 point <= segmentCount_;
+                 ++point) {
+                if (FAILED(device_->CreateQuery(
+                        &timestampDescription,
+                        slot.timestamps[point].GetAddressOf()))) {
+                    try { spdlog::warn("GPU timing query allocation failed for {}; rendering continues without timing.", name_); } catch (...) {}
+                return false;
+                }
+            }
+        }
+        slots_ = std::move(created);
         return true;
     }
 
@@ -169,10 +183,9 @@ namespace csah::render
         accumulatedCpuMilliseconds_ = 0.0;
         completedCpuSamples_ = 0;
         nextReport_ = {};
-        reportsEmitted_ = 0;
         collectionRequestRevision_ = 0;
         group_ = Group::General;
-        continuousCollection_ = false;
+        queryAllocationAttempted_ = false;
         collecting_ = false;
     }
 
@@ -190,6 +203,7 @@ namespace csah::render
         if (activeProfiler) {
             return {};
         }
+        if (!ensureQueries()) return {};
         const auto slotIndex = writeIndex_++ % slots_.size();
         auto& slot = slots_[slotIndex];
         if (slot.pending || slot.recording || !slot.disjoint ||
@@ -258,7 +272,7 @@ namespace csah::render
 
     void GpuTimingProfiler::poll() noexcept
     {
-        if (!context_ || segmentCount_ == 0) {
+        if (!context_ || segmentCount_ == 0 || !slots_[0].disjoint) {
             return;
         }
         for (auto& slot : slots_) {
@@ -344,22 +358,22 @@ namespace csah::render
             return;
         }
         collectionRequestRevision_ = revision;
+        queryAllocationAttempted_ = false;
         const auto requestedGroups =
             onDemandGroups.load(std::memory_order_acquire);
-        continuousCollection_ =
+        collecting_ =
             (requestedGroups & static_cast<std::uint32_t>(group_)) != 0;
-        collecting_ = continuousCollection_;
         accumulatedMilliseconds_ = {};
         completedSamples_ = 0;
         accumulatedCpuMilliseconds_ = 0.0;
         completedCpuSamples_ = 0;
-        reportsEmitted_ = 0;
         nextReport_ = std::chrono::steady_clock::now() +
             std::chrono::seconds(5);
     }
 
     void GpuTimingProfiler::logIfReady() noexcept
     {
+        if (!collecting_) return;
         const auto now = std::chrono::steady_clock::now();
         if (!collecting_ || completedSamples_ < reportSampleCount_ || !name_ ||
             now < nextReport_) {
@@ -418,10 +432,6 @@ namespace csah::render
         accumulatedCpuMilliseconds_ = 0.0;
         completedCpuSamples_ = 0;
         nextReport_ = now + std::chrono::seconds(5);
-        ++reportsEmitted_;
-        if (!continuousCollection_ &&
-            reportsEmitted_ >= kMaximumReports) {
-            collecting_ = false;
-        }
+
     }
 }

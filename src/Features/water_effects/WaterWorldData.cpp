@@ -1,5 +1,6 @@
 #include "Features/water_effects/WaterWorldData.h"
 #include <Windows.h>
+#include "support/ReadableMemory.h"
 #include <bit>
 #include <cmath>
 #include <cstring>
@@ -43,13 +44,20 @@ namespace csah::water_effects
             if(gridX<0 || gridY<0 || gridX>=dimension || gridY>=dimension) continue;
             const auto index=static_cast<std::uint64_t>(gridX)*dimension+gridY;
             if(index>((std::numeric_limits<std::uintptr_t>::max)()-array)/sizeof(void*)) continue;
-            std::uintptr_t cell{},coordinates{},world{};std::uint16_t flags{};std::uint8_t state{};std::array<std::int32_t,2> position{};
+            std::uintptr_t cell{};std::array<std::int32_t,2> position{};
+            // Snapshot the already-used cell fields together instead of querying
+            // VirtualQuery separately for each member of the same live cell.
+            struct CellFields {
+                std::uint16_t flags;std::byte pad42[2];std::uint8_t state;std::byte pad45[11];
+                std::uintptr_t coordinates;std::byte pad58[8];float storedHeight;
+                std::byte pad64[100];std::uintptr_t world;
+            } fields{};
+            static_assert(sizeof(CellFields)==0x90 && offsetof(CellFields,coordinates)==0x10 &&
+                offsetof(CellFields,storedHeight)==0x20 && offsetof(CellFields,world)==0x88);
             if(!readValue(array+index*sizeof(void*),cell) || !cell ||
-                !readValue(cell+0x40,flags) || (flags&3)!=2 || !readValue(cell+0x44,state) || state!=7 ||
-                !readValue(cell+0x50,coordinates) || !coordinates ||
-                !readValue(coordinates,position) || position[0]!=static_cast<std::int64_t>(centerX)+x-2 || position[1]!=static_cast<std::int64_t>(centerY)+y-2 ||
-                !readValue(cell+0xc8,world)) continue;
-            float storedHeight{};if(!readValue(cell+0x60,storedHeight)) continue;
+                !support::readMemory(cell+0x40,fields) || (fields.flags&3)!=2 || fields.state!=7 ||
+                !fields.coordinates || !readValue(fields.coordinates,position) ||
+                position[0]!=static_cast<std::int64_t>(centerX)+x-2 || position[1]!=static_cast<std::int64_t>(centerY)+y-2) continue;
             // 1401DCB60 and 14039652E use state 7 for attached VR cells.
             // 14039B410 selects the cell height or parent-world water height;
             // 1403F8E90 and 1407BFC80 independently consume its float result.
