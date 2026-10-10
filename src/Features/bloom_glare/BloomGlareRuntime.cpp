@@ -134,9 +134,8 @@ namespace csah::bloom_glare
         }
         glareFftRowForward_.Reset();
         glareFftColumnForward_.Reset();
-        glareFftRowInverse_.Reset();
+        glareConvolveRowInverse_.Reset();
         glareFftColumnInverse_.Reset();
-        glareMultiply_.Reset();
         glareComposite_.Reset();
         device_ = device;
         context_ = context;
@@ -220,16 +219,13 @@ namespace csah::bloom_glare
         }
         if (SUCCEEDED(result)) {
             result = createShader(
-                generated::kGlareFftRowInverse,
-                glareFftRowInverse_);
+                generated::kGlareConvolveRowInverse,
+                glareConvolveRowInverse_);
         }
         if (SUCCEEDED(result)) {
             result = createShader(
                 generated::kGlareFftColumnInverse,
                 glareFftColumnInverse_);
-        }
-        if (SUCCEEDED(result)) {
-            result = createShader(generated::kGlareMultiply, glareMultiply_);
         }
         if (SUCCEEDED(result)) {
             result = createShader(generated::kGlareComposite, glareComposite_);
@@ -239,8 +235,8 @@ namespace csah::bloom_glare
             !bloomThreshold_ || !bloomDownsample_ || !bloomUpsample_ ||
             !glareThreshold_ || !glareAperture_ || !glarePsf_[0] ||
             !glarePsf_[1] || !glarePsf_[2] || !glareFftRowForward_ ||
-            !glareFftColumnForward_ || !glareFftRowInverse_ ||
-            !glareFftColumnInverse_ || !glareMultiply_ || !glareComposite_) {
+            !glareFftColumnForward_ || !glareConvolveRowInverse_ ||
+            !glareFftColumnInverse_ || !glareComposite_) {
             failures_.fetch_add(1, std::memory_order_relaxed);
             logging::error(
                 "Bloom/Glare GPU program creation failed (HRESULT=0x{:08X}); the native HDR composite remains available.",
@@ -650,12 +646,14 @@ namespace csah::bloom_glare
         ID3D11DeviceContext* context,
         ID3D11ComputeShader* shader,
         const TextureViews& input,
-        const TextureViews& output) noexcept
+        const TextureViews& output,
+        const TextureViews* psf) noexcept
     {
         clearComputeViews(context);
-        auto* resource = input.resource.Get();
+        const std::array<ID3D11ShaderResourceView*, 2> resources{
+            input.resource.Get(), psf ? psf->resource.Get() : nullptr };
         auto* target = output.output.Get();
-        context->CSSetShaderResources(0, 1, &resource);
+        context->CSSetShaderResources(0, psf ? 2u : 1u, resources.data());
         context->CSSetUnorderedAccessViews(0, 1, &target, nullptr);
         context->CSSetShader(shader, nullptr, 0);
         context->Dispatch(fftResolution_, 1, 1);
@@ -775,49 +773,19 @@ namespace csah::bloom_glare
                     glareFft_[channel][0]);
             }
 
-            for (std::size_t channel = 0;
-                 channel < kColorChannels;
-                 ++channel) {
-                clearComputeViews(context);
-                std::array<ID3D11ShaderResourceView*, 2> resources{
-                    glareFft_[channel][0].resource.Get(),
-                    glarePsfFft_[channel].resource.Get(),
-                };
-                auto* target = glareFft_[channel][1].output.Get();
-                context->CSSetShaderResources(
-                    0,
-                    static_cast<UINT>(resources.size()),
-                    resources.data());
-                context->CSSetUnorderedAccessViews(
-                    0, 1, &target, nullptr);
-                context->CSSetShader(glareMultiply_.Get(), nullptr, 0);
-                context->Dispatch(
-                    dispatchCount(fftResolution_, 8),
-                    dispatchCount(fftResolution_, 8),
-                    1);
-            }
-
-            for (std::size_t channel = 0;
-                 channel < kColorChannels;
-                 ++channel) {
-                dispatchFft(
-                    context,
-                    glareFftRowInverse_.Get(),
-                    glareFft_[channel][1],
-                    glareFft_[channel][0]);
-                dispatchFft(
-                    context,
-                    glareFftColumnInverse_.Get(),
-                    glareFft_[channel][0],
-                    glareFft_[channel][1]);
+            for (std::size_t channel = 0; channel < kColorChannels; ++channel) {
+                dispatchFft(context, glareConvolveRowInverse_.Get(),
+                    glareFft_[channel][0], glareFft_[channel][1], &glarePsfFft_[channel]);
+                dispatchFft(context, glareFftColumnInverse_.Get(),
+                    glareFft_[channel][1], glareFft_[channel][0]);
             }
 
             clearComputeViews(context);
             std::array<ID3D11ShaderResourceView*, 4> resources{
                 scene,
-                glareFft_[0][1].resource.Get(),
-                glareFft_[1][1].resource.Get(),
-                glareFft_[2][1].resource.Get(),
+                glareFft_[0][0].resource.Get(),
+                glareFft_[1][0].resource.Get(),
+                glareFft_[2][0].resource.Get(),
             };
             auto* target = glareOutput_.output.Get();
             auto* sampler = linearSampler_.Get();

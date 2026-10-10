@@ -538,7 +538,6 @@ set(BLOOM_GLARE_SHADER_SOURCES
   "${BLOOM_GLARE_SHADER_DIR}/GlareApertureCS.hlsl"
   "${BLOOM_GLARE_SHADER_DIR}/GlarePsfCS.hlsl"
   "${BLOOM_GLARE_SHADER_DIR}/GlareFftCS.hlsl"
-  "${BLOOM_GLARE_SHADER_DIR}/GlareMultiplyCS.hlsl"
   "${BLOOM_GLARE_SHADER_DIR}/GlareCompositeCS.hlsl")
 set(BLOOM_GLARE_SHADER_GENERATOR
   "${ROOT_DIR}/tools/generate_bloom_glare_shaders.py")
@@ -3183,6 +3182,16 @@ if(BUILD_CSAH_TESTS)
       "-DNATIVE_SHADOW_PATCH_MODEL=${NATIVE_SHADOW_PATCH_MODEL}"
       "-DPLUGIN_SOURCE=${PLUGIN_SOURCE}"
       -P "${NATIVE_SHADOW_VERIFY_SCRIPT}")
+
+  add_executable(CSAHFeatureComputeOptimizationTests "${ROOT_DIR}/tests/FeatureComputeOptimizationTests.cpp"
+    "${BLOOM_GLARE_RUNTIME_SOURCE}" "${IBL_COMPUTE_STATE_SCOPE_SOURCE}")
+  add_dependencies(CSAHFeatureComputeOptimizationTests BloomGlareShaders)
+  target_include_directories(CSAHFeatureComputeOptimizationTests PRIVATE "${SOURCE_DIR}" "${BLOOM_GLARE_GENERATED_DIR}")
+  target_precompile_headers(CSAHFeatureComputeOptimizationTests PRIVATE "${SOURCE_DIR}/PCH.h")
+  target_compile_features(CSAHFeatureComputeOptimizationTests PRIVATE cxx_std_23)
+  target_compile_definitions(CSAHFeatureComputeOptimizationTests PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_link_libraries(CSAHFeatureComputeOptimizationTests PRIVATE CommonLibF4::CommonLibF4 d3d11 d3dcompiler spdlog::spdlog)
+  add_test(NAME CSAH.FeatureComputeOptimization COMMAND CSAHFeatureComputeOptimizationTests "${ROOT_DIR}")
 
   add_executable(CSAHRenderOverheadTests "${ROOT_DIR}/tests/RenderOverheadTests.cpp"
     "${SOURCE_DIR}/render/GpuTimingProfiler.cpp")

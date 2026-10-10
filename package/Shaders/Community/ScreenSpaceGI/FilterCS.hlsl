@@ -23,7 +23,11 @@ void main(uint3 id:SV_DispatchThreadID)
         float weight=exp(-abs(dot(position.xyz-center.xyz,n))/max(1,center.z*.005))*pow(saturate(dot(n,normal)),16);
         weight*=position.w==center.w?1:0;
         if(x==0 && y==0) weight=1;
-        float4 sampleD=CurrentDiffuse.Load(int4(p,0)),sampleS=CurrentSpecular.Load(int4(p,0));
+        float4 sampleD=CurrentDiffuse.Load(int4(p,0)),sampleS=float4(0,0,0,1);
+        // Trace writes neutral specular when either contribution is disabled.
+        // Keep PreviousSpecular's sample count below: AO temporal history uses it.
+        [branch] if(EnableGI!=0 && EnableSpecular!=0)
+            sampleS=CurrentSpecular.Load(int4(p,0));
         d+=sampleD*weight;s+=sampleS*weight;total+=weight;
         if(weight>.1) {low=min(low,sampleD);high=max(high,sampleD);lowS=min(lowS,sampleS);highS=max(highS,sampleS);}
     }

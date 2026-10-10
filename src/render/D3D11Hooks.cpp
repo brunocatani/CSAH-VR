@@ -9,6 +9,7 @@
 #include "Features/terrain_variation/TerrainVariationRuntime.h"
 #include "Features/bloom_glare/BloomGlareRuntime.h"
 #include "Features/cloud_shadows/CloudShadowRuntime.h"
+#include "Features/cloud_shadows/CloudGeometryCapture.h"
 #include "Features/contact_shadows/ContactShadowRuntime.h"
 #include "Features/dlaa/DlaaD3D11Hooks.h"
 #include "Features/dlaa/DlaaRuntime.h"
@@ -3961,7 +3962,8 @@ namespace csah::render
                                                     originalDrawIndexedInstanced(
                                                         context,
                                                         indexCountPerInstance,
-                                                        instanceCount,
+                                                        cloud_shadows::Runtime::internalRenderActive() ?
+                                                            cloud_shadows::geometry::opacityReplayInstanceCount(instanceCount, startInstanceLocation) : instanceCount,
                                                         startIndexLocation,
                                                         baseVertexLocation,
                                                         startInstanceLocation);
@@ -4081,7 +4083,8 @@ namespace csah::render
                                                     originalDrawInstanced(
                                                         context,
                                                         vertexCountPerInstance,
-                                                        instanceCount,
+                                                        cloud_shadows::Runtime::internalRenderActive() ?
+                                                            cloud_shadows::geometry::opacityReplayInstanceCount(instanceCount, startInstanceLocation) : instanceCount,
                                                         startVertexLocation,
                                                         startInstanceLocation);
                                                 });

@@ -126,7 +126,8 @@ namespace csah::bloom_glare
             ID3D11DeviceContext* context,
             ID3D11ComputeShader* shader,
             const TextureViews& input,
-            const TextureViews& output) noexcept;
+            const TextureViews& output,
+            const TextureViews* psf = nullptr) noexcept;
         void clearComputeViews(ID3D11DeviceContext* context) noexcept;
 
         Microsoft::WRL::ComPtr<ID3D11Device> device_{};
@@ -143,9 +144,8 @@ namespace csah::bloom_glare
             kColorChannels> glarePsf_{};
         Microsoft::WRL::ComPtr<ID3D11ComputeShader> glareFftRowForward_{};
         Microsoft::WRL::ComPtr<ID3D11ComputeShader> glareFftColumnForward_{};
-        Microsoft::WRL::ComPtr<ID3D11ComputeShader> glareFftRowInverse_{};
+        Microsoft::WRL::ComPtr<ID3D11ComputeShader> glareConvolveRowInverse_{};
         Microsoft::WRL::ComPtr<ID3D11ComputeShader> glareFftColumnInverse_{};
-        Microsoft::WRL::ComPtr<ID3D11ComputeShader> glareMultiply_{};
         Microsoft::WRL::ComPtr<ID3D11ComputeShader> glareComposite_{};
 
         Microsoft::WRL::ComPtr<ID3D11Texture2D> bloomTexture_{};

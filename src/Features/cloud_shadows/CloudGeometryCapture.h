@@ -47,6 +47,13 @@ namespace csah::cloud_shadows::geometry
     // sample it for an above-horizon sun, so it stays cleared.
     inline constexpr std::uint32_t kCapturedCubeFaceCount = 5;
 
+    // The opacity VS clips every SV_InstanceID except zero. Avoid executing
+    // duplicate eye vertices when the native draw begins at instance zero.
+    [[nodiscard]] constexpr UINT opacityReplayInstanceCount(UINT count, UINT firstInstance) noexcept
+    {
+        return firstInstance == 0 && count != 0 ? 1u : count;
+    }
+
     using SubmitDraw = void (*)(void* user);
 
     // Rasterize live opacity, including every overlapping primitive. A UV

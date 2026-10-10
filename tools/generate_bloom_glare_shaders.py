@@ -130,10 +130,10 @@ SHADERS = (
         ),
     ),
     ShaderSpec(
-        "kGlareFftRowInverse",
+        "kGlareConvolveRowInverse",
         "GlareFftCS.hlsl",
         "CS_Fft",
-        ("ROW_PASS=1", "INVERSE=1"),
+        ("ROW_PASS=1", "INVERSE=1", "MULTIPLY_PSF=1"),
         (
             "dcl_tgsm_structured g0, 8, 512",
             "dcl_tgsm_structured g1, 8, 512",
@@ -149,16 +149,6 @@ SHADERS = (
             "dcl_tgsm_structured g0, 8, 512",
             "dcl_tgsm_structured g1, 8, 512",
             "dcl_thread_group 512, 1, 1",
-        ),
-    ),
-    ShaderSpec(
-        "kGlareMultiply",
-        "GlareMultiplyCS.hlsl",
-        "CS_Multiply",
-        required_assembly=(
-            "dcl_resource_texture2d",
-            "dcl_uav_typed_texture2d",
-            "dcl_thread_group 8, 8, 1",
         ),
     ),
     ShaderSpec(

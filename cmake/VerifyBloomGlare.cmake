@@ -96,7 +96,6 @@ foreach(shader IN ITEMS
     GlareApertureCS.hlsl
     GlarePsfCS.hlsl
     GlareFftCS.hlsl
-    GlareMultiplyCS.hlsl
     GlareCompositeCS.hlsl)
   if(NOT EXISTS "${BLOOM_GLARE_SHADER_DIR}/${shader}")
     message(FATAL_ERROR "Bloom/Glare shader '${shader}' is missing")
@@ -149,8 +148,9 @@ foreach(required IN ITEMS
     "kGlareAperture"
     "kGlarePsfRed"
     "kGlareFftRowForward"
+    "kGlareConvolveRowInverse"
+    "MULTIPLY_PSF=1"
     "kGlareFftColumnInverse"
-    "kGlareMultiply"
     "kGlareComposite")
   string(FIND "${generator}" "${required}" found)
   if(found EQUAL -1)

@@ -1,6 +1,9 @@
 #include "BloomGlareCommon.hlsli"
 
 Texture2D<float2> FftInput : register(t0);
+#ifdef MULTIPLY_PSF
+Texture2D<float2> PsfFft : register(t1);
+#endif
 RWTexture2D<float2> FftOutput : register(u0);
 
 #define MAX_FFT_SIZE 512
@@ -27,6 +30,8 @@ float2 Twiddle(uint index, uint count)
     return float2(cosine, sine);
 }
 
+// Scatter straight into bit-reversed shared storage, then alternate buffers.
+// Each stage reads only the completed preceding stage, so one barrier suffices.
 [numthreads(512, 1, 1)]
 void CS_Fft(uint3 groupId : SV_GroupID, uint threadIndex : SV_GroupThreadID)
 {
@@ -34,56 +39,51 @@ void CS_Fft(uint3 groupId : SV_GroupID, uint threadIndex : SV_GroupThreadID)
     const bool active = threadIndex < count;
     if (active) {
 #ifdef ROW_PASS
-        Shared0[threadIndex] = FftInput[uint2(threadIndex, groupId.x)];
+        const uint2 coordinate = uint2(threadIndex, groupId.x);
 #else
-        Shared0[threadIndex] = FftInput[uint2(groupId.x, threadIndex)];
+        const uint2 coordinate = uint2(groupId.x, threadIndex);
 #endif
+        float2 value = FftInput[coordinate];
+#ifdef MULTIPLY_PSF
+        // Same complex product and normalization as the former standalone pass.
+        const float2 psf = PsfFft[coordinate];
+        value = ComplexMultiply(value, psf) / max(PsfFft[uint2(0, 0)].x, 1.0e-6);
+#endif
+        const uint reversed = reversebits(threadIndex) >> (32u - firstbithigh(count));
+        Shared0[reversed] = value;
     }
     GroupMemoryBarrierWithGroupSync();
 
-    if (active) {
-        const uint bits = firstbithigh(count);
-        uint reversed = 0u;
-        uint source = threadIndex;
-        for (uint bit = 0u; bit < bits; ++bit) {
-            reversed = (reversed << 1u) | (source & 1u);
-            source >>= 1u;
-        }
-        Shared1[reversed] = Shared0[threadIndex];
-    }
-    GroupMemoryBarrierWithGroupSync();
-
-    if (active) {
-        Shared0[threadIndex] = Shared1[threadIndex];
-    }
-    GroupMemoryBarrierWithGroupSync();
-
+    bool readZero = true;
     for (uint stage = 1u; stage < count; stage <<= 1u) {
         if (active) {
             const uint fullStage = stage << 1u;
             const uint butterflyGroup = threadIndex / fullStage;
             const uint butterflyIndex = threadIndex % fullStage;
             if (butterflyIndex < stage) {
-                const uint topIndex =
-                    butterflyGroup * fullStage + butterflyIndex;
+                const uint topIndex = butterflyGroup * fullStage + butterflyIndex;
                 const uint bottomIndex = topIndex + stage;
-                const float2 top = Shared0[topIndex];
-                const float2 bottom = ComplexMultiply(
-                    Twiddle(butterflyIndex, fullStage),
-                    Shared0[bottomIndex]);
-                Shared1[topIndex] = top + bottom;
-                Shared1[bottomIndex] = top - bottom;
+                float2 top;
+                float2 bottomValue;
+                if (readZero) {
+                    top = Shared0[topIndex]; bottomValue = Shared0[bottomIndex];
+                } else {
+                    top = Shared1[topIndex]; bottomValue = Shared1[bottomIndex];
+                }
+                const float2 bottom = ComplexMultiply(Twiddle(butterflyIndex, fullStage), bottomValue);
+                if (readZero) {
+                    Shared1[topIndex] = top + bottom; Shared1[bottomIndex] = top - bottom;
+                } else {
+                    Shared0[topIndex] = top + bottom; Shared0[bottomIndex] = top - bottom;
+                }
             }
         }
         GroupMemoryBarrierWithGroupSync();
-        if (active) {
-            Shared0[threadIndex] = Shared1[threadIndex];
-        }
-        GroupMemoryBarrierWithGroupSync();
+        readZero = !readZero;
     }
-
     if (active) {
-        float2 result = Shared0[threadIndex];
+        float2 result;
+        if (readZero) result = Shared0[threadIndex]; else result = Shared1[threadIndex];
 #ifdef INVERSE
         result /= count;
 #endif

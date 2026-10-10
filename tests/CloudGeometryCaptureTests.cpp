@@ -375,7 +375,7 @@ float4 PS(Output i) : SV_Target { return float4(i.uv,i.c.w,1); }
         gpu.context->OMSetRenderTargets(1,&rawTarget,nullptr);
         const D3D11_VIEWPORT viewport{0,0,4,4,0,1};
         gpu.context->RSSetViewports(1,&viewport);
-        struct Draw { ID3D11DeviceContext* context; UINT calls{}; bool vr; } draw{gpu.context.Get(),0,vr};
+        struct Draw { ID3D11DeviceContext* context; UINT calls{}; bool vr; bool trimStereo{}; UINT submittedInstances{}; } draw{gpu.context.Get(),0,vr};
         ComPtr<ID3D11Buffer> restoredCB;
         UINT restoredFirst{}, restoredCount{};
         // Real FO4 cloud meshes contain overlapping surfaces within a single
@@ -432,7 +432,11 @@ float4 PS(Output i) : SV_Target { return float4(i.uv,i.c.w,1); }
         const auto submitOverlap = [](void* user) {
             auto& request = *static_cast<Draw*>(user);
             ++request.calls;
-            if (request.vr) request.context->DrawInstanced(72,2,0,0);
+            if (request.vr) {
+                const auto instances=request.trimStereo?Geometry::opacityReplayInstanceCount(2,0):2;
+                request.submittedInstances+=instances;
+                request.context->DrawInstanced(72,instances,0,0);
+            }
             else request.context->Draw(72,0);
         };
         // Include a transparent first frame and a later changed World matrix:
@@ -455,6 +459,17 @@ float4 PS(Output i) : SV_Target { return float4(i.uv,i.c.w,1); }
                 Require(std::abs(values[i] - (belowHorizonFace ? 0.0f : expected)) < 0.001f,
                     "all overlapping surfaces contribute exactly once, including VR stereo; "
                     "the never-sampled -Z face is not replayed");
+            }
+            if (vr) {
+                for (auto* target : opacityTargets) gpu.context->ClearRenderTargetView(target,zero);
+                const auto before=draw.submittedInstances;draw.trimStereo=true;
+                Require(Geometry::AccumulateOpacity(gpu.context.Get(),layout,
+                    Motion::CloudTechnique::kClouds,opacityFaceSize,opacityTargets,submitOverlap,&draw),
+                    "single-instance cloud opacity replay");
+                Require(gpu.Read(opacity.Get())==values,"dropping clipped eye instances changes no capture pixel");
+                Require(draw.submittedInstances-before==Geometry::kCapturedCubeFaceCount,
+                    "one instance per face instead of two");
+                draw.trimStereo=false;
             }
             const UINT callsBefore = draw.calls;
             Require(Geometry::AccumulateOpacity(gpu.context.Get(),layout,
@@ -777,6 +792,10 @@ RWBuffer<float4> Result : register(u0);
 int main(int argc,char** argv) {
     try {
         Require(argc==2,"repository path required");
+        static_assert(Motion::opacityReplayInstanceCount(0,0)==0);
+        static_assert(Motion::opacityReplayInstanceCount(1,0)==1);
+        static_assert(Motion::opacityReplayInstanceCount(2,0)==1);
+        static_assert(Motion::opacityReplayInstanceCount(2,1)==2);
         for (bool hardware : {false,true}) {
             GPU gpu(hardware);
             RunFieldTests(gpu,argv[1]);
