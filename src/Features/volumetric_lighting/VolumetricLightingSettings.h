@@ -27,6 +27,7 @@ namespace csah::volumetric_lighting
         float heightFogOpacity{0.9f};
         float heightFogWeather{1};
         float heightFogVolume{0};
+        float heightFogInteriorScale{0.25f};
 
         [[nodiscard]] bool operator==(const Settings&) const noexcept = default;
     };
@@ -67,6 +68,7 @@ namespace csah::volumetric_lighting
         result.heightFogOpacity=finiteClamp(result.heightFogOpacity,defaults.heightFogOpacity,0.0f,1.0f);
         result.heightFogWeather=finiteClamp(result.heightFogWeather,defaults.heightFogWeather,0.0f,1.0f);
         result.heightFogVolume=finiteClamp(result.heightFogVolume,defaults.heightFogVolume,0.0f,1.0f);
+        result.heightFogInteriorScale=finiteClamp(result.heightFogInteriorScale,defaults.heightFogInteriorScale,0.0f,4.0f);
         return result;
     }
 }

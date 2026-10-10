@@ -2305,7 +2305,11 @@ add_custom_command(OUTPUT "${INVERSE_SQUARE_HEADER}"
     --root "${ROOT_DIR}" --fxc "${CSAH_FXC_EXECUTABLE}" --output "${INVERSE_SQUARE_HEADER}"
   DEPENDS "${ROOT_DIR}/tools/generate_inverse_square_shaders.py" "${ROOT_DIR}/tools/dxbc_transform.py"
     "${ROOT_DIR}/tools/water_parallax_transform.py" "${ROOT_DIR}/Shaders012_VR.fxp"
-    "${ROOT_DIR}/package/Shaders/Community/InverseSquareLighting/Attenuation.hlsl" VERBATIM)
+    "${ROOT_DIR}/package/Shaders/Community/InverseSquareLighting/Attenuation.hlsl"
+    "${ROOT_DIR}/package/Shaders/Community/LocalLighting/LocalMaterial.hlsl"
+    "${ROOT_DIR}/package/Shaders/Community/PBR/PbrCommon.hlsli"
+    "${ROOT_DIR}/tools/local_light_material_transform.py"
+    "${ROOT_DIR}/tools/generate_contact_shadow_shader.py" VERBATIM)
 add_custom_target(InverseSquareShaders DEPENDS "${INVERSE_SQUARE_HEADER}")
 set(TERRAIN_SHADOW_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated/TerrainShadows")
 set(TERRAIN_SHADOW_HEADER "${TERRAIN_SHADOW_GENERATED_DIR}/TerrainShadowUpdate.h")
@@ -3503,6 +3507,17 @@ if(BUILD_CSAH_TESTS)
   target_precompile_headers(CSAHInverseSquareTests PRIVATE "${SOURCE_DIR}/PCH.h")
   target_link_libraries(CSAHInverseSquareTests PRIVATE CommonLibF4::CommonLibF4 d3d11 d3dcompiler spdlog::spdlog)
   add_test(NAME CSAH.InverseSquare COMMAND CSAHInverseSquareTests "${INVERSE_SQUARE_GENERATED_DIR}")
+  add_executable(CSAHInteriorScatteringTests "${ROOT_DIR}/tests/InteriorScatteringTests.cpp"
+    "${SOURCE_DIR}/Features/surface_classification/SurfaceClassificationRuntime.cpp"
+    "${SOURCE_DIR}/Features/subsurface_scattering/SubsurfaceScatteringRuntime.cpp"
+    "${SOURCE_DIR}/render/ComputeStateScope.cpp" "${SOURCE_DIR}/render/GpuTimingProfiler.cpp")
+  add_dependencies(CSAHInteriorScatteringTests SubsurfaceScatteringShader)
+  target_compile_features(CSAHInteriorScatteringTests PRIVATE cxx_std_23)
+  target_compile_definitions(CSAHInteriorScatteringTests PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_include_directories(CSAHInteriorScatteringTests PRIVATE "${SOURCE_DIR}" "${SUBSURFACE_SCATTERING_GENERATED_DIR}")
+  target_precompile_headers(CSAHInteriorScatteringTests PRIVATE "${SOURCE_DIR}/PCH.h")
+  target_link_libraries(CSAHInteriorScatteringTests PRIVATE CommonLibF4::CommonLibF4 d3d11 spdlog::spdlog)
+  add_test(NAME CSAH.InteriorScattering COMMAND CSAHInteriorScatteringTests)
   add_executable(CSAHHeightFogTests "${ROOT_DIR}/tests/HeightFogTests.cpp")
   target_compile_features(CSAHHeightFogTests PRIVATE cxx_std_23)
   target_compile_definitions(CSAHHeightFogTests PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)

@@ -29,7 +29,7 @@ namespace csah::inverse_square
         void applySettings(const Settings&) noexcept;
         void onDeviceCreated(ID3D11Device*,ID3D11DeviceContext*) noexcept;
         void setDispatchReady(bool ready) noexcept {dispatchReady_.store(ready,std::memory_order_release);}
-        [[nodiscard]] ScopedBindings scope(ID3D11DeviceContext*,bool compute,bool active) noexcept;
+        [[nodiscard]] ScopedBindings scope(ID3D11DeviceContext*,bool compute,bool active,bool localMaterials=false) noexcept;
     private:
         Runtime()=default;
         std::atomic_bool enabled_{},dispatchReady_{};

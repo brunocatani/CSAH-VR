@@ -103,6 +103,12 @@ namespace
         double integral=0;for(unsigned i=0;i<10000;i++) integral+=std::exp(-(i+.5)*.1/1024)*.1;
         const double expected=1-(1-std::exp(-.0001*integral))*.8;require(std::abs(output[1].x-expected)<.0001,"analytic ray integral disagrees with quadrature");
         fog[0].x=0;output=draw();require(output[1].x==1 && output[2].x==1,"zero density not neutral");fog[0].x=.0001f;fog[1].x=0;output=draw();require(output[1].x==1,"disable not neutral");fog[1].x=1;
+        fog[1].x=2;const auto interior=draw();
+        require(std::abs(interior[1].x-interior[2].x)<1e-6f,"interior fog depends on absolute room altitude");
+        cameraData[59].z=-22000;cameraData[60].z=22000;const auto shiftedInterior=draw();
+        require(std::abs(shiftedInterior[1].x-interior[1].x)<1e-6f && std::abs(shiftedInterior[2].x-interior[2].x)<1e-6f,"interior altitude changed medium");
+        require(std::abs(interior[1].x-(1-(1-std::exp(-.1))*.8))<.0001,"interior homogeneous fog integral mismatch");
+        cameraData[59].z=0;cameraData[60].z=10000;fog[1].x=1;
         // Rotate view Z into world X: a horizontal ray must use the stable limit.
         cameraData[20]={0,0,1,0};cameraData[22]={1,0,0,0};output=draw();require(std::abs(output[1].x-(1-(1-std::exp(-.1))*.8))<.0001,"horizontal limit or inverse-view rotation failed");
         fog[0].z=22000;fog[0].y=64;fog[1].z=.6f;output=draw();require(std::isfinite(output[1].x) && std::abs(output[1].x-.52f)<.0001,"deep medium overflow/opacity cap");

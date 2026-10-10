@@ -130,6 +130,7 @@ namespace csah::volumetric_lighting
             .heightFogOpacity = readFloat(path,L"fHeightFogOpacity",defaults.heightFogOpacity),
             .heightFogWeather = readFloat(path,L"fHeightFogWeather",defaults.heightFogWeather),
             .heightFogVolume = readFloat(path,L"fHeightFogVolume",defaults.heightFogVolume),
+            .heightFogInteriorScale = readFloat(path,L"fHeightFogInteriorScale",defaults.heightFogInteriorScale),
         });
         if(!master_settings::enabled(path)) {result.enabled=false;result.heightFog=false;}
         return result;
@@ -201,6 +202,7 @@ namespace csah::volumetric_lighting
         success=writeFloat(path,L"fHeightFogOpacity",safe.heightFogOpacity) && success;
         success=writeFloat(path,L"fHeightFogWeather",safe.heightFogWeather) && success;
         success=writeFloat(path,L"fHeightFogVolume",safe.heightFogVolume) && success;
+        success=writeFloat(path,L"fHeightFogInteriorScale",safe.heightFogInteriorScale) && success;
         return success;
     }
 

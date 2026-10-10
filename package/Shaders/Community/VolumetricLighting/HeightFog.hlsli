@@ -3,7 +3,7 @@ cbuffer HeightFogSettings : register(b4)
 {
     // density per game unit, scale height, base altitude, clear start distance
     float4 HeightFogMedium;
-    // enabled exterior, weather-density mix, opacity cap, volumetric visibility mix
+    // domain: 0 disabled, 1 exterior, 2 interior; weather mix, opacity cap, volume mix
     float4 HeightFogControl;
     // Output and depth can have different active regions during upscaling.
     float4 FogOutputViewport;
@@ -33,7 +33,10 @@ float3 ApplyHeightFog(float3 scene,float2 uv,float depth,uint eye,float volumeVi
     float3 worldDirection=normalize(float3(dot(FogCamera[20].xyz,ray),dot(FogCamera[21].xyz,ray),dot(FogCamera[22].xyz,ray)));
     float eyeHeight=FogCamera[59+eye].z;
     float weather=lerp(1,clamp(FogCamera[76].x*10000,.1,4),HeightFogControl.y);
-    float alpha=HeightFogOpacity(eyeHeight+worldDirection.z*HeightFogMedium.w,eyeHeight+worldDirection.z*distance,
+    // Interior cell coordinates have no meaningful exterior sea-level altitude.
+    // Use a homogeneous indoor medium, independent of eye height and head motion.
+    bool interior=HeightFogControl.x>1.5;
+    float alpha=interior ? min(HeightFogControl.z,1-exp(-HeightFogMedium.x*max(0,distance-HeightFogMedium.w))) : HeightFogOpacity(eyeHeight+worldDirection.z*HeightFogMedium.w,eyeHeight+worldDirection.z*distance,
         max(0,distance-HeightFogMedium.w),HeightFogMedium.x*weather,HeightFogMedium.z,HeightFogMedium.y,HeightFogControl.z);
     // Native per-frame far fog colour already follows weather/time transitions.
     float3 colour=max(FogCamera[73].xyz,0);

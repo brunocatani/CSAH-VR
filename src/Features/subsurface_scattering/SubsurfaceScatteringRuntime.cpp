@@ -56,6 +56,7 @@ namespace csah::subsurface_scattering
     {
         resourcesReady_.store(false, std::memory_order_release);
         gpuTiming_.reset();
+        processed_ = {};
         device_ = device;
         context_ = context;
         shader_.Reset();
@@ -109,7 +110,7 @@ namespace csah::subsurface_scattering
         }
         resourcesReady_.store(true, std::memory_order_release);
         logging::info(
-            "Subsurface Scattering stereo compute pipeline is ready; execution is class-mask-gated after exact directional DFLight and producer coverage is reported separately.");
+            "Subsurface Scattering stereo compute pipeline is ready; execution is class-mask-gated before deferred composition of directional and local lights and producer coverage is reported separately.");
     }
 
     void Runtime::applySettings(const Settings& settings) noexcept
@@ -131,7 +132,7 @@ namespace csah::subsurface_scattering
     }
 
     bool Runtime::ensureScratch(
-        ID3D11RenderTargetView* target,
+        ID3D11ShaderResourceView* target,
         ID3D11Texture2D** source,
         UINT* sourceSubresource) noexcept
     {
@@ -146,18 +147,18 @@ namespace csah::subsurface_scattering
             return false;
         }
         D3D11_TEXTURE2D_DESC sourceDescription{};
-        D3D11_RENDER_TARGET_VIEW_DESC viewDescription{};
+        D3D11_SHADER_RESOURCE_VIEW_DESC viewDescription{};
         texture->GetDesc(&sourceDescription);
         target->GetDesc(&viewDescription);
         UINT mipSlice{};
         UINT arraySlice{};
-        if (viewDescription.ViewDimension == D3D11_RTV_DIMENSION_TEXTURE2D) {
-            mipSlice = viewDescription.Texture2D.MipSlice;
+        if (viewDescription.ViewDimension == D3D11_SRV_DIMENSION_TEXTURE2D) {
+            mipSlice = viewDescription.Texture2D.MostDetailedMip;
         } else if (
             viewDescription.ViewDimension ==
-                D3D11_RTV_DIMENSION_TEXTURE2DARRAY &&
+                D3D11_SRV_DIMENSION_TEXTURE2DARRAY &&
             viewDescription.Texture2DArray.ArraySize == 1) {
-            mipSlice = viewDescription.Texture2DArray.MipSlice;
+            mipSlice = viewDescription.Texture2DArray.MostDetailedMip;
             arraySlice = viewDescription.Texture2DArray.FirstArraySlice;
         } else {
             return false;
@@ -261,8 +262,25 @@ namespace csah::subsurface_scattering
         return true;
     }
 
-    bool Runtime::executeAfterDirectionalLight(
-        ID3D11DeviceContext* context) noexcept
+    void Runtime::executeBeforeWorldComposite(ID3D11DeviceContext* context, bool tiled) noexcept
+    {
+        if (!requested() || context != context_.Get()) return;
+        // The authenticated deferred-composite shaders consume accumulated
+        // directional/volume-light diffuse at t5 and tiled local diffuse at t11.
+        const std::array<UINT,2> slots{5,11};
+        for (std::size_t i=0; i<(tiled?2u:1u); ++i) {
+            Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> view;
+            context->PSGetShaderResources(slots[i],1,&view);
+            if (!view) continue;
+            Microsoft::WRL::ComPtr<ID3D11Resource> resource;
+            view->GetResource(&resource);
+            if (resource==processed_[0] || resource==processed_[1]) continue;
+            if (executeSource(context,view.Get())) processed_[i]=std::move(resource);
+        }
+    }
+
+    bool Runtime::executeSource(
+        ID3D11DeviceContext* context, ID3D11ShaderResourceView* lighting) noexcept
     {
         if (!requested() || !context || context != context_.Get() ||
             !shader_ || !constants_) {
@@ -288,14 +306,11 @@ namespace csah::subsurface_scattering
                 targetCount = static_cast<UINT>(index + 1);
             }
         }
-        if (!targets[0]) {
-            return false;
-        }
         Microsoft::WRL::ComPtr<ID3D11Texture2D> source;
         UINT sourceSubresource{};
         ID3D11Texture2D* sourceRaw{};
         if (!ensureScratch(
-                targets[0].Get(), &sourceRaw, &sourceSubresource) ||
+                lighting, &sourceRaw, &sourceSubresource) ||
             !sourceRaw) {
             return false;
         }
@@ -370,12 +385,22 @@ namespace csah::subsurface_scattering
             return false;
         }
 
+        std::array<Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>,2> priorInputs;
+        const std::array<UINT,2> sourceSlots{5,11};
+        ID3D11ShaderResourceView* empty{};
+        for(std::size_t i=0;i<sourceSlots.size();++i) {
+            context->PSGetShaderResources(sourceSlots[i],1,&priorInputs[i]);
+            context->PSSetShaderResources(sourceSlots[i],1,&empty);
+        }
         context->OMSetRenderTargets(0, nullptr, nullptr);
         context->CopySubresourceRegion(
             source.Get(), sourceSubresource, 0, 0, 0, scratchA_.Get(), 0,
             nullptr);
         context->OMSetRenderTargets(
             targetCount, rawTargets.data(), depthStencil.Get());
+        for(std::size_t i=0;i<sourceSlots.size();++i) {
+            auto* previous=priorInputs[i].Get();context->PSSetShaderResources(sourceSlots[i],1,&previous);
+        }
         executions_.fetch_add(1, std::memory_order_relaxed);
         if (!firstExecutionLogged_.exchange(
                 true, std::memory_order_relaxed)) {

@@ -111,8 +111,7 @@ namespace csah::volumetric_lighting
 
             [[nodiscard]] explicit operator bool() const noexcept
             {
-                return depth && shadow && comparisonSampler &&
-                    lightConstants && stereoConstants && cameraConstants;
+                return depth && stereoConstants && cameraConstants;
             }
         };
 
@@ -207,6 +206,7 @@ namespace csah::volumetric_lighting
             std::atomic<float> heightFogOpacity{0.9f};
             std::atomic<float> heightFogWeather{1};
             std::atomic<float> heightFogVolume{0};
+            std::atomic<float> heightFogInteriorScale{0.25f};
             std::atomic_bool diagnosticSuppressed{};
             std::atomic_bool started{};
             std::atomic_bool nativeContractValid{};
@@ -284,6 +284,7 @@ namespace csah::volumetric_lighting
                 .heightFogOpacity=value.heightFogOpacity.load(std::memory_order_relaxed),
                 .heightFogWeather=value.heightFogWeather.load(std::memory_order_relaxed),
                 .heightFogVolume=value.heightFogVolume.load(std::memory_order_relaxed),
+                .heightFogInteriorScale=value.heightFogInteriorScale.load(std::memory_order_relaxed),
             });
         }
 
@@ -1324,6 +1325,7 @@ namespace csah::volumetric_lighting
         value.heightFogOpacity.store(safe.heightFogOpacity,std::memory_order_relaxed);
         value.heightFogWeather.store(safe.heightFogWeather,std::memory_order_relaxed);
         value.heightFogVolume.store(safe.heightFogVolume,std::memory_order_relaxed);
+        value.heightFogInteriorScale.store(safe.heightFogInteriorScale,std::memory_order_relaxed);
         value.settingsRevision.fetch_add(1, std::memory_order_release);
         applyNativeGate();
     }
@@ -1442,16 +1444,22 @@ namespace csah::volumetric_lighting
         }
     }
 
+    void Runtime::beginFrame() noexcept
+    {
+        state().gpu.directionalFrame = {};
+    }
+
     void Runtime::captureDirectionalFrame(
         ID3D11DeviceContext* context,
-        bool directionalShaderActive) noexcept
+        bool directionalShaderActive, bool ambientShaderActive) noexcept
     {
         auto& value = state();
         auto& gpu = value.gpu;
-        if (!directionalShaderActive || !requested() || !context ||
+        if ((!directionalShaderActive && !ambientShaderActive) || !requested() || !context ||
             context != gpu.context.Get() || !gpu.staticReady) {
             return;
         }
+        if (!directionalShaderActive && gpu.directionalFrame) return;
         ID3D11ShaderResourceView* rawDepth{};
         ID3D11ShaderResourceView* rawShadow{};
         ID3D11SamplerState* rawSampler{};
@@ -1475,22 +1483,22 @@ namespace csah::volumetric_lighting
         UINT width{};
         UINT height{};
         if (!validDepth(frame.depth.Get(), gpu.device.Get(), width, height) ||
-            !validShadow(frame.shadow.Get(), gpu.device.Get()) ||
-            !validComparisonSampler(frame.comparisonSampler.Get()) ||
-            !bufferAtLeast(frame.lightConstants.Get(), 46u * 16u) ||
             !bufferAtLeast(frame.stereoConstants.Get(), 16u) ||
             !bufferAtLeast(frame.cameraConstants.Get(), 51u * 16u)) {
             value.rejectedFrames.fetch_add(1, std::memory_order_relaxed);
             return;
         }
+        const bool sun=directionalShaderActive && validShadow(frame.shadow.Get(),gpu.device.Get()) &&
+            validComparisonSampler(frame.comparisonSampler.Get()) && bufferAtLeast(frame.lightConstants.Get(),46u*16u);
+        if(!sun) {frame.shadow.Reset();frame.comparisonSampler.Reset();frame.lightConstants.Reset();}
         if(gpu.snapshotRetry && --gpu.snapshotRetry) {gpu.directionalFrame={};return;}
         const std::array<ID3D11Buffer*,3> sources{frame.lightConstants.Get(),frame.stereoConstants.Get(),frame.cameraConstants.Get()};
-        for(std::size_t i=0;i<sources.size();i++) if(!snapshotConstantBuffer(gpu.device.Get(),context,sources[i],gpu.capturedConstants[i])) {
+        for(std::size_t i=0;i<sources.size();i++) if(sources[i] && !snapshotConstantBuffer(gpu.device.Get(),context,sources[i],gpu.capturedConstants[i])) {
             gpu.directionalFrame={};gpu.snapshotRetry=60;
             if(!gpu.snapshotFailureLogged) {gpu.snapshotFailureLogged=true;logging::error("Fog frame constant snapshot failed; fog is skipped until allocation recovers.");}
             return;
         }
-        frame.lightConstants=gpu.capturedConstants[0];frame.stereoConstants=gpu.capturedConstants[1];frame.cameraConstants=gpu.capturedConstants[2];
+        frame.lightConstants=sun?gpu.capturedConstants[0]:nullptr;frame.stereoConstants=gpu.capturedConstants[1];frame.cameraConstants=gpu.capturedConstants[2];
         frame.generation = gpu.directionalFrame.generation + 1;
         frame.settingsRevision = value.settingsRevision.load(
             std::memory_order_acquire);
@@ -1498,7 +1506,7 @@ namespace csah::volumetric_lighting
         value.directionalCaptures.fetch_add(1, std::memory_order_relaxed);
         if (!value.firstCaptureLogged.exchange(true, std::memory_order_relaxed)) {
             logging::info(
-                "Volumetric Lighting captured its first exact DFLight frame (depth={}x{}, shadow=t5, comparison=s5, constants=b2/b8/b12).",
+                "Fog captured its first exact deferred-lighting frame (depth={}x{}, camera/stereo snapshot available).",
                 width,
                 height);
         }
@@ -1585,13 +1593,16 @@ namespace csah::volumetric_lighting
 
         D3D11_VIEWPORT outputViewport{};UINT viewportCount=1;context->RSGetViewports(&viewportCount,&outputViewport);
         const auto settings = readSettings(value);
-        const bool heightFog=settings.heightFog && bufferAtLeast(frame.cameraConstants.Get(),77u*16u) && heightFogExterior();
-        const std::array<float,16> fogParameters{settings.heightFogDensity*0.0001f,settings.heightFogFalloff,settings.heightFogHeight,settings.heightFogStart,
-            heightFog?1.0f:0.0f,settings.heightFogWeather,settings.heightFogOpacity,settings.heightFogVolume,
+        const auto domain=heightFogDomain();
+        const bool interior=domain==FogDomain::interior;
+        const bool heightFog=settings.heightFog && bufferAtLeast(frame.cameraConstants.Get(),77u*16u) && domain!=FogDomain::unavailable;
+        const std::array<float,16> fogParameters{settings.heightFogDensity*0.0001f*(interior?settings.heightFogInteriorScale:1.0f),settings.heightFogFalloff,settings.heightFogHeight,settings.heightFogStart,
+            heightFog?(interior?2.0f:1.0f):0.0f,interior?0.0f:settings.heightFogWeather,settings.heightFogOpacity,settings.heightFogVolume,
             outputViewport.TopLeftX,outputViewport.TopLeftY,outputViewport.Width,outputViewport.Height,
             frame.viewport.TopLeftX,frame.viewport.TopLeftY,frame.viewport.Width,frame.viewport.Height};
         context->UpdateSubresource(gpu.heightFogConstants.Get(),0,nullptr,fogParameters.data(),0,0);
-        if(!settings.enabled) {
+        if(!settings.enabled || !frame.shadow) {
+            gpu.historyValid=false;gpu.previousCamera={};
             if(!heightFog) return;
             InternalRenderScope internal;StateScope restore(context);context->SetPredication(nullptr,FALSE);
             bindFullscreen(gpu,context,outputDescription.Width,outputDescription.Height);

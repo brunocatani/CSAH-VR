@@ -6,6 +6,7 @@
 #include <d3d11.h>
 #include <wrl/client.h>
 
+#include <array>
 #include <atomic>
 #include <cstdint>
 
@@ -31,16 +32,18 @@ namespace csah::subsurface_scattering
             ID3D11DeviceContext* context) noexcept;
         void applySettings(const Settings& settings) noexcept;
         [[nodiscard]] bool requested() const noexcept;
-        [[nodiscard]] bool executeAfterDirectionalLight(
-            ID3D11DeviceContext* context) noexcept;
+        void beginFrame() noexcept { processed_ = {}; }
+        void executeBeforeWorldComposite(ID3D11DeviceContext* context, bool tiled) noexcept;
         [[nodiscard]] RuntimeSnapshot snapshot() const noexcept;
 
     private:
         Runtime() = default;
         [[nodiscard]] bool ensureScratch(
-            ID3D11RenderTargetView* target,
+            ID3D11ShaderResourceView* target,
             ID3D11Texture2D** source,
             UINT* sourceSubresource) noexcept;
+        bool executeSource(ID3D11DeviceContext* context, ID3D11ShaderResourceView* source) noexcept;
+        std::array<Microsoft::WRL::ComPtr<ID3D11Resource>,2> processed_{};
         [[nodiscard]] bool updateConstants(
             ID3D11DeviceContext* context,
             float directionX,

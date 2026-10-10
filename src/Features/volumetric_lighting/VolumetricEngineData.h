@@ -21,6 +21,7 @@ namespace csah::volumetric_lighting
 
     [[nodiscard]] bool initializeEngineData() noexcept;
     [[nodiscard]] StereoFrame captureStereoFrame() noexcept;
-    [[nodiscard]] bool heightFogExterior() noexcept;
+    enum class FogDomain { unavailable, interior, exterior };
+    [[nodiscard]] FogDomain heightFogDomain() noexcept;
     [[nodiscard]] WeatherFrame captureWeatherFrame() noexcept;
 }

@@ -1,3 +1,6 @@
+#include "Features/surface_classification/SurfaceClassificationRuntime.h"
+#include "Features/volumetric_lighting/VolumetricLightingRuntime.h"
+#include "Features/subsurface_scattering/SubsurfaceScatteringRuntime.h"
 #include "Features/cloud_shadows/CloudShadowRuntime.h"
 #include "Features/terrain_shadows/TerrainShadowRuntime.h"
 #include "Features/dlaa/DlaaEngineHooks.h"
@@ -270,7 +273,11 @@ namespace csah::dlaa
             originalPreRender(manager, minimum, maximum, target, settling);
             if (manager == executableImage + kDynamicResolutionManagerRva) {
                 auto* graphics = executableImage + kGraphicsStateRva;
+                // Retire the prior material mask even when the cell has no directional light.
+                surface_classification::Runtime::get().markWorldFrameConsumed();
                 screen_space_gi::Runtime::get().beginFrame();
+                subsurface_scattering::Runtime::get().beginFrame();
+                volumetric_lighting::Runtime::get().beginFrame();
                 cloud_shadows::Runtime::get().beginFrame();
                 terrain_shadows::Runtime::get().beginFrame();
                 Runtime::get().onPreRender(

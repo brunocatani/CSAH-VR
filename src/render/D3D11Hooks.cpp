@@ -1,3 +1,4 @@
+#include "Features/local_lighting/LocalLightingScope.h"
 #include "Features/inverse_square/InverseSquareRuntime.h"
 #include "Features/terrain_shadows/TerrainShadowRuntime.h"
 #include "Features/water_effects/WaterEffectsRuntime.h"
@@ -359,7 +360,6 @@ namespace csah::render
         thread_local bool activeContactShadowsEnabled{};
         thread_local bool activeWrappedGrassEnabled{};
         thread_local bool activeHairSpecularEnabled{};
-        thread_local bool activeSubsurfaceScatteringEnabled{};
         thread_local bool activeBasicWetnessEnabled{};
         thread_local bool activePbrEnabled{};
         thread_local bool activeCloudShadowsEnabled{};
@@ -1919,7 +1919,7 @@ namespace csah::render
                 activeContactShadowsEnabled = false;
                 activeWrappedGrassEnabled = false;
                 activeHairSpecularEnabled = false;
-                activeSubsurfaceScatteringEnabled = false;
+
                 activeBasicWetnessEnabled = false;
                 activePbrEnabled = false;
                 activeCloudShadowsEnabled = false;
@@ -2104,6 +2104,13 @@ namespace csah::render
                 qualificationSessionActive.load(std::memory_order_acquire);
         }
 
+        [[nodiscard]] bool localMaterialsEnabled() noexcept
+        {
+            return linear_lighting::Runtime::get().linearLightingEnabled() &&
+                vanilla_fixes::directionalLightDiagnosticMode()==vanilla_fixes::DirectionalLightDiagnosticMode::off &&
+                (pbr::Runtime::get().requested() || basic_wetness::Runtime::get().requested() || hair_specular::Runtime::get().requested());
+        }
+
         [[nodiscard]] bool prepareVolumetricDraw(
             ID3D11DeviceContext* context) noexcept
         {
@@ -2111,7 +2118,8 @@ namespace csah::render
             auto* const engineShader = activeEnginePixelShader;
             runtime.captureDirectionalFrame(
                 context,
-                contact_shadows::Runtime::get().tracksOriginal(engineShader));
+                contact_shadows::Runtime::get().tracksOriginal(engineShader),
+                activeReplacementBinding.family==linear_lighting::ReplacementShaderFamily::dFLightAmbient);
             skylighting::Runtime::get().captureDirectionalFrame(
                 context, contact_shadows::Runtime::get().sunShadowLayout(engineShader));
             return runtime.isHostPixelShader(engineShader);
@@ -2292,6 +2300,9 @@ namespace csah::render
             ID3D11DeviceContext* context) noexcept
         {
             if (activeWorldCameraComposite && activeWorldCameraContext == context) {
+                if (activeWorldCompositeDiffuse && linear_lighting::Runtime::get().linearLightingEnabled() &&
+                    vanilla_fixes::directionalLightDiagnosticMode()==vanilla_fixes::DirectionalLightDiagnosticMode::off)
+                    subsurface_scattering::Runtime::get().executeBeforeWorldComposite(context,activeWorldCompositeTiled);
                 dlaa::Runtime::get().onWorldCompositeDraw(context);
                 cloud_shadows::Runtime::get().observeMainView(context);
                 if(activeWorldCompositeDiffuse) screen_space_gi::Runtime::get().captureRadiance(context,activeWorldCompositeTiled,
@@ -2537,12 +2548,6 @@ namespace csah::render
                 hairBindings.active() && wetnessBindings.active() &&
                 pbrBindings.active()) {
                 draw();
-                if (activeSubsurfaceScatteringEnabled) {
-                    (void)subsurface_scattering::Runtime::get()
-                        .executeAfterDirectionalLight(context);
-                }
-                surface_classification::Runtime::get()
-                    .markWorldFrameConsumed();
                 return;
             }
 
@@ -2560,12 +2565,6 @@ namespace csah::render
                 nullptr,
                 0);
             draw();
-            if (activeSubsurfaceScatteringEnabled) {
-                (void)subsurface_scattering::Runtime::get()
-                    .executeAfterDirectionalLight(context);
-            }
-            surface_classification::Runtime::get()
-                .markWorldFrameConsumed();
             originalPSSetShader(
                 context,
                 activeContactShadowBinding.replacement,
@@ -3247,7 +3246,7 @@ namespace csah::render
                 activeContactShadowsEnabled = false;
                 activeWrappedGrassEnabled = false;
                 activeHairSpecularEnabled = false;
-                activeSubsurfaceScatteringEnabled = false;
+
                 activeBasicWetnessEnabled = false;
                 activePbrEnabled = false;
                 activeCloudShadowsEnabled = false;
@@ -3269,7 +3268,7 @@ namespace csah::render
                 activeContactShadowsEnabled = false;
                 activeWrappedGrassEnabled = false;
                 activeHairSpecularEnabled = false;
-                activeSubsurfaceScatteringEnabled = false;
+
                 activeBasicWetnessEnabled = false;
                 activePbrEnabled = false;
                 activeCloudShadowsEnabled = false;
@@ -3285,8 +3284,6 @@ namespace csah::render
             auto& skylightingRuntime = skylighting::Runtime::get();
             auto& wrappedGrassRuntime = wrapped_grass::Runtime::get();
             auto& hairSpecularRuntime = hair_specular::Runtime::get();
-            auto& subsurfaceScatteringRuntime =
-                subsurface_scattering::Runtime::get();
             auto& basicWetnessRuntime = basic_wetness::Runtime::get();
             auto& pbrRuntime = pbr::Runtime::get();
             auto& cloudShadowRuntime = cloud_shadows::Runtime::get();
@@ -3316,10 +3313,6 @@ namespace csah::render
                 !exclusiveDirectionalDiagnostic &&
                 hairSpecularRuntime.requested() &&
                 replacementRuntime.linearLightingEnabled();
-            const auto subsurfaceScatteringFeatureActive =
-                !exclusiveDirectionalDiagnostic &&
-                subsurfaceScatteringRuntime.requested() &&
-                replacementRuntime.linearLightingEnabled();
             const auto basicWetnessFeatureActive =
                 !exclusiveDirectionalDiagnostic &&
                 basicWetnessRuntime.requested() &&
@@ -3338,7 +3331,7 @@ namespace csah::render
             const auto dflightCompositorActive =
                 contactShadowRuntime.compositorReady(
                     wrappedGrassFeatureActive || hairSpecularFeatureActive ||
-                    subsurfaceScatteringFeatureActive ||
+
                     basicWetnessFeatureActive || cloudShadowFeatureActive ||
                     (skylighting::Runtime::get().requested() || water_effects::Runtime::get().causticsRequested() || terrain_shadows::Runtime::get().requested()));
             const auto materialCompositorActive =
@@ -3368,7 +3361,7 @@ namespace csah::render
                 activeContactShadowsEnabled = false;
                 activeWrappedGrassEnabled = false;
                 activeHairSpecularEnabled = false;
-                activeSubsurfaceScatteringEnabled = false;
+
                 activeBasicWetnessEnabled = false;
                 activePbrEnabled = false;
                 activeCloudShadowsEnabled = false;
@@ -3404,7 +3397,7 @@ namespace csah::render
                         shader,
                         wrappedGrassFeatureActive ||
                             hairSpecularFeatureActive ||
-                            subsurfaceScatteringFeatureActive ||
+
                             basicWetnessFeatureActive ||
                             cloudShadowFeatureActive || pbrFeatureActive ||
                             (skylighting::Runtime::get().requested() || water_effects::Runtime::get().causticsRequested() || terrain_shadows::Runtime::get().requested()));
@@ -3521,9 +3514,6 @@ namespace csah::render
             activeHairSpecularEnabled =
                 contactShadowSelection.binding &&
                 hairSpecularFeatureActive;
-            activeSubsurfaceScatteringEnabled =
-                contactShadowSelection.binding &&
-                subsurfaceScatteringFeatureActive;
             activeBasicWetnessEnabled =
                 contactShadowSelection.binding &&
                 basicWetnessFeatureActive;
@@ -3677,7 +3667,8 @@ namespace csah::render
                 }
                 return;
             }
-            const auto inverseSquare=inverse_square::Runtime::get().scope(context,false,activeInverseSquarePixel);
+            const local_lighting::ScopedMaterials localMaterials(context,false,activeInverseSquarePixel && localMaterialsEnabled());
+            const auto inverseSquare=inverse_square::Runtime::get().scope(context,false,activeInverseSquarePixel,localMaterials.active());
             const auto constants =
                 scopeActiveReplacementPixelConstants(context);
             const vanilla_fixes::ScopedSslrEnvironmentBinding
@@ -3783,7 +3774,8 @@ namespace csah::render
                 }
                 return;
             }
-            const auto inverseSquare=inverse_square::Runtime::get().scope(context,false,activeInverseSquarePixel);
+            const local_lighting::ScopedMaterials localMaterials(context,false,activeInverseSquarePixel && localMaterialsEnabled());
+            const auto inverseSquare=inverse_square::Runtime::get().scope(context,false,activeInverseSquarePixel,localMaterials.active());
             const auto constants =
                 scopeActiveReplacementPixelConstants(context);
             const vanilla_fixes::ScopedSslrEnvironmentBinding
@@ -3901,7 +3893,8 @@ namespace csah::render
                 }
                 return;
             }
-            const auto inverseSquare=inverse_square::Runtime::get().scope(context,false,activeInverseSquarePixel);
+            const local_lighting::ScopedMaterials localMaterials(context,false,activeInverseSquarePixel && localMaterialsEnabled());
+            const auto inverseSquare=inverse_square::Runtime::get().scope(context,false,activeInverseSquarePixel,localMaterials.active());
             const auto constants =
                 scopeActiveReplacementPixelConstants(context);
             const vanilla_fixes::ScopedSslrEnvironmentBinding
@@ -4022,7 +4015,8 @@ namespace csah::render
                 }
                 return;
             }
-            const auto inverseSquare=inverse_square::Runtime::get().scope(context,false,activeInverseSquarePixel);
+            const local_lighting::ScopedMaterials localMaterials(context,false,activeInverseSquarePixel && localMaterialsEnabled());
+            const auto inverseSquare=inverse_square::Runtime::get().scope(context,false,activeInverseSquarePixel,localMaterials.active());
             const auto constants =
                 scopeActiveReplacementPixelConstants(context);
             const vanilla_fixes::ScopedSslrEnvironmentBinding
@@ -4120,14 +4114,18 @@ namespace csah::render
         {
             Microsoft::WRL::ComPtr<ID3D11ComputeShader> shader;
             context->CSGetShader(&shader,nullptr,nullptr);
-            const auto scope=inverse_square::Runtime::get().scope(context,true,inverse_square::taggedShader(shader.Get()));
+            const bool localShader=inverse_square::taggedShader(shader.Get());
+            const local_lighting::ScopedMaterials localMaterials(context,true,localShader && localMaterialsEnabled());
+            const auto scope=inverse_square::Runtime::get().scope(context,true,localShader,localMaterials.active());
             if(originalInverseDispatch) originalInverseDispatch(context,x,y,z);
         }
         void STDMETHODCALLTYPE hookInverseDispatchIndirect(ID3D11DeviceContext* context,ID3D11Buffer* arguments,UINT offset) noexcept
         {
             Microsoft::WRL::ComPtr<ID3D11ComputeShader> shader;
             context->CSGetShader(&shader,nullptr,nullptr);
-            const auto scope=inverse_square::Runtime::get().scope(context,true,inverse_square::taggedShader(shader.Get()));
+            const bool localShader=inverse_square::taggedShader(shader.Get());
+            const local_lighting::ScopedMaterials localMaterials(context,true,localShader && localMaterialsEnabled());
+            const auto scope=inverse_square::Runtime::get().scope(context,true,localShader,localMaterials.active());
             if(originalInverseDispatchIndirect) originalInverseDispatchIndirect(context,arguments,offset);
         }
         void installInverseDispatchDetours(ID3D11DeviceContext* context) noexcept

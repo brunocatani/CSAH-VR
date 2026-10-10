@@ -1,12 +1,13 @@
-"""Splice area-source falloff into native FO4VR local PS and tiled CS shaders.
+"""Compose material response and area-source falloff into native FO4VR local lights.
 
-Only the proved sqrt/div_sat/power/affine/power attenuation chain is replaced.
-Radius consumers, tile culling, cone shape, shadows, BRDF and alpha stay native.
+The falloff transform changes only the proved attenuation chain. Material
+composition preserves native radius, culling, light shape, shadows and alpha.
 """
 import argparse
 from pathlib import Path
 import subprocess
 import census_linear_lighting_fxp as census
+from local_light_material_transform import augment
 from dxbc_transform import *
 from water_parallax_transform import instruction, require
 
@@ -107,12 +108,19 @@ def generate(root,fxc,output):
     output.parent.mkdir(parents=True,exist_ok=True)
     template=output.parent/'Attenuation.dxbc'
     subprocess.run([str(fxc),'/nologo','/T','ps_5_0','/E','main','/O3','/Ges','/WX','/Fo',str(template),str(root/'package/Shaders/Community/InverseSquareLighting/Attenuation.hlsl')],check=True)
+    material=[]
+    for entry in ('InitMain','LightMain'):
+        target=output.parent/(entry+'.dxbc')
+        subprocess.run([str(fxc),'/nologo','/T','ps_5_0','/E',entry,'/O3','/Ges','/WX','/Fo',str(target),str(root/'package/Shaders/Community/LocalLighting/LocalMaterial.hlsl')],check=True)
+        material.append(target.read_bytes())
     inventory=census.parse_fxp((root/'Shaders012_VR.fxp').read_bytes())
     pairs={}
     for item in inventory.containers:
         if (item.family,item.stage) not in (('DFLight','PS'),('DFTiledLighting','CS')):continue
         candidate=transform(item.data,template.read_bytes())
-        if candidate is not None:pairs[item.data]=(candidate,item.stage,item.key)
+        if candidate is not None:
+            candidate=transform(augment(item.data,*material),template.read_bytes())
+            pairs[item.data]=(candidate,item.stage,item.key)
     require(any(stage=='CS' for _,stage,_ in pairs.values()) and any(stage=='PS' for _,stage,_ in pairs.values()),'local-light family coverage missing')
     rows=['#pragma once','#include <cstddef>','struct InverseSquareShader {const unsigned char* original;std::size_t originalSize;const unsigned char* replacement;std::size_t replacementSize;bool compute;};']
     for i,(original,(candidate,stage,key)) in enumerate(pairs.items()):

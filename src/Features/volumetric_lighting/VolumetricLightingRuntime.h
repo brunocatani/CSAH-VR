@@ -63,9 +63,10 @@ namespace csah::volumetric_lighting
         void onDeviceCreated(
             ID3D11Device* device,
             ID3D11DeviceContext* context) noexcept;
+        void beginFrame() noexcept;
         void captureDirectionalFrame(
             ID3D11DeviceContext* context,
-            bool directionalShaderActive) noexcept;
+            bool directionalShaderActive, bool ambientShaderActive = false) noexcept;
         void renderAfterHostDraw(
             ID3D11DeviceContext* context,
             bool hostShaderActive) noexcept;

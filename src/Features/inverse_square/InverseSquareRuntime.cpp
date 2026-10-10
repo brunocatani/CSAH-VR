@@ -39,10 +39,11 @@ namespace csah::inverse_square
     {
         device_=d;context_=c;parameters_.Reset();view_.Reset();uploadedValid_=loggedFailure_=false;retry_=0;
     }
-    ScopedBindings Runtime::scope(ID3D11DeviceContext* c,bool compute,bool active) noexcept
+    ScopedBindings Runtime::scope(ID3D11DeviceContext* c,bool compute,bool active,bool localMaterials) noexcept
     {
         if(!active || !c || c!=context_.Get()) return {nullptr,nullptr,compute};
-        if(!device_ || !enabled_.load(std::memory_order_acquire) || !dispatchReady_.load(std::memory_order_acquire)) return {c,nullptr,compute};
+        const bool inverse=enabled_.load(std::memory_order_acquire);
+        if(!device_ || (!inverse && !localMaterials) || !dispatchReady_.load(std::memory_order_acquire)) return {c,nullptr,compute};
         if(!view_) {
             if(retry_ && --retry_) return {c,nullptr,compute};
             D3D11_BUFFER_DESC bd{};bd.ByteWidth=16;bd.BindFlags=D3D11_BIND_SHADER_RESOURCE;
@@ -52,7 +53,7 @@ namespace csah::inverse_square
             }
             uploadedValid_=false;
         }
-        const std::array<float,4> data{1,size_.load(),intensity_.load(),0};
+        const std::array<float,4> data{inverse?1.0f:0.0f,size_.load(),intensity_.load(),localMaterials?1.0f:0.0f};
         if(!uploadedValid_ || data!=uploaded_) {c->UpdateSubresource(parameters_.Get(),0,nullptr,data.data(),0,0);uploaded_=data;uploadedValid_=true;}
         return {c,view_.Get(),compute};
     }

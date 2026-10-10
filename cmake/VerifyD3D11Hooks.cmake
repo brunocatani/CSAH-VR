@@ -25,7 +25,7 @@ foreach(required IN ITEMS
     "inverseDispatchTargets={table[41],table[42]}"
     "detourPatchOwned(inverseDispatchTargets[0],inverseDispatchPatches[0])"
     "detourPatchOwned(inverseDispatchTargets[1],inverseDispatchPatches[1])"
-    "inverse_square::Runtime::get().scope(context,false,activeInverseSquarePixel)"
+    "inverse_square::Runtime::get().scope(context,false,activeInverseSquarePixel,localMaterials.active())"
     "hookCreateComputeShader"
     "kCreateComputeShaderVtableIndex = 18"
     "selectComputeShader"
@@ -41,7 +41,6 @@ foreach(required IN ITEMS
     "hookOMSetRenderTargetsAndUnorderedAccessViews"
     "kOMSetRenderTargetsAndUnorderedAccessViewsVtableIndex = 34"
     "surfaceRuntime.prepareGBufferBinding"
-    "markWorldFrameConsumed()"
     "void beginDFPrePassTechnique("
     "observeDFPrePassDescriptor("
     "void endDFPrePassTechnique("
@@ -67,9 +66,9 @@ string(REGEX MATCHALL
   "markWorldFrameConsumed\(\)"
   surfaceFrameConsumes "${source}")
 list(LENGTH surfaceFrameConsumes surfaceFrameConsumeCount)
-if(NOT surfaceFrameConsumeCount EQUAL 2)
+if(NOT surfaceFrameConsumeCount EQUAL 0)
   message(FATAL_ERROR
-    "D3D11 surface-classification lifetime must close after both directional-light draw paths")
+    "Surface-classification lifetime must follow the native frame boundary, not a directional-light draw")
 endif()
 
 string(FIND "${source}"

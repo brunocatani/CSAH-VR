@@ -146,7 +146,7 @@ int main()
         .windSpeed = 3.0f,
         .maxDistance = 4096.0f,
         .temporalWeight = 0.75f,
-        .heightFog=true, .heightFogDensity=1.5f, .heightFogHeight=128, .heightFogFalloff=512, .heightFogStart=256, .heightFogOpacity=.75f, .heightFogWeather=.5f, .heightFogVolume=.25f,
+        .heightFog=true, .heightFogDensity=1.5f, .heightFogHeight=128, .heightFogFalloff=512, .heightFogStart=256, .heightFogOpacity=.75f, .heightFogWeather=.5f, .heightFogVolume=.25f, .heightFogInteriorScale=.6f,
     };
     require(saveSettings(ini.path(), roundTrip), "save round trip");
     require(loadSettings(ini.path()) == roundTrip, "round trip");

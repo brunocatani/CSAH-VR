@@ -42,6 +42,9 @@ foreach(required IN ITEMS
     "rollbackTransaction"
     "vanilla TAA remains active as the required upstream frame-preparation path"
     "reinterpret_cast<float*>(graphics + kJitterXOffset)"
+    "surface_classification::Runtime::get().markWorldFrameConsumed()"
+    "volumetric_lighting::Runtime::get().beginFrame()"
+    "subsurface_scattering::Runtime::get().beginFrame()"
     "validateEngineHooks(\"install\")")
   string(FIND "${engine}" "${required}" found)
   if(found EQUAL -1)
