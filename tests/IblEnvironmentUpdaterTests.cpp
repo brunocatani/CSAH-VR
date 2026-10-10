@@ -105,6 +105,8 @@ namespace
                 &selected,
                 &result.context),
             "D3D11CreateDevice(WARP)");
+        const D3D11_VIEWPORT viewport{0,0,32,16,0,1};
+        result.context->RSSetViewports(1,&viewport);
         require(
             selected == D3D_FEATURE_LEVEL_11_0,
             "WARP did not provide feature level 11_0");
@@ -496,6 +498,8 @@ namespace
             d3d.context->Unmap(staging.Get(), 0);
         }
         d3d.context->ClearState();
+        const D3D11_VIEWPORT viewport{0,0,32,16,0,1};
+        d3d.context->RSSetViewports(1,&viewport);
     }
 
     void run(const std::filesystem::path& root, D3D_DRIVER_TYPE driver)

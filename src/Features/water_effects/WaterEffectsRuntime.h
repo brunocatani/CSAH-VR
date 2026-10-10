@@ -78,7 +78,7 @@ namespace csah::water_effects
         Ptr<ID3D11Buffer> reflectionParameters_;
         Ptr<ID3D11ShaderResourceView> reflectionParameterView_;
         Ptr<ID3D11SamplerState> reflectionSampler_;
-        std::array<float,20> uploadedReflection_{};
+        std::array<float,24> uploadedReflection_{};
         WorldData world_;
         std::atomic_bool enabled_{};
         std::atomic_bool parallax_{true},caustics_{true},reflections_{true},screenReflections_{};

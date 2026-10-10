@@ -148,7 +148,7 @@ bool reconstructScenePosition(
         return false;
     }
     const uint2 pixel = min(
-        (uint2)(saturate(packed) * float2(width, height)),
+        (uint2)(WaterReflectionParameters[5].xy + saturate(packed) * WaterReflectionParameters[5].zw),
         uint2(width - 1u, height - 1u));
     const float rawDepth = WaterSceneDepth.Load(int3(pixel, 0)).x;
     if (!isfinite(rawDepth) || rawDepth<=0.01f || rawDepth>=1.0f) {
@@ -388,7 +388,7 @@ float4 TraceScreenWaterReflection(WaterRaytraceInput input)
                 const float selfFade = saturate(
                     length(
                         (hitUv - input.packedUv) *
-                        float2(width, height)) /
+                        WaterReflectionParameters[5].zw) /
                     4.0f);
                 const float separationFade =
                     1.0f - saturate(separation / thickness);
@@ -399,9 +399,16 @@ float4 TraceScreenWaterReflection(WaterRaytraceInput input)
                 uint colorWidth, colorHeight;
                 WaterSceneColor.GetDimensions(colorWidth, colorHeight);
                 if (colorWidth < 2u || colorHeight == 0u) return worldReflection;
-                const float2 sampleUv = clamp(hitUv,
-                    float2((rightEye ? 0.5f : 0.0f) + 0.5f / colorWidth, 0.5f / colorHeight),
-                    float2((rightEye ? 1.0f : 0.5f) - 0.5f / colorWidth, 1.0f - 0.5f / colorHeight));
+                // The native colour can be downsampled, but occupies the same
+                // fraction of its allocation as the full-size depth viewport.
+                const float4 rect = WaterReflectionParameters[5] / float4(width,height,width,height);
+                const float2 colorSize = float2(colorWidth,colorHeight);
+                // A downsampled eye can end between pixel centres. Restrict
+                // both bilinear taps to centres owned by this eye.
+                const float2 first = (ceil((rect.xy + float2(rightEye ? 0.5f : 0.0f,0) * rect.zw) * colorSize - 0.5f) + 0.5f) / colorSize;
+                const float2 last = (ceil((rect.xy + float2(rightEye ? 1.0f : 0.5f,1) * rect.zw) * colorSize - 0.5f) - 0.5f) / colorSize;
+                const float2 sampleUv = clamp(rect.xy + hitUv * rect.zw,
+                    first, last);
                 const float3 color = WaterSceneColor.SampleLevel(
                     WaterEnvironmentSampler,
                     sampleUv,

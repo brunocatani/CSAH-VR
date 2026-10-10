@@ -53,9 +53,9 @@ void main(uint3 dispatchId : SV_DispatchThreadID)
         eyeTexel,
         1.0f - eyeTexel);
     const float2 packedUv = float2(((float)eye + eyeUv.x) * 0.5f, eyeUv.y);
-    const float2 fullPixelPosition = packedUv / max(DFLight[0].xy, 1.0e-7f);
+
     const float3 rayEnd = ReconstructRelativePosition(
-        fullPixelPosition, eye, 0.999f);
+        packedUv, eye, 0.999f);
     const float rayLength = length(rayEnd);
     if (!Finite3(rayEnd) || !Finite(rayLength) || rayLength <= 1.0e-4f) {
         RawVolume[dispatchId] = 0.0f;

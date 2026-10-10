@@ -147,7 +147,7 @@ int main(int argc, char** argv) {
     ComPtr<ID3D11Buffer> coverageRules;
     hr(d->CreateBuffer(&bd,nullptr,&coverageRules),"geometry coverage rules");
     auto* geometryConstants=coverageRules.Get();c->VSSetConstantBuffers(13,1,&geometryConstants);
-    const std::array<UINT,4> parameters{w,h,extent,0};D3D11_SUBRESOURCE_DATA constantsData{parameters.data(),0,0};
+    bd.ByteWidth=32;const std::array<UINT,8> parameters{w,h,extent,0,0,0,0,0};D3D11_SUBRESOURCE_DATA constantsData{parameters.data(),0,0};
     hr(d->CreateBuffer(&bd,&constantsData,&captureConstants),"capture constants");
     auto* captureBuffer=captureConstants.Get();c->CSSetConstantBuffers(13,1,&captureBuffer);
     D3D11_RASTERIZER_DESC raster{};raster.FillMode=D3D11_FILL_SOLID;raster.CullMode=D3D11_CULL_NONE;raster.DepthClipEnable=TRUE;raster.ScissorEnable=TRUE;
@@ -184,7 +184,15 @@ int main(int argc, char** argv) {
         D3D11_SHADER_DESC shaderDesc{};reflection->GetDesc(&shaderDesc);bool extra=false;
         for(UINT i=0;i<shaderDesc.InputParameters;++i){D3D11_SIGNATURE_PARAMETER_DESC param{};reflection->GetInputParameterDesc(i,&param);if(strcmp(param.SemanticName,"TEXCOORD")==0)extra=true;}
         c->VSSetShader(vs[extra].Get(),nullptr,0);
-        for(UINT scenario=0;scenario<16;++scenario) {
+        for(UINT scenario=0;scenario<20;++scenario) {
+            viewport={0,0,float(w),float(h),0,1};
+            if(scenario>=16) {
+                const std::array<D3D11_VIEWPORT,4> reduced{{{0,0,24,12,0,1},{0,0,20,10,0,1},{0,0,16,8,0,1},{2,1,14,7,0,1}}};
+                viewport=reduced[scenario-16];
+            }
+            c->RSSetViewports(1,&viewport);
+            const std::array<UINT,8> captureRegion{UINT(viewport.Width),UINT(viewport.Height),extent,0,UINT(viewport.TopLeftX),UINT(viewport.TopLeftY),0,0};
+            c->UpdateSubresource(captureConstants.Get(),0,nullptr,captureRegion.data(),0,0);
             const V rules{scenario%4==2?0.5F:2.0F,scenario%4==3?-1.0F:1.0F,0,0};
             c->UpdateSubresource(coverageRules.Get(),0,nullptr,&rules,0,0);
             for(UINT b=0;b<13;++b)for(UINT row=0;row<85;++row) values[b][row]={0.3F,0.5F,0.1F,0.8F};
@@ -237,7 +245,10 @@ int main(int argc, char** argv) {
             c->ClearDepthStencilView(depthView.Get(),D3D11_CLEAR_DEPTH|D3D11_CLEAR_STENCIL,
                 scenario%5==0?0.25F:0.75F,scenario%7==0?0:1);
             c->OMSetRenderTargets(1,&targetRaw,depthView.Get());
-            c->PSSetShader((scenario<8?ps:integrated).Get(),nullptr,0);
+            // Compare new viewport cases with the original lighting body.
+            // Integrated variants also surface-anchor the reconstructed ray;
+            // that intentionally changes some native subsurface branches.
+            c->PSSetShader((scenario<8 || scenario>=16?ps:integrated).Get(),nullptr,0);
             const float clear[4]={-1,-1,-1,-1};c->ClearRenderTargetView(rt.Get(),clear);c->Draw(12,0);
             coverage.clearScratch(c.Get());
             {
@@ -279,7 +290,7 @@ int main(int argc, char** argv) {
                 c->Unmap(readback.Get(),layer);c->Unmap(compactReadback.Get(),layer);
             }
             ++tested;
-            if (shaderIndex==9 && scenario>=8 && scenario<12) {
+            if (shaderIndex==9 && ((scenario>=8 && scenario<12) || scenario>=16)) {
                 check(updaters[0].dispatchUpdate(c.Get(),providers[0],nativeRadiance.Get(),rawSrv[7],rawCb[12],false),"full update");
                 check(updaters[1].dispatchUpdate(c.Get(),providers[1],capture.radiance(),rawSrv[7],rawCb[12],false),"compact update");
                 for(UINT i=0;i<2;++i) {

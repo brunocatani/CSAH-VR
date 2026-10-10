@@ -12,6 +12,7 @@ cbuffer SubsurfaceScatteringConstants : register(b0)
     float4 ScatteringParameters;
     // x=class-code tolerance. Remaining values are reserved.
     float4 ClassificationParameters;
+    float4 RenderViewport;
 };
 
 bool IsSkin(float surfaceClass)
@@ -32,7 +33,8 @@ void CSMain(uint3 dispatchThread : SV_DispatchThreadID)
     const int2 pixel = int2(dispatchThread.xy);
     const float4 centre = SourceLighting.Load(int3(pixel, 0));
     const float centreClass = SurfaceClass.Load(int3(pixel, 0));
-    if (!IsSkin(centreClass))
+    if (!IsSkin(centreClass) || any(pixel < int2(RenderViewport.xy)) ||
+        any(pixel >= int2(RenderViewport.xy + RenderViewport.zw)))
     {
         OutputLighting[pixel] = centre;
         return;
@@ -40,9 +42,9 @@ void CSMain(uint3 dispatchThread : SV_DispatchThreadID)
 
     // FO4VR renders both eyes side by side. Horizontal samples may never
     // cross the eye seam; vertical samples share the same clamp harmlessly.
-    const int eyeWidth = int(dimensions.x >> 1);
-    const int eyeIndex = pixel.x >= eyeWidth ? 1 : 0;
-    const int eyeMinimum = eyeIndex * eyeWidth;
+    const int eyeWidth = int(uint(RenderViewport.z) >> 1u);
+    const int eyeIndex = (pixel.x - int(RenderViewport.x)) >= eyeWidth ? 1 : 0;
+    const int eyeMinimum = int(RenderViewport.x) + eyeIndex * eyeWidth;
     const int eyeMaximum = eyeMinimum + eyeWidth - 1;
     const float centreDepth = SceneDepth.Load(int3(pixel, 0));
     const float depthLimit = max(
@@ -76,7 +78,7 @@ void CSMain(uint3 dispatchThread : SV_DispatchThreadID)
         int2 samplePixel = pixel +
             int2(TargetAndDirection.zw * sampleOffset);
         samplePixel.x = clamp(samplePixel.x, eyeMinimum, eyeMaximum);
-        samplePixel.y = clamp(samplePixel.y, 0, int(dimensions.y) - 1);
+        samplePixel.y = clamp(samplePixel.y, int(RenderViewport.y), int(RenderViewport.y + RenderViewport.w) - 1);
         const float sampleClass = SurfaceClass.Load(int3(samplePixel, 0));
         const float sampleDepth = SceneDepth.Load(int3(samplePixel, 0));
         if (!IsSkin(sampleClass) ||

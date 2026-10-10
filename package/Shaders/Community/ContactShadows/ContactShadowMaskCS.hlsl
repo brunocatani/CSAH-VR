@@ -53,6 +53,7 @@ cbuffer ContactShadowSettings : register(b13)
     // x=view-space fade distance, y=mask active, z=contact active.
     float4 ContactParams2;
     float4 CloudParams;
+    float4 RenderViewport;
 };
 
 static const uint kWaveSize = 64u;
@@ -75,12 +76,12 @@ float4 NativeClip(float2 packedUv, float depth, uint eye)
     const bool compressedNearDepth = depth <= 0.01f;
     const float nativeDepth = compressedNearDepth ?
         depth * 100.0f : depth * 1.01f - 0.01f;
-    const float baseClipX = packedUv.x / DFLight[45].x * 2.0f - 1.0f;
+    const float baseClipX = packedUv.x * 2.0f - 1.0f;
     const float eyeClipOffset = eye == 0u ? 0.5f : -0.5f;
     return float4(
         (baseClipX + eyeClipOffset * Stereo[0].x) *
             (Stereo[0].x + 1.0f),
-        1.0f - packedUv.y / DFLight[45].y * 2.0f,
+        1.0f - packedUv.y * 2.0f,
         nativeDepth,
         1.0f);
 }
@@ -180,7 +181,7 @@ bool LoadNativeDepth(
     const int2 packedPixel = int2(
         localPixel.x + (int)(eye * eyeWidth),
         localPixel.y);
-    rawDepth = SceneDepth.Load(int3(packedPixel, 0));
+    rawDepth = SceneDepth.Load(int3(packedPixel + int2(RenderViewport.xy), 0));
     if (rawDepth <= 1.0e-6f) {
         nativeDepth = kFarDepthValue;
         depthDomain = kInvalidDepthDomain;
@@ -201,9 +202,8 @@ void CSMain(
 {
     const uint dispatchIndex = (uint)round(ContactParams2.w);
     const DispatchRecord record = DispatchRecords[dispatchIndex];
-    uint width;
-    uint height;
-    SceneDepth.GetDimensions(width, height);
+    const uint width = (uint)RenderViewport.z;
+    const uint height = (uint)RenderViewport.w;
     const uint eyeWidth = width / 2u;
 
     float2 rayDelta;
@@ -410,5 +410,5 @@ void CSMain(
     shadowValue = saturate(shadowValue * 4.0f - 3.0f);
     backShadowValue = saturate(backShadowValue * 4.0f - 3.0f);
     const float2 visibility = float2(dot(shadowValue, 0.25f), dot(backShadowValue, 0.25f));
-    ContactShadowMask[packedWritePixel] = visibility;
+    ContactShadowMask[packedWritePixel + uint2(RenderViewport.xy)] = visibility;
 }

@@ -10,7 +10,6 @@ cbuffer Settings : register(b13)
 };
 cbuffer NativeCamera : register(b12) {float4 Camera[77];};
 cbuffer PreviousCamera : register(b10) {float4 Previous[77];};
-cbuffer NativePass : register(b2) {float4 NativeParameters[30];};
 cbuffer NativeStereo : register(b8) {float4 Stereo;};
 static const float Pi=3.14159265358979323846f;
 float3 SafeNormal(float3 v) {return v*rsqrt(max(dot(v,v),1e-12));}
@@ -25,7 +24,7 @@ float2 PackedPixel(uint3 p)
 }
 float3 ViewPosition(float2 pixel,float depth,uint eye)
 {
-    float2 uv=pixel*NativeParameters[0].xy;
+    float2 uv=(pixel-ViewportOrigin)/ViewportExtent;
     float4 clip=float4(((uv.x*2-1)+(eye==0?.5:-.5)*Stereo.x)*(Stereo.x+1),1-uv.y*2,Fo4VrProjectionDepth(depth),1);
     uint row=Fo4VrInverseProjectionBase(depth,eye);
     float4 h=float4(dot(Camera[row],clip),dot(Camera[row+1],clip),dot(Camera[row+2],clip),dot(Camera[row+3],clip));

@@ -183,7 +183,7 @@ namespace csah::contact_shadows
         bool uploadedMaskActive_{};
         bool uploadedCloudActive_{};
         float uploadedCloudOpacity_{};
-        std::array<float, 16> uploadedGpuSettings_{};
+        std::array<float, 20> uploadedGpuSettings_{};
         std::atomic_uint32_t matchingShaders_{};
         std::atomic_uint32_t trackedShaders_{};
         std::atomic_uint64_t replacementBinds_{};

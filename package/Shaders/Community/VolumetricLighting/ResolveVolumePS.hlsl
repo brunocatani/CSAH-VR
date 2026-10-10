@@ -114,12 +114,8 @@ float SampleFroxelLighting(float2 packedUv, uint eye, float rayLength)
 
 PixelOutput main(PixelInput input)
 {
-    uint fullWidth;
-    uint fullHeight;
-    SceneDepth.GetDimensions(fullWidth, fullHeight);
-    const uint2 fullCoordinate = min(
-        uint2(input.position.xy) * 2u + 1u,
-        uint2(fullWidth - 1u, fullHeight - 1u));
+    const float2 packedUv = input.uv;
+    const uint2 fullCoordinate = uint2(DepthViewport.xy + packedUv * DepthViewport.zw);
     const float depth = SceneDepth.Load(int3(fullCoordinate, 0));
     PixelOutput output;
     output.glare = 0.0f;
@@ -127,9 +123,9 @@ PixelOutput main(PixelInput input)
     if (!Finite(depth)) {
         return output;
     }
-    const uint eye = fullCoordinate.x < (fullWidth >> 1u) ? 0u : 1u;
+    const uint eye = packedUv.x < 0.5f ? 0u : 1u;
     const float3 relativePosition = ReconstructRelativePosition(
-        input.position.xy * 2.0f,
+        packedUv,
         eye,
         depth);
     const float reconstructedDistance = length(relativePosition);
@@ -141,8 +137,6 @@ PixelOutput main(PixelInput input)
     const float3 viewDirection = relativePosition / reconstructedDistance;
     const float detailed = IntegrateDetailedVisibility(
         eye, viewDirection, rayLength);
-    const float2 packedUv =
-        (float2(fullCoordinate) + 0.5f) / float2(fullWidth, fullHeight);
     const float froxel = SampleFroxelLighting(packedUv, eye, rayLength);
     const float hybrid = lerp(froxel, detailed, saturate(FrameParams.w));
     output.glare = Finite(hybrid) ? max(hybrid, 0.0f) : 0.0f;

@@ -1,3 +1,6 @@
+// Native DFLight cb2[0].xy is the active viewport reciprocal, as used
+// by the original shader before stereo clip reconstruction.
+cbuffer NativeLightViewport : register(b2) {float4 NativeViewportTexel;}
 Texture2D<float4> NativeNormal : register(t1);
 Texture2D<float4> NativeMaterial : register(t2);
 Texture2D<float4> NativeDepth : register(t3);
@@ -112,7 +115,7 @@ PixelOutput PSMain(PixelInput input)
             }
             const float3 relativeWorldPosition =
                 ReconstructRelativeWorldPosition(
-                    screenUv,
+                    input.Position.xy * NativeViewportTexel.xy,
                     depth,
                     input.Eye);
             if (all(abs(relativeWorldPosition) <= 1.0e8f)) {

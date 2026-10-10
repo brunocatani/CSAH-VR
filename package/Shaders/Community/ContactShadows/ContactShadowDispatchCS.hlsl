@@ -17,6 +17,10 @@
 #pragma warning(disable: 3556)
 
 Texture2D<float> SceneDepth : register(t0);
+cbuffer ContactShadowSettings : register(b13)
+{
+    float4 ContactParams0,ContactParams1,ContactParams2,CloudParams,RenderViewport;
+};
 
 cbuffer NativeDFLight : register(b2)
 {
@@ -228,9 +232,8 @@ void BuildEyeDispatches(uint eye, int2 viewportSize)
 [numthreads(1, 1, 1)]
 void CSMain(uint3 dispatchThread : SV_DispatchThreadID)
 {
-    uint width;
-    uint height;
-    SceneDepth.GetDimensions(width, height);
+    const uint width = (uint)RenderViewport.z;
+    const uint height = (uint)RenderViewport.w;
     if (dispatchThread.x != 0u || width < 2u || height == 0u ||
         (width & 1u) != 0u) {
         return;

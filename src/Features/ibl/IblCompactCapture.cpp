@@ -27,7 +27,7 @@ namespace csah::ibl
         ComPtr<ID3D11ShaderResourceView> input;
         ComPtr<ID3D11UnorderedAccessView> output;
         D3D11_BUFFER_DESC bufferDescription{};
-        bufferDescription.ByteWidth = 16;
+        bufferDescription.ByteWidth = 32;
         bufferDescription.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
         ComPtr<ID3D11Buffer> constants;
         if (FAILED(device->CreateTexture2D(&description, nullptr, &texture)) ||
@@ -105,7 +105,9 @@ namespace csah::ibl
         D3D11_BUFFER_DESC cameraDescription{};
         buffers[12]->GetDesc(&cameraDescription);
         if (cameraDescription.ByteWidth < 77 * 16) return false;
-        const std::array<UINT, 4> parameters{description.Width, description.Height, extent_, 0};
+        D3D11_VIEWPORT viewport{};UINT count=1;context->RSGetViewports(&count,&viewport);
+        const std::array<UINT, 8> parameters{static_cast<UINT>(viewport.Width),static_cast<UINT>(viewport.Height),extent_,0,
+            static_cast<UINT>(viewport.TopLeftX),static_cast<UINT>(viewport.TopLeftY),0,0};
         context->UpdateSubresource(constants_.Get(), 0, nullptr, parameters.data(), 0, 0);
         if (!timingAttempted_) {
             timingAttempted_ = true;

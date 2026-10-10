@@ -38,7 +38,7 @@ RWBuffer<float4> Result : register(u0);
     ComPtr<ID3DBlob> code,errors;const auto status=D3DCompile(source.data(),source.size(),path.string().c_str(),nullptr,D3D_COMPILE_STANDARD_FILE_INCLUDE,"main","cs_5_0",D3DCOMPILE_OPTIMIZATION_LEVEL3|D3DCOMPILE_ENABLE_STRICTNESS|D3DCOMPILE_WARNINGS_ARE_ERRORS,0,&code,&errors);
     if(FAILED(status)&&errors) std::cerr<<static_cast<char*>(errors->GetBufferPointer());check(status,"shader compile");
     ComPtr<ID3D11ComputeShader> shader;check(device->CreateComputeShader(code->GetBufferPointer(),code->GetBufferSize(),nullptr,&shader),"shader");context->CSSetShader(shader.Get(),nullptr,0);
-    ComPtr<ID3D11Buffer> light,settings,output,staging;D3D11_BUFFER_DESC bd{};bd.ByteWidth=46*16;bd.BindFlags=D3D11_BIND_CONSTANT_BUFFER;check(device->CreateBuffer(&bd,nullptr,&light),"light constants");bd.ByteWidth=4*16;check(device->CreateBuffer(&bd,nullptr,&settings),"contact settings");
+    ComPtr<ID3D11Buffer> light,settings,output,staging;D3D11_BUFFER_DESC bd{};bd.ByteWidth=46*16;bd.BindFlags=D3D11_BIND_CONSTANT_BUFFER;check(device->CreateBuffer(&bd,nullptr,&light),"light constants");bd.ByteWidth=5*16;check(device->CreateBuffer(&bd,nullptr,&settings),"contact settings");
     std::array<V,46> sun{};sun[1]={0,0,1,0};sun[2]={0,0,-1,0};context->UpdateSubresource(light.Get(),0,nullptr,sun.data(),0,0);auto* cb=light.Get();context->CSSetConstantBuffers(2,1,&cb);cb=settings.Get();context->CSSetConstantBuffers(13,1,&cb);
     bd.ByteWidth=4*16;bd.BindFlags=D3D11_BIND_UNORDERED_ACCESS;check(device->CreateBuffer(&bd,nullptr,&output),"output");D3D11_UNORDERED_ACCESS_VIEW_DESC uv{};uv.Format=DXGI_FORMAT_R32G32B32A32_FLOAT;uv.ViewDimension=D3D11_UAV_DIMENSION_BUFFER;uv.Buffer.NumElements=4;ComPtr<ID3D11UnorderedAccessView> uav;check(device->CreateUnorderedAccessView(output.Get(),&uv,&uav),"output view");auto* out=uav.Get();context->CSSetUnorderedAccessViews(0,1,&out,nullptr);
     bd.BindFlags=0;bd.Usage=D3D11_USAGE_STAGING;bd.CPUAccessFlags=D3D11_CPU_ACCESS_READ;check(device->CreateBuffer(&bd,nullptr,&staging),"staging");
@@ -67,7 +67,7 @@ RWBuffer<float4> Result : register(u0);
     for(unsigned scenario=0;scenario<4;++scenario) {
         const unsigned char frontByte=64,backByte=192;
         std::array<unsigned char,8> pixels{};for(unsigned i=0;i<4;++i) {pixels[i*2]=frontByte;pixels[i*2+1]=backByte;}context->UpdateSubresource(raw.Get(),0,nullptr,pixels.data(),8,0);
-        std::array<V,4> params{};params[0].x=1;params[2]={2048,scenario==3?0.0F:1.0F,scenario==2?0.0F:1.0F,0};params[3]={scenario==1?0.0F:1.0F,1,10000,100000};context->UpdateSubresource(settings.Get(),0,nullptr,params.data(),0,0);
+        std::array<V,5> params{};params[4]={0,0,4,1};params[0].x=1;params[2]={2048,scenario==3?0.0F:1.0F,scenario==2?0.0F:1.0F,0};params[3]={scenario==1?0.0F:1.0F,1,10000,100000};context->UpdateSubresource(settings.Get(),0,nullptr,params.data(),0,0);
         srv=nullptr;context->CSSetShaderResources(46,1,&srv);out=resolvedOutput.Get();context->CSSetUnorderedAccessViews(0,1,&out,nullptr);context->CSSetShader(resolve.Get(),nullptr,0);context->Dispatch(1,1,1);
         out=uav.Get();context->CSSetUnorderedAccessViews(0,1,&out,nullptr);srv=resolvedView.Get();context->CSSetShaderResources(46,1,&srv);context->CSSetShader(shader.Get(),nullptr,0);
         context->Dispatch(1,1,1);context->CopyResource(staging.Get(),output.Get());D3D11_MAPPED_SUBRESOURCE m{};check(context->Map(staging.Get(),0,D3D11_MAP_READ,0,&m),"readback");std::array<V,4> values{};std::memcpy(values.data(),m.pData,sizeof(values));context->Unmap(staging.Get(),0);
@@ -80,6 +80,24 @@ RWBuffer<float4> Result : register(u0);
             // propagated through the known linear lighting coefficients.
             constexpr float tolerance=1.2F/255.0F+1.0e-6F;
             require(std::abs(values[i].x-expected.x)<tolerance&&std::abs(values[i].y-expected.y)<tolerance&&std::abs(values[i].z-expected.z)<tolerance&&std::abs(values[i].w-expected.w)<tolerance,"contact transmission, cloud composition, stereo facing or disabled neutrality changed");}
+    }
+    // Keep a four-pixel allocation but render one pixel per eye at x=1.
+    // The right eye uses the opposite sunlight direction; full-size splitting
+    // would incorrectly treat pixel 1 as the second left-eye receiver.
+    {
+        std::array<V,5> params{};params[0].x=1;params[2]={2048,1,1,0};params[4]={1,0,2,1};
+        context->UpdateSubresource(settings.Get(),0,nullptr,params.data(),0,0);
+        srv=nullptr;context->CSSetShaderResources(46,1,&srv);
+        const float clear[4]{.1f,.1f,.1f,.1f};context->ClearUnorderedAccessViewFloat(resolvedOutput.Get(),clear);
+        out=resolvedOutput.Get();context->CSSetUnorderedAccessViews(0,1,&out,nullptr);context->CSSetShader(resolve.Get(),nullptr,0);context->Dispatch(1,1,1);
+        out=nullptr;context->CSSetUnorderedAccessViews(0,1,&out,nullptr);
+        D3D11_TEXTURE2D_DESC desc{};resolved->GetDesc(&desc);desc.BindFlags=0;desc.Usage=D3D11_USAGE_STAGING;desc.CPUAccessFlags=D3D11_CPU_ACCESS_READ;
+        ComPtr<ID3D11Texture2D> readback;check(device->CreateTexture2D(&desc,nullptr,&readback),"scaled resolve staging");context->CopyResource(readback.Get(),resolved.Get());
+        D3D11_MAPPED_SUBRESOURCE m{};check(context->Map(readback.Get(),0,D3D11_MAP_READ,0,&m),"scaled resolve read");
+        const auto* bytes=static_cast<const unsigned char*>(m.pData);
+        require(bytes[0]>=25 && bytes[0]<=26 && bytes[6]==bytes[0],"contact resolve wrote outside the active viewport");
+        require(bytes[2]==255 && bytes[3]==192 && bytes[4]==255 && bytes[5]==192,"contact resolve used allocation midpoint instead of the active eye boundary");
+        context->Unmap(readback.Get(),0);
     }
     const std::string windowSource=R"(
 #include "ContactShadowMaskCS.hlsl"

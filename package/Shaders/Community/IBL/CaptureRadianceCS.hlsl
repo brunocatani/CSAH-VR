@@ -5,7 +5,7 @@ Texture2D<float4> SceneDepth : register(t7);
 Texture2D<float> NativeCoverage : register(t31);
 RWTexture2DArray<float4> CapturedRadiance : register(u0);
 cbuffer NativeCamera : register(b12) { float4 Scene[77]; };
-cbuffer Capture : register(b13) { uint2 SourceExtent; uint TargetExtent; uint Reserved; };
+cbuffer Capture : register(b13) { uint2 SourceExtent; uint TargetExtent; uint Reserved; uint2 SourceOrigin; uint2 Padding; };
 static const float PositionEpsilon = 1.0e-5f;
 #include "CaptureProjection.hlsli"
 
@@ -40,7 +40,7 @@ void main(uint3 id : SV_DispatchThreadID)
             if (weight > 0.0f)
             {
                 const int2 coordinate = clamp(base + int2(x, y),
-                    int2(eye * SourceExtent.x / 2, 0), int2((eye + 1) * SourceExtent.x / 2 - 1, SourceExtent.y - 1));
+                    int2(eye * SourceExtent.x / 2, 0), int2((eye + 1) * SourceExtent.x / 2 - 1, SourceExtent.y - 1)) + int2(SourceOrigin);
                 if (NativeCoverage.Load(int3(coordinate, 0)) == 0 ||
                     Fo4VrFirstPersonDepth(SceneDepth.Load(int3(coordinate, 0)).x))
                 {

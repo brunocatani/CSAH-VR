@@ -7,7 +7,6 @@ Texture2D<float4> ScreenSpaceAlbedo : register(t60);
 Texture2D<float4> ScreenSpaceAuthoredPbr : register(t61);
 Texture2DArray<float4> ScreenSpaceGeometry : register(t62);
 Texture2DArray<float4> ScreenSpaceNormal : register(t63);
-Buffer<float4> ScreenSpaceNativeParameters : register(t64);
 void ScreenSpaceAmbient(float2 pixel,uint eye,out float3 visibility,out float3 diffuse,out float3 specular)
 {
     visibility=1;diffuse=0;specular=0;
@@ -23,10 +22,9 @@ void ScreenSpaceAmbient(float2 pixel,uint eye,out float3 visibility,out float3 d
             float2 coordinate=local*extent-.5;
             int2 base=int2(floor(coordinate));float2 fraction=frac(coordinate);
             uint depthWidth,depthHeight;NativeDepth.GetDimensions(depthWidth,depthHeight);
-            float2 uv=pixel*ScreenSpaceNativeParameters[29].xy*ScreenSpaceNativeParameters[0].xy;
-            int2 nativePixel=clamp(int2(uv*float2(depthWidth,depthHeight)),0,int2(depthWidth,depthHeight)-1);
+            int2 nativePixel=clamp(int2(pixel),0,int2(depthWidth,depthHeight)-1);
             float depth=NativeDepth.Load(int3(nativePixel,0)).x;
-            float4 clip=NativeClip(pixel*ScreenSpaceNativeParameters[0].xy,depth,eye);
+            float4 clip=NativeClip((pixel-rect.xy)/rect.zw,depth,eye);
             uint row=eye*4+(depth<=.01?40:32);
             float4 homogeneous=float4(dot(Camera[row],clip),dot(Camera[row+1],clip),dot(Camera[row+2],clip),dot(Camera[row+3],clip));
             float3 receiver=homogeneous.xyz/homogeneous.w;

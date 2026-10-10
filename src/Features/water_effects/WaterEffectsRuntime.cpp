@@ -129,7 +129,7 @@ namespace csah::water_effects
         if(reflectionFailed_ && ++missingReflectionDraws_%60!=0) return false;
         D3D11_SAMPLER_DESC sampler{};sampler.Filter=D3D11_FILTER_MIN_MAG_MIP_LINEAR;
         sampler.AddressU=sampler.AddressV=sampler.AddressW=D3D11_TEXTURE_ADDRESS_CLAMP;sampler.MaxLOD=D3D11_FLOAT32_MAX;
-        if(!ensureBuffer(reflectionParameters_,reflectionParameterView_,80) ||
+        if(!ensureBuffer(reflectionParameters_,reflectionParameterView_,96) ||
             (!reflectionSampler_ && FAILED(device_->CreateSamplerState(&sampler,&reflectionSampler_)))) {
             reflectionFailed_=true;missingReflectionDraws_=0;
             if(!loggedReflectionFailure_) {loggedReflectionFailure_=true;logging::error("Water reflection binding allocation failed; native water reflections remain active while resources recover.");}
@@ -158,12 +158,14 @@ namespace csah::water_effects
         if(!cube && !fx) return {context,{},nullptr};
         const bool previous=environment.previousAvailable && environment.previousEnvironment && environment.previousValidity && environment.previousPosition;
         const auto& currentOrigin=environment.publishedProbeOrigin;const auto& oldOrigin=environment.previousProbeOrigin;
-        const std::array<float,20> parameters{
+        D3D11_VIEWPORT viewport{};UINT viewportCount=1;context->RSGetViewports(&viewportCount,&viewport);
+        const std::array<float,24> parameters{
             environment.transitionWeight,previous?1.0f:0.0f,cube?1.0f:0.0f,reflectionStrength_.load(),
             currentOrigin.position.x,currentOrigin.position.y,currentOrigin.position.z,currentOrigin.valid?1.0f:0.0f,
             oldOrigin.position.x,oldOrigin.position.y,oldOrigin.position.z,oldOrigin.valid?1.0f:0.0f,
             reflectionDistance_.load(),0,0,0,
-            fx?1.0f:0.0f,reflectionFlatness_.load(),reflectionRoughness_.load()*8,scene?1.0f:0.0f};
+            fx?1.0f:0.0f,reflectionFlatness_.load(),reflectionRoughness_.load()*8,scene?1.0f:0.0f,
+            viewport.TopLeftX,viewport.TopLeftY,viewport.Width,viewport.Height};
         if(!reflectionUploaded_ || parameters!=uploadedReflection_) {
             context->UpdateSubresource(reflectionParameters_.Get(),0,nullptr,parameters.data(),0,0);uploadedReflection_=parameters;reflectionUploaded_=true;
         }

@@ -40,7 +40,7 @@ ReflectionOutput PSMain(Input input)
     ReflectionOutput output;output.colour=input.nativeColour;output.fxActive=0;
     float3 result=input.nativeColour;
     uint rows;WaterReflectionParameters.GetDimensions(rows);
-    [branch] if(rows>=5)
+    [branch] if(rows>=6)
     {
         float4 control=WaterReflectionParameters[0];
         const float4 fx=WaterReflectionParameters[4];
@@ -58,7 +58,7 @@ ReflectionOutput PSMain(Input input)
             float3 receiver=Camera[59+input.eye].xyz+input.eyeVector.xyz;
             if(fx.x>.5 && input.screen.z>.5) {
                 WaterRaytraceInput ray;
-                ray.waterNormal=input.normal;ray.packedUv=input.screen.xy*WaterGeometry[0].xy;
+                ray.waterNormal=input.normal;ray.packedUv=(input.screen.xy-WaterReflectionParameters[5].xy)/WaterReflectionParameters[5].zw;
                 ray.eyeIndex=input.eye;ray.eyeRelativeReceiver=input.eyeVector.xyz;
                 float3 projectedDirection=normalize(transformRows(20u,reflectedWaterView(ray,input.eye!=0)));
                 float3 projectedReceiver=Camera[59+input.eye].xyz+transformRows(20u,receiverViewFromScreen(ray,input.eye!=0));
@@ -81,7 +81,7 @@ ReflectionOutput PSMain(Input input)
             uint width,height;WaterSceneDepth.GetDimensions(width,height);
             if(width>0 && height>0) {
                 WaterRaytraceInput ray;
-                ray.waterNormal=input.normal;ray.packedUv=input.screen.xy*WaterGeometry[0].xy;
+                ray.waterNormal=input.normal;ray.packedUv=(input.screen.xy-WaterReflectionParameters[5].xy)/WaterReflectionParameters[5].zw;
                 ray.eyeIndex=input.eye;ray.eyeRelativeReceiver=input.eyeVector.xyz;
                 float4 screen=TraceScreenWaterReflection(ray);
                 if(all(isfinite(screen))) result=lerp(result,max(screen.xyz,0),saturate(screen.w*control.w));
@@ -95,7 +95,7 @@ ReflectionOutput PSMain(Input input)
 float FXWaterMode():SV_Target0
 {
     uint rows;WaterReflectionParameters.GetDimensions(rows);
-    return rows>=5 && WaterReflectionParameters[4].x>.5 && WaterReflectionParameters[0].w>0 ? 1:0;
+    return rows>=6 && WaterReflectionParameters[4].x>.5 && WaterReflectionParameters[0].w>0 ? 1:0;
 }
 
 float FXWaterModeFar():SV_Target0

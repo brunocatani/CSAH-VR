@@ -50,8 +50,9 @@ namespace csah::contact_shadows
             float cloudOpacity{};
             float cloudHeightUnits{ 10000.0f };
             float planetRadiusUnits{ 446148448.0f };
+            float viewport[4]{};
         };
-        static_assert(sizeof(GpuSettings) == 64);
+        static_assert(sizeof(GpuSettings) == 80);
 
         [[nodiscard]] std::size_t matchingContractIndex(
             const void* bytecode,
@@ -621,13 +622,16 @@ namespace csah::contact_shadows
         bool cloudShadowsActive,
         float cloudOpacity) noexcept
     {
+        if (!context || !constants_) return;
+        D3D11_VIEWPORT viewport{};UINT count=1;context->RSGetViewports(&count,&viewport);
         const auto revision = settingsRevision_.load(std::memory_order_acquire);
-        if (!context || !constants_ ||
-            (revision == uploadedRevision_ &&
+        if (revision == uploadedRevision_ &&
                 contactShadowsActive == uploadedContactActive_ &&
                 maskActive == uploadedMaskActive_ &&
                 cloudShadowsActive == uploadedCloudActive_ &&
-                cloudOpacity == uploadedCloudOpacity_)) {
+                cloudOpacity == uploadedCloudOpacity_ &&
+                uploadedGpuSettings_[16]==viewport.TopLeftX && uploadedGpuSettings_[17]==viewport.TopLeftY &&
+                uploadedGpuSettings_[18]==viewport.Width && uploadedGpuSettings_[19]==viewport.Height) {
             return;
         }
         const GpuSettings data{
@@ -642,6 +646,7 @@ namespace csah::contact_shadows
             .reserved1 = contactShadowsActive ? 1.0f : 0.0f,
             .cloudEnabled = cloudShadowsActive ? 1.0f : 0.0f,
             .cloudOpacity = cloudOpacity,
+            .viewport = {viewport.TopLeftX,viewport.TopLeftY,viewport.Width,viewport.Height},
         };
         static_assert(sizeof(data) == sizeof(uploadedGpuSettings_));
         std::memcpy(
@@ -886,9 +891,9 @@ namespace csah::contact_shadows
             1,
             &settingsConstants);
         const auto dispatchWidth =
-            (maskWidth_ + kThreadGroupWidth - 1) / kThreadGroupWidth;
+            (static_cast<UINT>(uploadedGpuSettings_[18]) + kThreadGroupWidth - 1) / kThreadGroupWidth;
         const auto dispatchHeight =
-            (maskHeight_ + kThreadGroupHeight - 1) / kThreadGroupHeight;
+            (static_cast<UINT>(uploadedGpuSettings_[19]) + kThreadGroupHeight - 1) / kThreadGroupHeight;
         constexpr std::array<float, 4> fullyVisible{
             1.0f,
             1.0f,

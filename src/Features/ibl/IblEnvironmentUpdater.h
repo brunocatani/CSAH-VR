@@ -141,9 +141,11 @@ namespace csah::ibl
             std::array<std::uint32_t, 2> reserved{};
             Float3 previousProbeOrigin{};
             std::uint32_t previousProbeOriginValid{};
+            std::array<std::uint32_t, 2> sourceOrigin{};
+            std::array<std::uint32_t, 2> padding{};
         };
 
-        static_assert(sizeof(UpdateConstants) == 48);
+        static_assert(sizeof(UpdateConstants) == 64);
 
         struct FilterConstants
         {

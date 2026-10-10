@@ -26,6 +26,7 @@ cbuffer ContactShadowSettings : register(b13)
     float4 ContactParams1;
     float4 ContactParams2;
     float4 CloudParams;
+    float4 RenderViewport;
 };
 
 float4 NativeClip(float2 packedUv, float depth, uint eye)
@@ -33,12 +34,12 @@ float4 NativeClip(float2 packedUv, float depth, uint eye)
     const bool compressedNearDepth = depth <= 0.01f;
     const float nativeDepth = compressedNearDepth ?
         depth * 100.0f : depth * 1.01f - 0.01f;
-    const float baseClipX = packedUv.x / DFLight[45].x * 2.0f - 1.0f;
+    const float baseClipX = packedUv.x * 2.0f - 1.0f;
     const float eyeClipOffset = eye == 0u ? 0.5f : -0.5f;
     return float4(
         (baseClipX + eyeClipOffset * Stereo[0].x) *
             (Stereo[0].x + 1.0f),
-        1.0f - packedUv.y / DFLight[45].y * 2.0f,
+        1.0f - packedUv.y * 2.0f,
         nativeDepth,
         1.0f);
 }
@@ -61,11 +62,11 @@ Buffer<float4> CloudField : register(t4);
 [numthreads(8, 8, 1)]
 void CSMain(uint3 dispatchThread : SV_DispatchThreadID)
 {
-    uint width;
-    uint height;
-    SceneDepth.GetDimensions(width, height);
-    const uint2 pixel = dispatchThread.xy;
-    if (pixel.x >= width || pixel.y >= height || width < 2u) {
+    const uint width = (uint)RenderViewport.z;
+    const uint height = (uint)RenderViewport.w;
+    const uint2 localPixel = dispatchThread.xy;
+    const uint2 pixel = localPixel + uint2(RenderViewport.xy);
+    if (localPixel.x >= width || localPixel.y >= height || width < 2u) {
         return;
     }
 
@@ -75,9 +76,9 @@ void CSMain(uint3 dispatchThread : SV_DispatchThreadID)
         return;
     }
 
-    const uint eye = min(pixel.x / max(width / 2u, 1u), 1u);
+    const uint eye = min(localPixel.x / max(width / 2u, 1u), 1u);
     const float2 dimensions = float2(width, height);
-    const float2 packedUv = (float2(pixel) + 0.5f) / dimensions;
+    const float2 packedUv = (float2(localPixel) + 0.5f) / dimensions;
     const float3 surface = ReconstructViewPosition(
         packedUv,
         centerDepth,

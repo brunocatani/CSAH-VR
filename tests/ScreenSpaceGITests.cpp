@@ -268,7 +268,27 @@ namespace
         }
         for(UINT frame=0;frame<60;frame++) runtime.beginFrame();
         {auto scope=runtime.scopeAmbient(f.context.Get(),true);ComPtr<ID3D11ShaderResourceView> selected;f.context->PSGetShaderResources(57,1,&selected);require(selected && selected.Get()!=sentinel,"allocation did not recover");}
-        runtime.onDeviceCreated(nullptr,nullptr);f.context->ClearState();
+        runtime.onDeviceCreated(nullptr,nullptr);
+        // Reconstruct the same packed eye coordinates at reduced sizes in a
+        // full-size allocation. The inactive capacity contains invalid depth.
+        cb=f.constants.Get();f.context->CSSetConstantBuffers(13,1,&cb);cb=f.camera.Get();f.context->CSSetConstantBuffers(12,1,&cb);
+        cb=stereo.Get();f.context->CSSetConstantBuffers(8,1,&cb);cb=pass.Get();f.context->CSSetConstantBuffers(2,1,&cb);
+        for(const auto rect:std::array<D3D11_VIEWPORT,4>{{{0,0,84,22,0,1},{0,0,74,18,0,1},{0,0,64,16,0,1},{4,2,42,10,0,1}}}) {
+            f.settings.x=rect.TopLeftX;f.settings.y=rect.TopLeftY;f.settings.vw=rect.Width;f.settings.vh=rect.Height;
+            std::vector<float> depths(Width*4*Height*2,1);
+            for(UINT y=UINT(rect.TopLeftY);y<UINT(rect.TopLeftY+rect.Height);y++)for(UINT x=UINT(rect.TopLeftX);x<UINT(rect.TopLeftX+rect.Width);x++)
+                depths[y*Width*4+x]=(x-UINT(rect.TopLeftX))<UINT(rect.Width/2)?.5f:.75f;
+            f.context->UpdateSubresource(native[2].Get(),0,nullptr,depths.data(),Width*4*sizeof(float),0);
+            f.dispatch(0,{nativeViews[0].Get(),nativeViews[2].Get(),nativeViews[1].Get()},position,normal);
+            const auto prepared=f.read(position);
+            for(UINT eyeIndex=0;eyeIndex<2;eyeIndex++)for(UINT y=0;y<Height;y++)for(UINT x=0;x<Width;x++) {
+                const auto p=prepared[(eyeIndex*Height+y)*Width+x];const float projected=(eyeIndex?.75f:.5f)*1.01f-.01f;
+                const float expectedX=((float(x)+.5f)/Width*2-1)/(.01f*projected);
+                const float expectedY=(1-(float(y)+.5f)/Height*2)/(.01f*projected);
+                require(p.w==1 && std::abs(p.x-expectedX)<.001f && std::abs(p.y-expectedY)<.001f && std::abs(p.z-100/projected)<.001f,"reduced GI reconstruction sampled the wrong eye, depth or coordinate system");
+            }
+        }
+        f.context->ClearState();
         std::cout<<"Native ambient transaction, first-frame neutrality, capture, disable and state restoration passed\n";
     }
 }

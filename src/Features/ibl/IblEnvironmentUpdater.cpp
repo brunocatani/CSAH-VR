@@ -537,9 +537,10 @@ namespace csah::ibl
         };
         const auto previousProbeOrigin = usePublishedHistory ?
             provider.publishedProbeOrigin() : EnvironmentProbeOrigin{};
+        D3D11_VIEWPORT viewport{};UINT count=1;context->RSGetViewports(&count,&viewport);
         UpdateConstants updateConstants{
-            sourceDescription.Width,
-            sourceDescription.Height,
+            static_cast<UINT>(viewport.Width),
+            static_cast<UINT>(viewport.Height),
             resources_.extent,
             usePublishedHistory ? 1U : 0U,
             0U,
@@ -547,6 +548,7 @@ namespace csah::ibl
             {},
             previousProbeOrigin.position,
             previousProbeOrigin.valid ? 1U : 0U,
+            {static_cast<UINT>(viewport.TopLeftX),static_cast<UINT>(viewport.TopLeftY)},
         };
         context->UpdateSubresource(
             resources_.captureConstants.Get(),

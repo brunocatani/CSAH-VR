@@ -11,8 +11,7 @@ RWTexture2DArray<float4> Radiance : register(u0);
 void main(uint3 id:SV_DispatchThreadID)
 {
     if(any(id.xy>=Extent)||id.z>=2) return;
-    float2 uv=PackedPixel(id)*NativeParameters[0].xy;
-    uint w,h;Albedo.GetDimensions(w,h);int2 p=clamp(int2(uv*float2(w,h)),0,int2(w,h)-1);
+    uint w,h;Albedo.GetDimensions(w,h);int2 p=clamp(int2(PackedPixel(id)),0,int2(w,h)-1);
     float3 albedo=Albedo.Load(int3(p,0)).rgb;
     float3 lighting=DiffuseLighting.Load(int3(p,0)).rgb;
     if(TiledLighting!=0) lighting+=TiledDiffuse.Load(int3(p,0)).rgb;

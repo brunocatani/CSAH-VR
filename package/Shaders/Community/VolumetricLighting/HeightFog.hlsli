@@ -5,6 +5,9 @@ cbuffer HeightFogSettings : register(b4)
     float4 HeightFogMedium;
     // enabled exterior, weather-density mix, opacity cap, volumetric visibility mix
     float4 HeightFogControl;
+    // Output and depth can have different active regions during upscaling.
+    float4 FogOutputViewport;
+    float4 FogDepthViewport;
 };
 cbuffer HeightFogCamera : register(b2) {float4 FogCamera[77];};
 float3 HeightFogViewPosition(float2 uv,float depth,uint eye)

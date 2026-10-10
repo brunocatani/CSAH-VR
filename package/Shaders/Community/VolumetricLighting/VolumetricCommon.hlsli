@@ -27,6 +27,7 @@ cbuffer VolumetricFrame : register(b3)
     float4 WindParams;
     // x=cloud opacity, y=cloud height, z=planet radius, w=reserved
     float4 CloudParams;
+    float4 DepthViewport;
 };
 
 bool Finite(float value)
@@ -46,17 +47,17 @@ float NativeDepth(float submittedDepth)
 }
 
 float3 ReconstructRelativePosition(
-    float2 fullPixelPosition,
+    float2 packedUv,
     uint eye,
     float depth)
 {
     const bool compressedNearDepth = depth <= 0.01f;
     const float baseClipX =
-        fullPixelPosition.x * DFLight[0].x * 2.0f - 1.0f;
+        packedUv.x * 2.0f - 1.0f;
     const float eyeClipOffset = eye == 0u ? 0.5f : -0.5f;
     const float4 clip = float4(
         (baseClipX + eyeClipOffset * Stereo[0].x) * (Stereo[0].x + 1.0f),
-        1.0f - fullPixelPosition.y * DFLight[0].y * 2.0f,
+        1.0f - packedUv.y * 2.0f,
         NativeDepth(depth),
         1.0f);
     const uint row = eye * 4u + (compressedNearDepth ? 40u : 32u);

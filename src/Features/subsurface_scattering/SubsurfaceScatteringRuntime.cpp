@@ -32,8 +32,9 @@ namespace csah::subsurface_scattering
             float reserved0{};
             float reserved1{};
             float reserved2{};
+            float viewport[4]{};
         };
-        static_assert(sizeof(GpuSettings) == 48);
+        static_assert(sizeof(GpuSettings) == 64);
 
         [[nodiscard]] bool supportedFormat(DXGI_FORMAT format) noexcept
         {
@@ -244,6 +245,7 @@ namespace csah::subsurface_scattering
         if (!context || !constants_ || width_ == 0 || height_ == 0) {
             return false;
         }
+        D3D11_VIEWPORT viewport{};UINT count=1;context->RSGetViewports(&count,&viewport);
         const GpuSettings settings{
             .width = static_cast<float>(width_),
             .height = static_cast<float>(height_),
@@ -252,6 +254,7 @@ namespace csah::subsurface_scattering
             .radiusPixels = radiusPixels_.load(std::memory_order_relaxed),
             .strength = strength_.load(std::memory_order_relaxed),
             .depthRejection = depthRejection_.load(std::memory_order_relaxed),
+            .viewport = {viewport.TopLeftX,viewport.TopLeftY,viewport.Width,viewport.Height},
         };
         context->UpdateSubresource(
             constants_.Get(), 0, nullptr, &settings, 0, 0);

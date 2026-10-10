@@ -16,6 +16,7 @@ cbuffer VolumetricFrame : register(b1)
     float4 FrameParams;
     float4 WindParams;
     float4 CloudParams;
+    float4 DepthViewport;
 };
 
 Texture2D<float> FilteredVolume : register(t0);
@@ -51,14 +52,10 @@ float4 main(PixelInput input) : SV_Target0
     uint halfWidth;
     uint halfHeight;
     FilteredVolume.GetDimensions(halfWidth, halfHeight);
-    uint fullWidth;
-    uint fullHeight;
-    FullDepth.GetDimensions(fullWidth, fullHeight);
-    const int2 fullCoordinate = min(
-        int2(input.position.xy),
-        int2(fullWidth - 1u, fullHeight - 1u));
-    const uint eye = fullCoordinate.x < int(fullWidth >> 1u) ? 0u : 1u;
-    const float2 halfPixel = input.position.xy * 0.5f - 0.5f;
+    const float2 packedUv = (input.position.xy-FogOutputViewport.xy)/FogOutputViewport.zw;
+    const int2 fullCoordinate = int2(FogDepthViewport.xy+packedUv*FogDepthViewport.zw);
+    const uint eye = packedUv.x < 0.5f ? 0u : 1u;
+    const float2 halfPixel = packedUv * float2(halfWidth,halfHeight) - 0.5f;
     const int2 base = int2(floor(halfPixel));
     const float2 fraction = frac(halfPixel);
     const int2 dimensions = int2(halfWidth, halfHeight);
@@ -114,13 +111,13 @@ float4 main(PixelInput input) : SV_Target0
     radiance = Finite3(radiance) ?
         min(max(radiance, 0.0f.xxx), 2.0f.xxx) : 0.0f.xxx;
     const float3 scene = max(
-        SceneColor.Load(int3(fullCoordinate, 0)),
+        SceneColor.Load(int3(int2(input.position.xy), 0)),
         0.0f.xxx);
     float volumeVisibility=1;
     if(HeightFogControl.x>.5 && HeightFogControl.w>0 && fullReceiverDepth>.01) {
-        float distance=fullReceiverDepth>=1 ? 200000 : length(HeightFogViewPosition(input.position.xy/float2(fullWidth,fullHeight),fullReceiverDepth,eye));
+        float distance=fullReceiverDepth>=1 ? 200000 : length(HeightFogViewPosition(packedUv,fullReceiverDepth,eye));
         float unoccluded=1-exp(-min(distance,VolumeParams.x)/max(VolumeParams.y,1));
         volumeVisibility=saturate(filtered/max(unoccluded,1e-4));
     }
-    return float4(ApplyHeightFog(scene+ radiance,input.position.xy/float2(fullWidth,fullHeight),fullReceiverDepth,eye,volumeVisibility),1);
+    return float4(ApplyHeightFog(scene+ radiance,packedUv,fullReceiverDepth,eye,volumeVisibility),1);
 }

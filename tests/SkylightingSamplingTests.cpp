@@ -63,21 +63,22 @@ RWBuffer<float4> Result : register(u0);
         dot(float3(Camera[20].z,Camera[21].z,Camera[22].z),WorldNormal.xyz),0);
     p.RimDiffuse=float4(0.2,0.3,0.4,0); p.TransmissionDiffuse=float4(0.3,0.2,0.1,0);
     p.PbrDiffuseScale=float4(0.5,0.6,0.7,1);p.NativeVisibility=0.8;p.ContactVisibility=0.6;
-    Result[id.x]=PSMain(p);
+    Result[id.x]=PSMain(p).diffuseDelta;
 })";
         std::array<ComPtr<ID3D11ComputeShader>,3> shaders;
         for (UINT index=0; index<3; ++index) {
             const auto code=compile(index==2 ? sunlight : (index ? reflection : ambient), shaderDirectory/"SamplingTest.hlsl");
             check(device->CreateComputeShader(code->GetBufferPointer(),code->GetBufferSize(),nullptr,&shaders[index]),"sampling shader");
         }
-        std::array<ComPtr<ID3D11Buffer>,4> constants;
-        const std::array<UINT,4> sizes{4*16,16,61*16,32*16};
-        const std::array<UINT,4> slots{0,8,12,13};
-        for (UINT index=0; index<4; ++index) {
+        std::array<ComPtr<ID3D11Buffer>,5> constants;
+        const std::array<UINT,5> sizes{4*16,16,61*16,32*16,16};
+        const std::array<UINT,5> slots{0,8,12,13,2};
+        for (UINT index=0; index<5; ++index) {
             D3D11_BUFFER_DESC description{};description.ByteWidth=sizes[index];description.BindFlags=D3D11_BIND_CONSTANT_BUFFER;
             check(device->CreateBuffer(&description,nullptr,&constants[index]),"test constants");
             auto* buffer=constants[index].Get();context->CSSetConstantBuffers(slots[index],1,&buffer);
         }
+        V nativeViewport{.5f,1,0,0};context->UpdateSubresource(constants[4].Get(),0,nullptr,&nativeViewport,0,0);
         V stereo{1,0,0,0};context->UpdateSubresource(constants[1].Get(),0,nullptr,&stereo,0,0);
         D3D11_BUFFER_DESC bd{};bd.ByteWidth=32*16;bd.BindFlags=D3D11_BIND_SHADER_RESOURCE;
         ComPtr<ID3D11Buffer> parameterBuffer;check(device->CreateBuffer(&bd,nullptr,&parameterBuffer),"parameter buffer");
@@ -109,13 +110,13 @@ RWBuffer<float4> Result : register(u0);
         context->CSSetShaderResources(53,2,sunViews.data());
         std::array<ComPtr<ID3D11Texture2D>,3> inputs;
         for (UINT index=0;index<3;++index) {
-            D3D11_TEXTURE2D_DESC td{};td.Width=2;td.Height=td.ArraySize=td.MipLevels=td.SampleDesc.Count=1;
+            D3D11_TEXTURE2D_DESC td{};td.Width=4;td.Height=td.ArraySize=td.MipLevels=td.SampleDesc.Count=1;
             td.Format=DXGI_FORMAT_R32G32B32A32_FLOAT;td.BindFlags=D3D11_BIND_SHADER_RESOURCE;
             check(device->CreateTexture2D(&td,nullptr,&inputs[index]),"native input");
             ComPtr<ID3D11ShaderResourceView> view;check(device->CreateShaderResourceView(inputs[index].Get(),nullptr,&view),"native input SRV");
             auto* input=view.Get();context->CSSetShaderResources(index+1,1,&input);
-            const std::array<V,2> pixels{V{0.5F,0.5F,0.5F,0.5F},V{0.5F,0.5F,0.5F,0.5F}};
-            context->UpdateSubresource(inputs[index].Get(),0,nullptr,pixels.data(),32,0);
+            const std::array<V,4> pixels{V{0.5F,0.5F,0.5F,0.5F},V{0.5F,0.5F,0.5F,0.5F},V{1,1,1,1},V{1,1,1,1}};
+            context->UpdateSubresource(inputs[index].Get(),0,nullptr,pixels.data(),64,0);
         }
         std::array<V,32> settings{};
         for(UINT base:{5u,11u,20u,26u}) {
@@ -140,7 +141,7 @@ RWBuffer<float4> Result : register(u0);
             for(UINT eye=0;eye<2;++eye) {
                 camera[59+eye]=world[2+eye];const V delta{target.x-world[2+eye].x,target.y-world[2+eye].y,target.z-world[2+eye].z,0};
                 const V view=rotated?V{delta.y,-delta.x,delta.z,0}:delta;
-                const UINT base=32+4*eye;camera[base]={0,0,0,view.x};camera[base+1]={0,0,0,view.y};camera[base+2]={0,0,0,view.z};camera[base+3]={0,0,0,1};
+                const UINT base=32+4*eye;camera[base]={50,0,0,view.x};camera[base+1]={0,0,0,view.y};camera[base+2]={0,0,0,view.z};camera[base+3]={0,0,0,1};
             }
             context->UpdateSubresource(constants[0].Get(),0,nullptr,world.data(),0,0);
             context->UpdateSubresource(constants[2].Get(),0,nullptr,camera.data(),0,0);

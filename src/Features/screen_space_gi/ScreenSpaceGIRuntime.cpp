@@ -21,20 +21,20 @@ namespace csah::screen_space_gi
             return result.ArraySize==1 && result.SampleDesc.Count==1;
         }
     }
-    ScopedBindings::ScopedBindings(ID3D11DeviceContext* context,const std::array<ID3D11ShaderResourceView*,8>& views) noexcept:context_(context)
+    ScopedBindings::ScopedBindings(ID3D11DeviceContext* context,const std::array<ID3D11ShaderResourceView*,7>& views) noexcept:context_(context)
     {
         if(!context_) return;
-        std::array<ID3D11ShaderResourceView*,8> previous{};
-        context_->PSGetShaderResources(57,8,previous.data());
-        for(std::size_t i=0;i<8;i++) previous_[i].Attach(previous[i]);
-        context_->PSSetShaderResources(57,8,views.data());
+        std::array<ID3D11ShaderResourceView*,7> previous{};
+        context_->PSGetShaderResources(57,7,previous.data());
+        for(std::size_t i=0;i<7;i++) previous_[i].Attach(previous[i]);
+        context_->PSSetShaderResources(57,7,views.data());
     }
     ScopedBindings::~ScopedBindings()
     {
         if(!context_) return;
-        std::array<ID3D11ShaderResourceView*,8> previous{};
-        for(std::size_t i=0;i<8;i++) previous[i]=previous_[i].Get();
-        context_->PSSetShaderResources(57,8,previous.data());
+        std::array<ID3D11ShaderResourceView*,7> previous{};
+        for(std::size_t i=0;i<7;i++) previous[i]=previous_[i].Get();
+        context_->PSSetShaderResources(57,7,previous.data());
     }
     Runtime& Runtime::get() noexcept {static Runtime runtime;return runtime;}
     void Runtime::applySettings(const Settings& value) noexcept
@@ -46,7 +46,7 @@ namespace csah::screen_space_gi
     }
     void Runtime::onDeviceCreated(ID3D11Device* device,ID3D11DeviceContext* context) noexcept
     {
-        device_=device;context_=context;shaders_={};constants_.Reset();parameterView_.Reset();previousCamera_.Reset();ambientParameters_.Reset();ambientParameterView_.Reset();
+        device_=device;context_=context;shaders_={};constants_.Reset();parameterView_.Reset();previousCamera_.Reset();
         positions_={};normals_={};diffuse_={};specular_={};rawDiffuse_={};rawSpecular_={};radiance_={};
         frame_=preparedFrame_=radianceFrame_=nextRetry_=0;width_=height_=current_=0;ready_=historyValid_=loggedFailure_=loggedActive_=false;
         resetHistory();
@@ -124,20 +124,12 @@ namespace csah::screen_space_gi
         if(count!=1 || !std::isfinite(viewport.Width) || !std::isfinite(viewport.Height) || viewport.Width<16 || viewport.Height<8 ||
             viewport.TopLeftX<0 || viewport.TopLeftY<0 || viewport.TopLeftX+viewport.Width>depth.Width || viewport.TopLeftY+viewport.Height>depth.Height) return false;
         const auto width=static_cast<UINT>(std::ceil(viewport.Width*.25f)),height=static_cast<UINT>(std::ceil(viewport.Height*.5f));
-        ComPtr<ID3D11Buffer> pass,stereo,camera;
-        context->PSGetConstantBuffers(2,1,&pass);context->PSGetConstantBuffers(8,1,&stereo);context->PSGetConstantBuffers(12,1,&camera);
-        if(!pass || !stereo || !camera) return false;
-        D3D11_BUFFER_DESC d{},p{};camera->GetDesc(&d);pass->GetDesc(&p);
-        if(d.ByteWidth<sizeof(render::Fo4VrFrameBuffer)||p.ByteWidth<30*16) return false;
+        ComPtr<ID3D11Buffer> stereo,camera;
+        context->PSGetConstantBuffers(8,1,&stereo);context->PSGetConstantBuffers(12,1,&camera);
+        if(!stereo || !camera) return false;
+        D3D11_BUFFER_DESC d{};camera->GetDesc(&d);
+        if(d.ByteWidth<sizeof(render::Fo4VrFrameBuffer)) return false;
         if(!ensureResources(width,height)) return false;
-        if(ambientParameters_) {D3D11_BUFFER_DESC old{};ambientParameters_->GetDesc(&old);if(old.ByteWidth!=p.ByteWidth) {ambientParameters_.Reset();ambientParameterView_.Reset();}}
-        if(!ambientParameters_) {
-            D3D11_BUFFER_DESC bd{};bd.ByteWidth=p.ByteWidth;bd.BindFlags=D3D11_BIND_SHADER_RESOURCE;
-            if(FAILED(device_->CreateBuffer(&bd,nullptr,&ambientParameters_))) return failAllocation();
-            D3D11_SHADER_RESOURCE_VIEW_DESC view{};view.Format=DXGI_FORMAT_R32G32B32A32_FLOAT;view.ViewDimension=D3D11_SRV_DIMENSION_BUFFER;view.Buffer.NumElements=p.ByteWidth/16;
-            if(FAILED(device_->CreateShaderResourceView(ambientParameters_.Get(),&view,&ambientParameterView_))) {ambientParameters_.Reset();return failAllocation();}
-        }
-        context->CopyResource(ambientParameters_.Get(),pass.Get());
         if(previousCamera_) {D3D11_BUFFER_DESC old{};previousCamera_->GetDesc(&old);if(old.ByteWidth!=d.ByteWidth) {previousCamera_.Reset();historyValid_=false;}}
         if(!previousCamera_) {d.Usage=D3D11_USAGE_DEFAULT;d.CPUAccessFlags=0;d.MiscFlags=0;d.BindFlags=D3D11_BIND_CONSTANT_BUFFER;
             if(FAILED(device_->CreateBuffer(&d,nullptr,&previousCamera_))) return failAllocation();
@@ -159,7 +151,7 @@ namespace csah::screen_space_gi
         context->UpdateSubresource(parameters.Get(),0,nullptr,&uploaded_,0,0);
         render::ScopedComputeState restore(context,{.firstShaderResource=0,.shaderResourceCount=8,.firstUnorderedAccess=0,.unorderedAccessCount=2,.firstConstantBuffer=2,.constantBufferCount=12});
         if(!restore.captured()) return false;
-        ID3D11Buffer* cb=pass.Get();context->CSSetConstantBuffers(2,1,&cb);cb=stereo.Get();context->CSSetConstantBuffers(8,1,&cb);
+        ID3D11Buffer* cb=stereo.Get();context->CSSetConstantBuffers(8,1,&cb);
         cb=previousCamera_.Get();context->CSSetConstantBuffers(10,1,&cb);cb=camera.Get();context->CSSetConstantBuffers(12,1,&cb);
         cb=constants_.Get();context->CSSetConstantBuffers(13,1,&cb);
         dispatch(shaders_[0].Get(),{inputs[0].Get(),inputs[2].Get(),inputs[1].Get()},positions_[current_].output.Get(),normals_[current_].output.Get());
@@ -176,7 +168,7 @@ namespace csah::screen_space_gi
         if(!ambient || context!=context_.Get()) return {nullptr,{}};
         if(!requested() || !prepareAmbient(context)) return {context,{}};
         ComPtr<ID3D11ShaderResourceView> albedo;context->PSGetShaderResources(0,1,&albedo);
-        return {context,{diffuse_[current_].view.Get(),specular_[current_].view.Get(),parameterView_.Get(),albedo.Get(),authored,positions_[current_].view.Get(),normals_[current_].view.Get(),ambientParameterView_.Get()}};
+        return {context,{diffuse_[current_].view.Get(),specular_[current_].view.Get(),parameterView_.Get(),albedo.Get(),authored,positions_[current_].view.Get(),normals_[current_].view.Get()}};
     }
     void Runtime::captureRadiance(ID3D11DeviceContext* context,bool tiledActive,ID3D11ShaderResourceView* authored) noexcept
     {
@@ -188,11 +180,10 @@ namespace csah::screen_space_gi
             albedo.Width!=diffuse.Width || albedo.Height!=diffuse.Height || emissive.Width!=albedo.Width || emissive.Height!=albedo.Height) return;
         if(tiledActive && (!textureDescription(inputs[3].Get(),tiled) || tiled.Width!=albedo.Width || tiled.Height!=albedo.Height)) return;
         uploaded_.tiled=tiledActive?1u:0u;
-        ComPtr<ID3D11Buffer> pass;context->PSGetConstantBuffers(2,1,&pass);if(!pass) return;
         render::ScopedComputeState restore(context,{.firstShaderResource=0,.shaderResourceCount=8,.firstUnorderedAccess=0,.unorderedAccessCount=2,.firstConstantBuffer=2,.constantBufferCount=12});
         if(!restore.captured()) return;
         context->UpdateSubresource(constants_.Get(),0,nullptr,&uploaded_,0,0);
-        auto* cb=constants_.Get();context->CSSetConstantBuffers(13,1,&cb);cb=pass.Get();context->CSSetConstantBuffers(2,1,&cb);
+        auto* cb=constants_.Get();context->CSSetConstantBuffers(13,1,&cb);
         dispatch(shaders_[3].Get(),{inputs[0].Get(),inputs[1].Get(),inputs[2].Get(),inputs[3].Get(),positions_[current_].view.Get(),diffuse_[current_].view.Get(),authored},radiance_.output.Get());
         radianceFrame_=frame_;
     }

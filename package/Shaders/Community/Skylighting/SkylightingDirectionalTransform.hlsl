@@ -1,3 +1,6 @@
+// Native DFLight cb2[0].xy is the active viewport reciprocal, as used
+// by the original shader before stereo clip reconstruction.
+cbuffer NativeLightViewport : register(b2) {float4 NativeViewportTexel;}
 #define SKYLIGHTING_PARAMETERS_SRV
 #include "SkylightingSampling.hlsli"
 Texture2D<float> NativeDepth : register(t3);
@@ -29,7 +32,7 @@ DirectionalOutput PSMain(PixelInput input)
         uint width, height; NativeDepth.GetDimensions(width, height);
         const float depth = NativeDepth.Load(int3(int2(input.Position.xy), 0));
         if (depth > 1.0e-6f && width > 0 && height > 0) {
-            const float3 position = ReconstructRelativeWorldPosition(input.Position.xy / float2(width, height), depth, input.Eye);
+            const float3 position = ReconstructRelativeWorldPosition(input.Position.xy * NativeViewportTexel.xy, depth, input.Eye);
             const float3 normal = normalize(float3(dot(Camera[20].xyz, input.NormalCarrier.xyz),
                 dot(Camera[21].xyz, input.NormalCarrier.xyz), dot(Camera[22].xyz, input.NormalCarrier.xyz)));
             if (all(isfinite(position)) && all(isfinite(normal)))
@@ -54,7 +57,7 @@ DirectionalOutput PSMain(PixelInput input)
         uint width,height;NativeDepth.GetDimensions(width,height);
         float depth=NativeDepth.Load(int3(int2(input.Position.xy),0));
         if(depth>0 && depth<1 && width>0 && height>0) {
-            float3 world=ReconstructRelativeWorldPosition(input.Position.xy/float2(width,height),depth,input.Eye)+ProbeWorldOrigin.xyz;
+            float3 world=ReconstructRelativeWorldPosition(input.Position.xy * NativeViewportTexel.xy,depth,input.Eye)+ProbeWorldOrigin.xyz;
             output.caustics=float4(WaterCausticMultiplier(world),1);
         }
     }
@@ -63,7 +66,7 @@ DirectionalOutput PSMain(PixelInput input)
         uint width,height;NativeDepth.GetDimensions(width,height);
         float depth=NativeDepth.Load(int3(int2(input.Position.xy),0));
         if(depth>.01 && depth<1 && width>0 && height>0) {
-            float3 world=ReconstructRelativeWorldPosition(input.Position.xy/float2(width,height),depth,input.Eye)+ProbeWorldOrigin.xyz;
+            float3 world=ReconstructRelativeWorldPosition(input.Position.xy * NativeViewportTexel.xy,depth,input.Eye)+ProbeWorldOrigin.xyz;
             output.caustics.xyz*=TerrainVisibility(world);
         }
     }

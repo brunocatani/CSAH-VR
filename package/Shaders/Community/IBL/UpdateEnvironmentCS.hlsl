@@ -30,6 +30,8 @@ cbuffer EnvironmentUpdateConstants : register(b11)
     uint2 Reserved;
     float3 PreviousProbeOrigin;
     uint PreviousProbeOriginValid;
+    uint2 SourceOrigin;
+    uint2 Padding;
 };
 
 // Native uploader 141D93910 writes 77 rows. Current eye origins are 59/60;
@@ -141,7 +143,7 @@ bool SampleObservedRadiance(float2 uv, uint eye, uint3 cubeCoordinate, out float
             if (weight > 0.0f)
             {
                 const int2 coordinate = clamp(base + int2(x, y),
-                    int2(eyeStart, 0), int2(eyeEnd, (int)SourceExtent.y - 1));
+                    int2(eyeStart, 0), int2(eyeEnd, (int)SourceExtent.y - 1)) + int2(SourceOrigin);
                 const float3 sample = ReflectionFreeRadiance.Load(int3(coordinate, 0));
                 const float sampleDepth = SceneDepth.Load(int3(coordinate, 0));
                 if (Fo4VrFirstPersonDepth(sampleDepth) ||
@@ -184,8 +186,10 @@ bool SampleEye(
     // Both zero-depth sky and finite world surfaces can supply radiance.
     // First-person taps are excluded before interpolation. Finite positions
     // use the shared world-coordinate camera contract.
+    uint depthWidth,depthHeight;SceneDepth.GetDimensions(depthWidth,depthHeight);
+    const float2 depthUv=(float2(SourceOrigin)+packedUv*float2(SourceExtent))/float2(depthWidth,depthHeight);
     const float depth = SceneDepth.SampleLevel(
-        LinearClampSampler, packedUv, 0.0f);
+        LinearClampSampler, depthUv, 0.0f);
     const bool validDepth = depth == depth && depth >= 0.0f && depth <= 1.0f;
     const bool validRadiance = SampleObservedRadiance(packedUv, eye, cubeCoordinate, radiance);
     if (!validDepth || !validRadiance)

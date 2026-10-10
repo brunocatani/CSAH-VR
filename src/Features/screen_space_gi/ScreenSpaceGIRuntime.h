@@ -10,13 +10,13 @@ namespace csah::screen_space_gi
     class ScopedBindings final
     {
     public:
-        ScopedBindings(ID3D11DeviceContext* context,const std::array<ID3D11ShaderResourceView*,8>& views) noexcept;
+        ScopedBindings(ID3D11DeviceContext* context,const std::array<ID3D11ShaderResourceView*,7>& views) noexcept;
         ~ScopedBindings();
         ScopedBindings(const ScopedBindings&)=delete;
         ScopedBindings& operator=(const ScopedBindings&)=delete;
     private:
         ID3D11DeviceContext* context_{};
-        std::array<Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>,8> previous_;
+        std::array<Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>,7> previous_;
     };
     class Runtime final
     {
@@ -50,8 +50,8 @@ namespace csah::screen_space_gi
             ID3D11UnorderedAccessView* first,ID3D11UnorderedAccessView* second=nullptr) noexcept;
         Ptr<ID3D11Device> device_;Ptr<ID3D11DeviceContext> context_;
         std::array<Ptr<ID3D11ComputeShader>,4> shaders_;
-        Ptr<ID3D11Buffer> constants_,previousCamera_,ambientParameters_;
-        Ptr<ID3D11ShaderResourceView> parameterView_,ambientParameterView_;
+        Ptr<ID3D11Buffer> constants_,previousCamera_;
+        Ptr<ID3D11ShaderResourceView> parameterView_;
         std::array<Texture,2> positions_,normals_,diffuse_,specular_;
         Texture rawDiffuse_,rawSpecular_,radiance_;
         Constants uploaded_{};

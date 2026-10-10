@@ -85,8 +85,9 @@ namespace csah::volumetric_lighting
             float frameParams[4]{};
             float windParams[4]{};
             float cloudParams[4]{};
+            float depthViewport[4]{};
         };
-        static_assert(sizeof(FrameConstants) == 112);
+        static_assert(sizeof(FrameConstants) == 128);
 
         struct alignas(16) TemporalConstants final
         {
@@ -99,6 +100,7 @@ namespace csah::volumetric_lighting
         struct DirectionalFrame final
         {
             ComPtr<ID3D11ShaderResourceView> depth;
+            D3D11_VIEWPORT viewport{};
             ComPtr<ID3D11ShaderResourceView> shadow;
             ComPtr<ID3D11SamplerState> comparisonSampler;
             ComPtr<ID3D11Buffer> lightConstants;
@@ -661,7 +663,7 @@ namespace csah::volumetric_lighting
 
             if(SUCCEEDED(result)) result=gpu.device->CreatePixelShader(csah_height_fog_ps,sizeof(csah_height_fog_ps),nullptr,&gpu.heightFogPixel);
             D3D11_BUFFER_DESC buffer{};
-            buffer.ByteWidth=32;buffer.BindFlags=D3D11_BIND_CONSTANT_BUFFER;
+            buffer.ByteWidth=64;buffer.BindFlags=D3D11_BIND_CONSTANT_BUFFER;
             if(SUCCEEDED(result)) result=gpu.device->CreateBuffer(&buffer,nullptr,&gpu.heightFogConstants);
             buffer.ByteWidth = sizeof(FrameConstants);
             buffer.Usage = D3D11_USAGE_DYNAMIC;
@@ -1464,6 +1466,7 @@ namespace csah::volumetric_lighting
         context->PSGetConstantBuffers(kNativeCameraConstantSlot, 1, &rawCamera);
         DirectionalFrame frame;
         frame.depth.Attach(rawDepth);
+        UINT viewportCount=1;context->RSGetViewports(&viewportCount,&frame.viewport);
         frame.shadow.Attach(rawShadow);
         frame.comparisonSampler.Attach(rawSampler);
         frame.lightConstants.Attach(rawLight);
@@ -1580,15 +1583,19 @@ namespace csah::volumetric_lighting
             return;
         }
 
+        D3D11_VIEWPORT outputViewport{};UINT viewportCount=1;context->RSGetViewports(&viewportCount,&outputViewport);
         const auto settings = readSettings(value);
         const bool heightFog=settings.heightFog && bufferAtLeast(frame.cameraConstants.Get(),77u*16u) && heightFogExterior();
-        const std::array<float,8> fogParameters{settings.heightFogDensity*0.0001f,settings.heightFogFalloff,settings.heightFogHeight,settings.heightFogStart,
-            heightFog?1.0f:0.0f,settings.heightFogWeather,settings.heightFogOpacity,settings.heightFogVolume};
+        const std::array<float,16> fogParameters{settings.heightFogDensity*0.0001f,settings.heightFogFalloff,settings.heightFogHeight,settings.heightFogStart,
+            heightFog?1.0f:0.0f,settings.heightFogWeather,settings.heightFogOpacity,settings.heightFogVolume,
+            outputViewport.TopLeftX,outputViewport.TopLeftY,outputViewport.Width,outputViewport.Height,
+            frame.viewport.TopLeftX,frame.viewport.TopLeftY,frame.viewport.Width,frame.viewport.Height};
         context->UpdateSubresource(gpu.heightFogConstants.Get(),0,nullptr,fogParameters.data(),0,0);
         if(!settings.enabled) {
             if(!heightFog) return;
             InternalRenderScope internal;StateScope restore(context);context->SetPredication(nullptr,FALSE);
             bindFullscreen(gpu,context,outputDescription.Width,outputDescription.Height);
+            context->RSSetViewports(1,&outputViewport);
             auto* target=outputTarget.Get();context->OMSetRenderTargets(1,&target,nullptr);
             context->PSSetShader(gpu.heightFogPixel.Get(),nullptr,0);
             const std::array<ID3D11ShaderResourceView*,2> sources{sceneSource.Get(),frame.depth.Get()};context->PSSetShaderResources(0,2,sources.data());
@@ -1618,8 +1625,8 @@ namespace csah::volumetric_lighting
 
         if (!ensureSizeResources(
                 gpu,
-                outputDescription.Width,
-                outputDescription.Height,
+                static_cast<UINT>(frame.viewport.Width),
+                static_cast<UINT>(frame.viewport.Height),
                 settings.quality)) {
             value.rejectedFrames.fetch_add(1, std::memory_order_relaxed);
             return;
@@ -1641,13 +1648,15 @@ namespace csah::volumetric_lighting
         float cloudOpacity{};
         const auto cloudActive = cloud_shadows::Runtime::get().prepareLighting(
             context, cloudCube, cloudSampler, cloudOpacity, frame.cameraConstants.Get());
-        const auto frameConstants = makeFrameConstants(
+        auto frameConstants = makeFrameConstants(
             settings,
             camera,
             gpu.weather,
             cloudActive,
             cloudOpacity,
             gpu.frameIndex);
+        frameConstants.depthViewport[0]=frame.viewport.TopLeftX;frameConstants.depthViewport[1]=frame.viewport.TopLeftY;
+        frameConstants.depthViewport[2]=frame.viewport.Width;frameConstants.depthViewport[3]=frame.viewport.Height;
         const auto historyUsable = gpu.historyValid &&
             cameraContinuous(camera, gpu.previousCamera);
         const auto& previous = historyUsable ? gpu.previousCamera : camera;
@@ -1818,6 +1827,7 @@ namespace csah::volumetric_lighting
 
         bindFullscreen(
             gpu, context, outputDescription.Width, outputDescription.Height);
+        context->RSSetViewports(1,&outputViewport);
         auto* output = outputTarget.Get();
         context->OMSetRenderTargets(1, &output, nullptr);
         auto* structuredVolume =

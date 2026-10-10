@@ -83,7 +83,7 @@ def main() -> int:
     )
     text = assembly.read_text(encoding="utf-8")
     for required in (
-        "dcl_constantbuffer CB0[3], immediateIndexed",
+        "dcl_constantbuffer CB0[4], immediateIndexed",
         "dcl_resource_texture2d (float,float,float,float) t0",
         "dcl_resource_texture2d (float,float,float,float) t1",
         "dcl_resource_texture2d (float,float,float,float) t2",

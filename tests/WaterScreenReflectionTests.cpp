@@ -26,7 +26,7 @@ namespace
         check(D3D11CreateDevice(nullptr,driver,nullptr,0,nullptr,0,D3D11_SDK_VERSION,&device,&level,&context),"device");
         constexpr UINT width=128,height=64;
         auto include=(root/"package/Shaders/Community/WaterEffects/WaterReflections.hlsl").generic_string();
-        std::string source="#include \""+include+"\"\ncbuffer Fixture:register(b0){float4 Normal;} float4 Test(float4 p:SV_Position):SV_Target0 {WaterRaytraceInput i;i.packedUv=p.xy/float2(128,64);i.eyeIndex=p.x<64?0:1;i.waterNormal=Normal.xyz;float3 ray=incidentViewFromScreen(i.packedUv,i.eyeIndex!=0);i.eyeRelativeReceiver=float3(0,0,100/max(.001,-ray.y));return TraceScreenWaterReflection(i);}";
+        std::string source="#include \""+include+"\"\ncbuffer Fixture:register(b0){float4 Normal;} float4 Test(float4 p:SV_Position):SV_Target0 {WaterRaytraceInput i;i.packedUv=(p.xy-WaterReflectionParameters[5].xy)/WaterReflectionParameters[5].zw;i.eyeIndex=i.packedUv.x<.5?0:1;i.waterNormal=Normal.xyz;float3 ray=incidentViewFromScreen(i.packedUv,i.eyeIndex!=0);i.eyeRelativeReceiver=float3(0,0,100/max(.001,-ray.y));return TraceScreenWaterReflection(i);}";
         auto code=compile(source,"Test","ps_5_0",include.c_str());ComPtr<ID3D11PixelShader> pixel;check(device->CreatePixelShader(code->GetBufferPointer(),code->GetBufferSize(),nullptr,&pixel),"trace PS");
         code=compile("float4 main(uint id:SV_VertexID):SV_Position{float2 uv=float2((id<<1)&2,id&2);return float4(uv*float2(2,-2)+float2(-1,1),0,1);}","main","vs_5_0");ComPtr<ID3D11VertexShader> vertex;check(device->CreateVertexShader(code->GetBufferPointer(),code->GetBufferSize(),nullptr,&vertex),"VS");
         auto buffer=[&](UINT bytes){D3D11_BUFFER_DESC d{};d.ByteWidth=bytes;d.BindFlags=D3D11_BIND_CONSTANT_BUFFER;ComPtr<ID3D11Buffer> b;check(device->CreateBuffer(&d,nullptr,&b),"buffer");return b;};
@@ -69,6 +69,26 @@ namespace
         require(leftHits>50,"missing right-eye data disabled valid left-eye reflections");
         depths.assign(width*height,F4{1,0,0,0});context->UpdateSubresource(depth.Get(),0,nullptr,depths.data(),width*sizeof(F4),0);for(const auto& p:draw())require(p.w==0,"cleared sky depth produced an SSR hit");
         depths.assign(width*height,F4{.005f,0,0,0});context->UpdateSubresource(depth.Get(),0,nullptr,depths.data(),width*sizeof(F4),0);for(const auto& p:draw())require(p.w==0,"first-person geometry leaked into water SSR");
+        // Four reduced eye extents, including an odd width and a nonzero
+        // origin. Unused texture capacity is poisoned blue/first-person.
+        normal={0,0,1,0};context->UpdateSubresource(fixture.Get(),0,nullptr,&normal,0,0);
+        for(const auto rect:std::array<D3D11_VIEWPORT,4>{{{0,0,84,42,0,1},{0,0,74,36,0,1},{0,0,64,32,0,1},{4,2,42,22,0,1}}}) {
+            vp=rect;context->RSSetViewports(1,&vp);
+            depths.assign(width*height,F4{.005f,0,0,0});
+            for(UINT y=UINT(vp.TopLeftY);y<UINT(vp.TopLeftY+vp.Height);y++)for(UINT x=UINT(vp.TopLeftX);x<UINT(vp.TopLeftX+vp.Width);x++)depths[y*width+x]={wallDepth,0,0,0};
+            halfColours.assign(halfColours.size(),F4{0,0,9,1});
+            for(UINT y=UINT(vp.TopLeftY/2);y<UINT((vp.TopLeftY+vp.Height)/2);y++)for(UINT x=UINT(vp.TopLeftX/2);x<UINT((vp.TopLeftX+vp.Width)/2);x++)halfColours[y*sceneDescription.Width+x]=float(x)+.5f<(vp.TopLeftX+vp.Width/2)/2?F4{3,0,0,1}:F4{0,3,0,1};
+            context->UpdateSubresource(depth.Get(),0,nullptr,depths.data(),width*sizeof(F4),0);
+            context->UpdateSubresource(scene.Get(),0,nullptr,halfColours.data(),sceneDescription.Width*sizeof(F4),0);
+            auto scaled=draw();unsigned scaledHits[2]{};
+            for(UINT y=UINT(vp.TopLeftY);y<UINT(vp.TopLeftY+vp.Height);y++)for(UINT x=UINT(vp.TopLeftX);x<UINT(vp.TopLeftX+vp.Width);x++) {
+                const auto p=scaled[y*width+x];if(p.w>.05f) {
+                    const auto eye=(x-UINT(vp.TopLeftX))/UINT(vp.Width/2);scaledHits[eye]++;
+                    require(eye==0?(p.x>2.9f&&p.y<.001f&&p.z<.001f):(p.y>2.9f&&p.x<.001f&&p.z<.001f),"reduced SSR sampled another eye or inactive allocation");
+                }
+            }
+            require(scaledHits[0]>8 && scaledHits[1]>8,"reduced SSR lost one eye");
+        }
         runtime.onDeviceCreated(nullptr,nullptr);context->ClearState();
         std::cout<<(driver==D3D_DRIVER_TYPE_WARP?"WARP":"Hardware")<<": stereo wall hits "<<hits[0]<<"/"<<hits[1]<<", own-eye colour, flatness, sky/first-person rejection and bindings passed\n";
     }

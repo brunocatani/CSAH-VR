@@ -42,10 +42,9 @@ PixelOutput main(PixelInput input)
     }
     const float2 packedUv =
         (float2(coordinate) + 0.5f) / float2(width, height);
-    const float2 fullPixelPosition = packedUv /
-        max(DFLight[0].xy, 1.0e-7f);
+
     const float3 currentRelative = ReconstructRelativePosition(
-        fullPixelPosition, eye, output.depth);
+        packedUv, eye, output.depth);
     const float3 absolutePosition = currentRelative + EyeOrigin[eye].xyz;
     const float3 previousRelative =
         absolutePosition - PreviousEyeOrigin[eye].xyz;
