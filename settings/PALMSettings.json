@@ -19,19 +19,23 @@
               "label": "Visual suite",
               "description": "The visual suite, DLAA/DLSS, Vanilla Fixes, and Native Shadows have independent master gates.",
               "controls": [
-                { "id": "community-shaders", "type": "toggle", "label": "CSAH Visual Suite", "help": "Controls only the lighting, material, shadow, and output effects in this suite. DLAA/DLSS, Vanilla Fixes, and Native Shadows retain their own settings and continue independently.", "default": true, "binding": { "type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "CommunityShaders", "key": "bEnabled" } },
-                { "id": "linear-lighting", "type": "toggle", "label": "Linear Lighting", "help": "Evaluates supported lighting and material colour operations in linear space.", "default": false, "binding": { "type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "LinearLighting", "key": "bEnabled" } },
-                { "id": "native-darkness", "type": "toggle", "label": "Preserve Native Darkness", "help": "Keeps native light, ambient, fog, and sky producers at Fallout's darker response floor.", "default": true, "binding": { "type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "LinearLighting", "key": "bPreserveNativeDarkness" } },
-                { "id": "ibl", "type": "toggle", "label": "Image Based Lighting", "help": "Master gate for the shared validated environment used by Dynamic Cubemaps and Diffuse IBL.", "default": true, "binding": { "type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "ImageBasedLighting", "key": "bEnabled" } },
-                { "id": "dynamic-cubemaps", "type": "toggle", "label": "Dynamic Cubemaps", "help": "Uses the shared stereo scene environment for position-aware specular reflections while retaining each material's vanilla cubemap as the confidence fallback.", "default": true, "binding": { "type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "DynamicCubemaps", "key": "bEnabled" } },
-                { "id": "diffuse-ibl", "type": "toggle", "label": "Diffuse IBL", "help": "Adds environment-derived diffuse bounce lighting.", "default": true, "binding": { "type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "ImageBasedLighting", "key": "bDiffuseEnabled" } },
-                { "id": "skylighting", "type": "toggle", "label": "Skylighting", "help": "Uses a shared stereo world-space probe field to occlude sky diffuse and specular light beneath roofs, trees, and overhangs.", "default": true, "binding": { "type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "Skylighting", "key": "bEnabled" } },
-                { "id": "sky-sync", "type": "toggle", "label": "Sky Sync / Moon Lighting", "help": "Keeps native directional lighting and shadows aligned with the actual Sun by day and Fallout's single climate-enabled Moon by night.", "default": true, "binding": { "type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "SkySync", "key": "bEnabled" } },
-                { "id": "filmic-tonemapping", "type": "toggle", "label": "Filmic Tonemapping", "help": "Replaces the exact native HDR blend with hue-preserving highlight compression while retaining bloom, cinematic state, fade, and engine adaptation.", "default": true, "binding": { "type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "FilmicTonemapping", "key": "bEnabled" } },
-                { "id": "bloom", "type": "toggle", "label": "Enhanced Bloom", "help": "Adds a stereo-isolated HDR mip-chain bloom while preserving Fallout's native bloom.", "default": true, "binding": { "type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "Bloom", "key": "bEnabled" } },
-                { "id": "physical-glare", "type": "toggle", "label": "Physical Glare", "help": "Convolves bright HDR light with a wavelength-dependent optical point-spread function independently for each eye.", "default": true, "binding": { "type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "PhysicalGlare", "key": "bEnabled" } },
-                { "id": "cloud-shadows", "type": "toggle", "label": "Cloud Shadows", "help": "Projects captured cloud cover along the directional light.", "default": false, "binding": { "type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "CloudShadows", "key": "bEnabled" } },
-                { "id": "volumetric-lighting", "type": "toggle", "label": "Volumetric Lighting / Godrays", "help": "Not working. Disabled by default. This setting controls Volumetric Lighting / Godrays.", "default": false, "binding": { "type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "VolumetricLighting", "key": "bEnabled" } }
+                {"id": "community-shaders", "type": "toggle", "label": "CSAH Visual Suite", "help": "Controls only the lighting, material, shadow, and output effects in this suite. DLAA/DLSS, Vanilla Fixes, and Native Shadows retain their own settings and continue independently.", "default": true, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "CommunityShaders", "key": "bEnabled"}},
+                {"id": "linear-lighting", "type": "toggle", "label": "Linear Lighting", "help": "Evaluates supported lighting and material colour operations in linear space.", "default": false, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "LinearLighting", "key": "bEnabled"}},
+                {"id": "native-darkness", "type": "toggle", "label": "Preserve Native Darkness", "help": "Keeps native light, ambient, fog, and sky producers at Fallout's darker response floor.", "default": true, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "LinearLighting", "key": "bPreserveNativeDarkness"}},
+                {"id": "ibl", "type": "toggle", "label": "Image Based Lighting", "help": "Master gate for the shared validated environment used by Dynamic Cubemaps and Diffuse IBL.", "default": true, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "ImageBasedLighting", "key": "bEnabled"}},
+                {"id": "dynamic-cubemaps", "type": "toggle", "label": "Dynamic Cubemaps", "help": "Uses the shared stereo scene environment for position-aware specular reflections while retaining each material's vanilla cubemap as the confidence fallback.", "default": true, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "DynamicCubemaps", "key": "bEnabled"}},
+                {"id": "diffuse-ibl", "type": "toggle", "label": "Diffuse IBL", "help": "Adds environment-derived diffuse bounce lighting.", "default": true, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "ImageBasedLighting", "key": "bDiffuseEnabled"}},
+                {"id": "skylighting", "type": "toggle", "label": "Skylighting", "help": "Uses a shared stereo world-space probe field to occlude sky diffuse and specular light beneath roofs, trees, and overhangs.", "default": true, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "Skylighting", "key": "bEnabled"}},
+                {"id": "sky-sync", "type": "toggle", "label": "Sky Sync / Moon Lighting", "help": "Keeps native directional lighting and shadows aligned with the actual Sun by day and Fallout's single climate-enabled Moon by night.", "default": true, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "SkySync", "key": "bEnabled"}},
+                {"id": "filmic-tonemapping", "type": "toggle", "label": "Filmic Tonemapping", "help": "Replaces the exact native HDR blend with hue-preserving highlight compression while retaining bloom, cinematic state, fade, and engine adaptation.", "default": true, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "FilmicTonemapping", "key": "bEnabled"}},
+                {"id": "bloom", "type": "toggle", "label": "Enhanced Bloom", "help": "Adds a stereo-isolated HDR mip-chain bloom while preserving Fallout's native bloom.", "default": true, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "Bloom", "key": "bEnabled"}},
+                {"id": "physical-glare", "type": "toggle", "label": "Physical Glare", "help": "Convolves bright HDR light with a wavelength-dependent optical point-spread function independently for each eye.", "default": true, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "PhysicalGlare", "key": "bEnabled"}},
+                {"id": "volumetric-lighting", "type": "toggle", "label": "Volumetric Lighting / Godrays", "help": "Not working. Disabled by default. This setting controls Volumetric Lighting / Godrays.", "default": false, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "VolumetricLighting", "key": "bEnabled"}},
+                {"id": "inverse-square-bEnabled", "type": "toggle", "label": "Inverse-square Local Lighting", "default": false, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "InverseSquareLighting", "key": "bEnabled"}, "help": "Uses finite-source inverse-square falloff for deferred and tiled local lights. Keeps native radii, spot cones, shadows and gameplay detection unchanged."},
+                {"id": "height-fog-bHeightFogEnabled", "type": "toggle", "label": "Height Fog", "default": false, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "VolumetricLighting", "key": "bHeightFogEnabled"}, "help": "Adds an exterior height-dependent fog layer using current weather colours. Works without enabling Volumetric Lighting."},
+                {"id": "ssgi-bEnabled", "type": "toggle", "label": "Screen Space AO and GI", "default": false, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "ScreenSpaceGI", "key": "bEnabled"}},
+                {"id": "ssgi-bIndirectLight", "type": "toggle", "label": "Indirect Diffuse Light", "default": true, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "ScreenSpaceGI", "key": "bIndirectLight"}},
+                {"id": "ssgi-bExperimentalSpecular", "type": "toggle", "label": "Experimental Specular GI", "default": false, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "ScreenSpaceGI", "key": "bExperimentalSpecular"}}
               ]
             }
           ]
@@ -44,13 +48,20 @@
               "id": "material-features",
               "label": "Material features",
               "controls": [
-                { "id": "pbr", "type": "toggle", "label": "Physical Materials (PBR)", "help": "Requires Linear Lighting. Uses one energy-conserving GGX/Fresnel material response for direct light, IBL, dynamic cubemaps, wetness, and the native reflection fallback.", "default": true, "binding": { "type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "PBR", "key": "bEnabled" } },
-                { "id": "complex-environment", "type": "toggle", "label": "Complex Metal Response", "help": "Enables complex-material environment response when validated IBL data is available.", "default": false, "binding": { "type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "ComplexMaterials", "key": "bEnableEnvironmentResponse" } },
-                { "id": "complex-parallax", "type": "toggle", "label": "Complex Parallax", "help": "Enables parallax on assets authored for the CSAH complex-material contract.", "default": true, "binding": { "type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "ComplexMaterials", "key": "bEnableParallax" } },
-                { "id": "wrapped-grass", "type": "toggle", "label": "Wrapped Grass Lighting", "help": "Wraps directional light around classified grass blades.", "default": false, "binding": { "type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "WrappedGrassLighting", "key": "bEnabled" } },
-                { "id": "hair-specular", "type": "toggle", "label": "Hair Specular", "help": "Enables classified anisotropic hair highlights.", "default": false, "binding": { "type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "HairSpecular", "key": "bEnabled" } },
-                { "id": "subsurface-scattering", "type": "toggle", "label": "Subsurface Scattering", "help": "Enables depth-aware diffusion on classified skin and face materials.", "default": false, "binding": { "type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "SubsurfaceScattering", "key": "bEnabled" } },
-                { "id": "basic-wetness", "type": "toggle", "label": "Basic Wetness", "help": "Applies the manual wet-state material response to classified wettable surfaces.", "default": false, "binding": { "type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "BasicWetness", "key": "bEnabled" } }
+                {"id": "pbr", "type": "toggle", "label": "Physical Materials (PBR)", "help": "Requires Linear Lighting. Uses one energy-conserving GGX/Fresnel material response for direct light, IBL, dynamic cubemaps, wetness, and the native reflection fallback.", "default": true, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "PBR", "key": "bEnabled"}},
+                {"id": "complex-environment", "type": "toggle", "label": "Complex Metal Response", "help": "Enables complex-material environment response when validated IBL data is available.", "default": false, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "ComplexMaterials", "key": "bEnableEnvironmentResponse"}},
+                {"id": "complex-parallax", "type": "toggle", "label": "Complex Parallax", "help": "Enables parallax on assets authored for the CSAH complex-material contract.", "default": true, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "ComplexMaterials", "key": "bEnableParallax"}},
+                {"id": "wrapped-grass", "type": "toggle", "label": "Wrapped Grass Lighting", "help": "Wraps directional light around classified grass blades.", "default": false, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "WrappedGrassLighting", "key": "bEnabled"}},
+                {"id": "hair-specular", "type": "toggle", "label": "Hair Specular", "help": "Enables classified anisotropic hair highlights.", "default": false, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "HairSpecular", "key": "bEnabled"}},
+                {"id": "subsurface-scattering", "type": "toggle", "label": "Subsurface Scattering", "help": "Enables depth-aware diffusion on classified skin and face materials.", "default": false, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "SubsurfaceScattering", "key": "bEnabled"}},
+                {"id": "basic-wetness", "type": "toggle", "label": "Basic Wetness", "help": "Applies the manual wet-state material response to classified wettable surfaces.", "default": false, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "BasicWetness", "key": "bEnabled"}},
+                {"id": "water-effects-enabled", "type": "toggle", "label": "Water Effects", "help": "Enables the selected water surface and underwater lighting effects.", "default": false, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "WaterEffects", "key": "bEnabled"}},
+                {"id": "water-parallax-enabled", "type": "toggle", "label": "Water Parallax", "help": "Uses alpha heights in compatible water normal maps to displace their texture sampling.", "default": true, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "WaterEffects", "key": "bEnableParallax"}},
+                {"id": "water-caustics-enabled", "type": "toggle", "label": "Underwater Caustics", "help": "Modulates sunlight below the native exterior-cell water planes.", "default": true, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "WaterEffects", "key": "bEnableCaustics"}},
+                {"id": "water-reflections-enabled", "type": "toggle", "label": "Dynamic Water Reflections", "help": "Uses Dynamic Cubemaps for nearby water while retaining the native reflection for missing directions and distant water. Requires Dynamic Cubemaps.", "default": true, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "WaterEffects", "key": "bEnableReflections"}},
+                {"id": "water-fx-screen-reflections", "type": "toggle", "label": "FX 10.5-style Water Reflections", "help": "Adds a stereo water-surface ray trace for nearby scene detail. Uses Dynamic Water Reflections as fallback when available; preserves native water tint and Fresnel.", "default": false, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "WaterEffects", "key": "bEnableScreenSpaceReflections"}},
+                {"id": "terrain-variation", "type": "toggle", "label": "Terrain Variation", "help": "Blends shifted terrain texture samples to reduce visible repetition.", "default": false, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "TerrainVariation", "key": "bEnabled"}},
+                {"id": "lod-matching", "type": "toggle", "label": "LOD Colour Matching", "help": "Enables independent terrain and distant-object colour adjustment. Neutral values preserve the original colours.", "default": true, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "LODBlending", "key": "bEnabled"}}
               ]
             }
           ]
@@ -61,10 +72,12 @@
           "groups": [
             {
               "id": "contact",
-              "label": "Contact shadows",
+              "label": "Shadow features",
               "controls": [
-                { "id": "contact-shadows", "type": "toggle", "label": "Contact Shadows", "help": "Adds short-range screen-space directional occlusion.", "default": true, "binding": { "type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "ContactShadows", "key": "bEnabled" } },
-                { "id": "contact-foveated", "type": "toggle", "label": "Foveated Sampling", "help": "Reduces contact-shadow work outside the center view without changing center fidelity.", "default": true, "binding": { "type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "ContactShadows", "key": "bFoveated" } }
+                {"id": "contact-shadows", "type": "toggle", "label": "Contact Shadows", "help": "Adds short-range screen-space directional occlusion.", "default": true, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "ContactShadows", "key": "bEnabled"}},
+                {"id": "cloud-shadows", "type": "toggle", "label": "Cloud Shadows", "help": "Projects captured cloud cover along the directional light.", "default": false, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "CloudShadows", "key": "bEnabled"}},
+                {"id": "terrain-shadows-bEnabled", "type": "toggle", "label": "Terrain Shadows", "default": false, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "TerrainShadows", "key": "bEnabled"}, "help": "Distant terrain shadows from generated worldspace heightmaps. Missing maps preserve native sunlight."},
+                {"id": "native-shadows-enabled", "type": "toggle", "label": "Native Shadow Fixes", "help": "Independent from the CSAH visual suite; restart required.", "default": true, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "NativeShadows", "key": "bEnabled"}}
               ]
             }
           ]
@@ -248,25 +261,33 @@
       "id": "tuning",
       "label": "Tuning",
       "pages": [
-        {"id": "inverse-square", "label": "Local Lighting", "groups": [{"id": "inverse-square-settings", "label": "Inverse-square Lighting", "controls": [{"id": "inverse-square-bEnabled", "type": "toggle", "label": "Inverse-square Local Lighting", "default": false, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "InverseSquareLighting", "key": "bEnabled"}, "help": "Uses finite-source inverse-square falloff for deferred and tiled local lights. Keeps native radii, spot cones, shadows and gameplay detection unchanged."}, {"id": "inverse-square-fSourceSize", "type": "slider", "label": "Light Source Size", "default": 1.41421356, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "InverseSquareLighting", "key": "fSourceSize"}, "min": 0.25, "max": 16, "step": 0.25}, {"id": "inverse-square-fIntensity", "type": "slider", "label": "Local Light Intensity", "default": 1, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "InverseSquareLighting", "key": "fIntensity"}, "min": 0, "max": 8, "step": 0.1}]}]},
-        {"id": "height-fog", "label": "Height Fog", "groups": [{"id": "height-fog-settings", "label": "Weather and Height Fog", "controls": [{"id": "height-fog-bHeightFogEnabled", "type": "toggle", "label": "Height Fog", "default": false, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "VolumetricLighting", "key": "bHeightFogEnabled"}, "help": "Adds an exterior height-dependent fog layer using current weather colours. Works without enabling Volumetric Lighting."}, {"id": "height-fog-fHeightFogDensity", "type": "slider", "label": "Density", "default": 0.5, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "VolumetricLighting", "key": "fHeightFogDensity"}, "min": 0, "max": 10, "step": 0.1, "help": "Extinction per 10,000 game units at the base altitude."}, {"id": "height-fog-fHeightFogHeight", "type": "slider", "label": "Base Altitude", "default": 0, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "VolumetricLighting", "key": "fHeightFogHeight"}, "min": -22000, "max": 22000, "step": 128}, {"id": "height-fog-fHeightFogFalloff", "type": "slider", "label": "Scale Height", "default": 1024, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "VolumetricLighting", "key": "fHeightFogFalloff"}, "min": 64, "max": 16384, "step": 64, "help": "Altitude increase that reduces density by a factor of e."}, {"id": "height-fog-fHeightFogStart", "type": "slider", "label": "Clear Distance", "default": 128, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "VolumetricLighting", "key": "fHeightFogStart"}, "min": 0, "max": 20000, "step": 64}, {"id": "height-fog-fHeightFogOpacity", "type": "slider", "label": "Maximum Opacity", "default": 0.9, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "VolumetricLighting", "key": "fHeightFogOpacity"}, "min": 0, "max": 1, "step": 0.05}, {"id": "height-fog-fHeightFogWeather", "type": "slider", "label": "Weather Density Influence", "default": 1, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "VolumetricLighting", "key": "fHeightFogWeather"}, "min": 0, "max": 1, "step": 0.05, "help": "Blends current native weather fog range into density. Fog colour always follows the weather."}, {"id": "height-fog-fHeightFogVolume", "type": "slider", "label": "Volumetric Shadow Influence", "default": 0, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "VolumetricLighting", "key": "fHeightFogVolume"}, "min": 0, "max": 1, "step": 0.05, "help": "Uses the volumetric lighting field to shade fog scattering. Requires Volumetric Lighting / Godrays."}]}]},
-        {"id": "terrain-shadows", "label": "Terrain Shadows", "groups": [{"id": "terrain-shadow-settings", "label": "Terrain Shadows", "controls": [{"id": "terrain-shadows-bEnabled", "type": "toggle", "label": "Terrain Shadows", "default": false, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "TerrainShadows", "key": "bEnabled"}, "help": "Distant terrain shadows from generated worldspace heightmaps. Missing maps preserve native sunlight."}, {"id": "terrain-shadows-fStrength", "type": "slider", "label": "Shadow Strength", "default": 1, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "TerrainShadows", "key": "fStrength"}, "min": 0, "max": 1, "step": 0.05}]}]},
+        {"id": "inverse-square", "label": "Local Lighting", "groups": [{"id": "inverse-square-settings", "label": "Inverse-square Lighting", "controls": [
+                {"id": "inverse-square-fSourceSize", "type": "slider", "label": "Light Source Size", "default": 1.41421356, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "InverseSquareLighting", "key": "fSourceSize"}, "min": 0.25, "max": 16, "step": 0.25},
+                {"id": "inverse-square-fIntensity", "type": "slider", "label": "Local Light Intensity", "default": 1, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "InverseSquareLighting", "key": "fIntensity"}, "min": 0, "max": 8, "step": 0.1}
+              ]}]},
+        {"id": "height-fog", "label": "Height Fog", "groups": [{"id": "height-fog-settings", "label": "Weather and Height Fog", "controls": [
+                {"id": "height-fog-fHeightFogDensity", "type": "slider", "label": "Density", "default": 0.5, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "VolumetricLighting", "key": "fHeightFogDensity"}, "min": 0, "max": 10, "step": 0.1, "help": "Extinction per 10,000 game units at the base altitude."},
+                {"id": "height-fog-fHeightFogHeight", "type": "slider", "label": "Base Altitude", "default": 0, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "VolumetricLighting", "key": "fHeightFogHeight"}, "min": -22000, "max": 22000, "step": 128},
+                {"id": "height-fog-fHeightFogFalloff", "type": "slider", "label": "Scale Height", "default": 1024, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "VolumetricLighting", "key": "fHeightFogFalloff"}, "min": 64, "max": 16384, "step": 64, "help": "Altitude increase that reduces density by a factor of e."},
+                {"id": "height-fog-fHeightFogStart", "type": "slider", "label": "Clear Distance", "default": 128, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "VolumetricLighting", "key": "fHeightFogStart"}, "min": 0, "max": 20000, "step": 64},
+                {"id": "height-fog-fHeightFogOpacity", "type": "slider", "label": "Maximum Opacity", "default": 0.9, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "VolumetricLighting", "key": "fHeightFogOpacity"}, "min": 0, "max": 1, "step": 0.05},
+                {"id": "height-fog-fHeightFogWeather", "type": "slider", "label": "Weather Density Influence", "default": 1, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "VolumetricLighting", "key": "fHeightFogWeather"}, "min": 0, "max": 1, "step": 0.05, "help": "Blends current native weather fog range into density. Fog colour always follows the weather."},
+                {"id": "height-fog-fHeightFogVolume", "type": "slider", "label": "Volumetric Shadow Influence", "default": 0, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "VolumetricLighting", "key": "fHeightFogVolume"}, "min": 0, "max": 1, "step": 0.05, "help": "Uses the volumetric lighting field to shade fog scattering. Requires Volumetric Lighting / Godrays."}
+              ]}]},
+        {"id": "terrain-shadows", "label": "Terrain Shadows", "groups": [{"id": "terrain-shadow-settings", "label": "Terrain Shadows", "controls": [
+                {"id": "terrain-shadows-fStrength", "type": "slider", "label": "Shadow Strength", "default": 1, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "TerrainShadows", "key": "fStrength"}, "min": 0, "max": 1, "step": 0.05}
+              ]}]},
         {
           "id": "water-effects", "label": "Water",
           "groups": [{ "id": "water-parallax", "label": "Water Surface",
             "controls": [
-              { "id": "water-effects-enabled", "type": "toggle", "label": "Water Effects", "help": "Enables the selected water surface and underwater lighting effects.", "default": false, "binding": { "type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "WaterEffects", "key": "bEnabled" } },
-              { "id": "water-parallax-enabled", "type": "toggle", "label": "Water Parallax", "help": "Uses alpha heights in compatible water normal maps to displace their texture sampling.", "default": true, "binding": { "type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "WaterEffects", "key": "bEnableParallax" } },
-              { "id": "water-caustics-enabled", "type": "toggle", "label": "Underwater Caustics", "help": "Modulates sunlight below the native exterior-cell water planes.", "default": true, "binding": { "type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "WaterEffects", "key": "bEnableCaustics" } },
-              { "id": "water-caustics-strength", "type": "slider", "label": "Caustics Strength", "default": 1.0, "min": 0.0, "max": 1.0, "step": 0.05, "binding": { "type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "WaterEffects", "key": "fCausticStrength" } },
-              { "id": "water-reflections-enabled", "type": "toggle", "label": "Dynamic Water Reflections", "help": "Uses Dynamic Cubemaps for nearby water while retaining the native reflection for missing directions and distant water. Requires Dynamic Cubemaps.", "default": true, "binding": { "type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "WaterEffects", "key": "bEnableReflections" } },
-              {"id": "water-fx-screen-reflections", "type": "toggle", "label": "FX 10.5-style Water Reflections", "help": "Adds a stereo water-surface ray trace for nearby scene detail. Uses Dynamic Water Reflections as fallback when available; preserves native water tint and Fresnel.", "default": false, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "WaterEffects", "key": "bEnableScreenSpaceReflections"}},
-              {"id": "water-reflection-flatness", "type": "slider", "label": "Reflection Flatness", "help": "Smooths reflection ripples toward a flat mirror when FX-style reflections are enabled.", "default": 0, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "WaterEffects", "key": "fReflectionFlatness"}, "min": 0, "max": 1, "step": 0.05},
-              {"id": "water-reflection-blur", "type": "slider", "label": "World Reflection Blur", "help": "Blurs the cubemap fallback while keeping traced scene reflections detailed.", "default": 0, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "WaterEffects", "key": "fReflectionRoughness"}, "min": 0, "max": 1, "step": 0.05},
-              { "id": "water-reflection-strength", "type": "slider", "label": "Reflection Strength", "default": 1.0, "min": 0.0, "max": 1.0, "step": 0.05, "binding": { "type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "WaterEffects", "key": "fReflectionStrength" } },
-              { "id": "water-reflection-distance", "type": "slider", "label": "Reflection Fade Distance", "help": "Cubemap-only mode fade distance. FX-style reflections retain the world fallback on distant water.", "default": 1024.0, "min": 64.0, "max": 16384.0, "step": 64.0, "binding": { "type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "WaterEffects", "key": "fReflectionDistance" } },
-              { "id": "water-parallax-scale", "type": "slider", "label": "Parallax Scale", "default": 1.0, "min": 0.0, "max": 2.0, "step": 0.05, "binding": { "type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "WaterEffects", "key": "fParallaxScale" } }
-            ] }]
+                {"id": "water-caustics-strength", "type": "slider", "label": "Caustics Strength", "default": 1.0, "min": 0.0, "max": 1.0, "step": 0.05, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "WaterEffects", "key": "fCausticStrength"}},
+                {"id": "water-reflection-flatness", "type": "slider", "label": "Reflection Flatness", "help": "Smooths reflection ripples toward a flat mirror when FX-style reflections are enabled.", "default": 0, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "WaterEffects", "key": "fReflectionFlatness"}, "min": 0, "max": 1, "step": 0.05},
+                {"id": "water-reflection-blur", "type": "slider", "label": "World Reflection Blur", "help": "Blurs the cubemap fallback while keeping traced scene reflections detailed.", "default": 0, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "WaterEffects", "key": "fReflectionRoughness"}, "min": 0, "max": 1, "step": 0.05},
+                {"id": "water-reflection-strength", "type": "slider", "label": "Reflection Strength", "default": 1.0, "min": 0.0, "max": 1.0, "step": 0.05, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "WaterEffects", "key": "fReflectionStrength"}},
+                {"id": "water-reflection-distance", "type": "slider", "label": "Reflection Fade Distance", "help": "Cubemap-only mode fade distance. FX-style reflections retain the world fallback on distant water.", "default": 1024.0, "min": 64.0, "max": 16384.0, "step": 64.0, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "WaterEffects", "key": "fReflectionDistance"}},
+                {"id": "water-parallax-scale", "type": "slider", "label": "Parallax Scale", "default": 1.0, "min": 0.0, "max": 2.0, "step": 0.05, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "WaterEffects", "key": "fParallaxScale"}}
+              ] }]
         },
         {
           "id": "screen-space-gi",
@@ -277,122 +298,11 @@
               "label": "Ambient Occlusion and Indirect Light",
               "description": "Uses visible surfaces and prior-frame lighting. Off-screen geometry cannot contribute. Starts disabled for independent visual testing.",
               "controls": [
-                {
-                  "id": "ssgi-bEnabled",
-                  "type": "toggle",
-                  "label": "Screen Space AO and GI",
-                  "default": false,
-                  "binding": {
-                    "type": "ini",
-                    "root": "documents",
-                    "path": "Mods_Config/CSAH/CSAH.ini",
-                    "section": "ScreenSpaceGI",
-                    "key": "bEnabled"
-                  }
-                },
-                {
-                  "id": "ssgi-bIndirectLight",
-                  "type": "toggle",
-                  "label": "Indirect Diffuse Light",
-                  "default": true,
-                  "binding": {
-                    "type": "ini",
-                    "root": "documents",
-                    "path": "Mods_Config/CSAH/CSAH.ini",
-                    "section": "ScreenSpaceGI",
-                    "key": "bIndirectLight"
-                  }
-                },
-                {
-                  "id": "ssgi-bExperimentalSpecular",
-                  "type": "toggle",
-                  "label": "Experimental Specular GI",
-                  "default": false,
-                  "binding": {
-                    "type": "ini",
-                    "root": "documents",
-                    "path": "Mods_Config/CSAH/CSAH.ini",
-                    "section": "ScreenSpaceGI",
-                    "key": "bExperimentalSpecular"
-                  }
-                },
-                {
-                  "id": "ssgi-bTemporal",
-                  "type": "toggle",
-                  "label": "Temporal Accumulation",
-                  "default": true,
-                  "binding": {
-                    "type": "ini",
-                    "root": "documents",
-                    "path": "Mods_Config/CSAH/CSAH.ini",
-                    "section": "ScreenSpaceGI",
-                    "key": "bTemporal"
-                  }
-                },
-                {
-                  "id": "ssgi-fRadius",
-                  "type": "slider",
-                  "label": "Sampling Radius",
-                  "default": 256,
-                  "min": 16,
-                  "max": 1024,
-                  "step": 16,
-                  "binding": {
-                    "type": "ini",
-                    "root": "documents",
-                    "path": "Mods_Config/CSAH/CSAH.ini",
-                    "section": "ScreenSpaceGI",
-                    "key": "fRadius"
-                  }
-                },
-                {
-                  "id": "ssgi-fThickness",
-                  "type": "slider",
-                  "label": "Surface Thickness",
-                  "default": 32,
-                  "min": 1,
-                  "max": 256,
-                  "step": 1,
-                  "binding": {
-                    "type": "ini",
-                    "root": "documents",
-                    "path": "Mods_Config/CSAH/CSAH.ini",
-                    "section": "ScreenSpaceGI",
-                    "key": "fThickness"
-                  }
-                },
-                {
-                  "id": "ssgi-fAOPower",
-                  "type": "slider",
-                  "label": "Ambient Occlusion Strength",
-                  "default": 2,
-                  "min": 0,
-                  "max": 4,
-                  "step": 0.1,
-                  "binding": {
-                    "type": "ini",
-                    "root": "documents",
-                    "path": "Mods_Config/CSAH/CSAH.ini",
-                    "section": "ScreenSpaceGI",
-                    "key": "fAOPower"
-                  }
-                },
-                {
-                  "id": "ssgi-fGIStrength",
-                  "type": "slider",
-                  "label": "Indirect Light Strength",
-                  "default": 1,
-                  "min": 0,
-                  "max": 4,
-                  "step": 0.1,
-                  "binding": {
-                    "type": "ini",
-                    "root": "documents",
-                    "path": "Mods_Config/CSAH/CSAH.ini",
-                    "section": "ScreenSpaceGI",
-                    "key": "fGIStrength"
-                  }
-                }
+                {"id": "ssgi-bTemporal", "type": "toggle", "label": "Temporal Accumulation", "default": true, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "ScreenSpaceGI", "key": "bTemporal"}},
+                {"id": "ssgi-fRadius", "type": "slider", "label": "Sampling Radius", "default": 256, "min": 16, "max": 1024, "step": 16, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "ScreenSpaceGI", "key": "fRadius"}},
+                {"id": "ssgi-fThickness", "type": "slider", "label": "Surface Thickness", "default": 32, "min": 1, "max": 256, "step": 1, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "ScreenSpaceGI", "key": "fThickness"}},
+                {"id": "ssgi-fAOPower", "type": "slider", "label": "Ambient Occlusion Strength", "default": 2, "min": 0, "max": 4, "step": 0.1, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "ScreenSpaceGI", "key": "fAOPower"}},
+                {"id": "ssgi-fGIStrength", "type": "slider", "label": "Indirect Light Strength", "default": 1, "min": 0, "max": 4, "step": 0.1, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "ScreenSpaceGI", "key": "fGIStrength"}}
               ]
             }
           ]
@@ -405,34 +315,7 @@
               "id": "terrain-sampling",
               "label": "Texture Repetition",
               "controls": [
-                {
-                  "id": "terrain-variation",
-                  "type": "toggle",
-                  "label": "Terrain Variation",
-                  "help": "Blends shifted terrain texture samples to reduce visible repetition.",
-                  "default": false,
-                  "binding": {
-                    "type": "ini",
-                    "root": "documents",
-                    "path": "Mods_Config/CSAH/CSAH.ini",
-                    "section": "TerrainVariation",
-                    "key": "bEnabled"
-                  }
-                },
-                {
-                  "id": "terrain-variation-lod",
-                  "type": "toggle",
-                  "label": "Include Distant Terrain",
-                  "help": "Also varies the distant terrain colour texture and its transition blend.",
-                  "default": true,
-                  "binding": {
-                    "type": "ini",
-                    "root": "documents",
-                    "path": "Mods_Config/CSAH/CSAH.ini",
-                    "section": "TerrainVariation",
-                    "key": "bEnableLOD"
-                  }
-                }
+                {"id": "terrain-variation-lod", "type": "toggle", "label": "Include Distant Terrain", "help": "Also varies the distant terrain colour texture and its transition blend.", "default": true, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "TerrainVariation", "key": "bEnableLOD"}}
               ]
             }
           ]
@@ -445,88 +328,10 @@
               "id": "lod-response",
               "label": "Distant Colour",
               "controls": [
-                {
-                  "id": "lod-matching",
-                  "type": "toggle",
-                  "label": "LOD Colour Matching",
-                  "help": "Enables independent terrain and distant-object colour adjustment. Neutral values preserve the original colours.",
-                  "default": true,
-                  "binding": {
-                    "type": "ini",
-                    "root": "documents",
-                    "path": "Mods_Config/CSAH/CSAH.ini",
-                    "section": "LODBlending",
-                    "key": "bEnabled"
-                  }
-                },
-                {
-                  "id": "lod-terrain-brightness",
-                  "type": "slider",
-                  "label": "Terrain LOD Brightness",
-                  "help": "Adjust distant surfaces to match your installed terrain and object textures.",
-                  "default": 1.0,
-                  "min": 0.01,
-                  "max": 5,
-                  "step": 0.01,
-                  "binding": {
-                    "type": "ini",
-                    "root": "documents",
-                    "path": "Mods_Config/CSAH/CSAH.ini",
-                    "section": "LODBlending",
-                    "key": "fTerrainBrightness"
-                  }
-                },
-                {
-                  "id": "lod-terrain-gamma",
-                  "type": "slider",
-                  "label": "Terrain LOD Gamma",
-                  "help": "Adjust distant surfaces to match your installed terrain and object textures.",
-                  "default": 1.0,
-                  "min": 0.1,
-                  "max": 3,
-                  "step": 0.01,
-                  "binding": {
-                    "type": "ini",
-                    "root": "documents",
-                    "path": "Mods_Config/CSAH/CSAH.ini",
-                    "section": "LODBlending",
-                    "key": "fTerrainGamma"
-                  }
-                },
-                {
-                  "id": "lod-object-brightness",
-                  "type": "slider",
-                  "label": "Object LOD Brightness",
-                  "help": "Adjust distant surfaces to match your installed terrain and object textures.",
-                  "default": 1.0,
-                  "min": 0.01,
-                  "max": 5,
-                  "step": 0.01,
-                  "binding": {
-                    "type": "ini",
-                    "root": "documents",
-                    "path": "Mods_Config/CSAH/CSAH.ini",
-                    "section": "LODBlending",
-                    "key": "fObjectBrightness"
-                  }
-                },
-                {
-                  "id": "lod-object-gamma",
-                  "type": "slider",
-                  "label": "Object LOD Gamma",
-                  "help": "Adjust distant surfaces to match your installed terrain and object textures.",
-                  "default": 1.0,
-                  "min": 0.1,
-                  "max": 3,
-                  "step": 0.01,
-                  "binding": {
-                    "type": "ini",
-                    "root": "documents",
-                    "path": "Mods_Config/CSAH/CSAH.ini",
-                    "section": "LODBlending",
-                    "key": "fObjectGamma"
-                  }
-                }
+                {"id": "lod-terrain-brightness", "type": "slider", "label": "Terrain LOD Brightness", "help": "Adjust distant surfaces to match your installed terrain and object textures.", "default": 1.0, "min": 0.01, "max": 5, "step": 0.01, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "LODBlending", "key": "fTerrainBrightness"}},
+                {"id": "lod-terrain-gamma", "type": "slider", "label": "Terrain LOD Gamma", "help": "Adjust distant surfaces to match your installed terrain and object textures.", "default": 1.0, "min": 0.1, "max": 3, "step": 0.01, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "LODBlending", "key": "fTerrainGamma"}},
+                {"id": "lod-object-brightness", "type": "slider", "label": "Object LOD Brightness", "help": "Adjust distant surfaces to match your installed terrain and object textures.", "default": 1.0, "min": 0.01, "max": 5, "step": 0.01, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "LODBlending", "key": "fObjectBrightness"}},
+                {"id": "lod-object-gamma", "type": "slider", "label": "Object LOD Gamma", "help": "Adjust distant surfaces to match your installed terrain and object textures.", "default": 1.0, "min": 0.1, "max": 3, "step": 0.01, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "LODBlending", "key": "fObjectGamma"}}
               ]
             }
           ]
@@ -596,11 +401,12 @@
               "id": "contact-response",
               "label": "Contact response",
               "controls": [
-                { "id": "strength", "type": "slider", "label": "Shadow Strength", "default": 0.85, "min": 0.0, "max": 1.0, "step": 0.01, "binding": { "type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "ContactShadows", "key": "fStrength" } },
-                { "id": "ray-distance", "type": "slider", "label": "Ray Distance", "default": 96.0, "min": 8.0, "max": 256.0, "step": 1.0, "binding": { "type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "ContactShadows", "key": "fMaxDistance" } },
-                { "id": "fade-distance", "type": "slider", "label": "View Fade Distance", "default": 2048.0, "min": 256.0, "max": 8192.0, "step": 64.0, "binding": { "type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "ContactShadows", "key": "fFadeDistance" } },
-                { "id": "thickness", "type": "slider", "label": "Surface Thickness", "default": 0.012, "min": 0.002, "max": 0.05, "step": 0.001, "binding": { "type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "ContactShadows", "key": "fThickness" } },
-                { "id": "samples", "type": "number", "label": "Ray Budget", "help": "Caps the continuous wavefront reach in 32-pixel blocks. Eight permits the full 256-pixel close-shadow reach.", "default": 8, "min": 2, "max": 8, "step": 1, "binding": { "type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "ContactShadows", "key": "iSampleCount" } }
+                {"id": "strength", "type": "slider", "label": "Shadow Strength", "default": 0.85, "min": 0.0, "max": 1.0, "step": 0.01, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "ContactShadows", "key": "fStrength"}},
+                {"id": "ray-distance", "type": "slider", "label": "Ray Distance", "default": 96.0, "min": 8.0, "max": 256.0, "step": 1.0, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "ContactShadows", "key": "fMaxDistance"}},
+                {"id": "fade-distance", "type": "slider", "label": "View Fade Distance", "default": 2048.0, "min": 256.0, "max": 8192.0, "step": 64.0, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "ContactShadows", "key": "fFadeDistance"}},
+                {"id": "thickness", "type": "slider", "label": "Surface Thickness", "default": 0.012, "min": 0.002, "max": 0.05, "step": 0.001, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "ContactShadows", "key": "fThickness"}},
+                {"id": "samples", "type": "number", "label": "Ray Budget", "help": "Caps the continuous wavefront reach in 32-pixel blocks. Eight permits the full 256-pixel close-shadow reach.", "default": 8, "min": 2, "max": 8, "step": 1, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "ContactShadows", "key": "iSampleCount"}},
+                {"id": "contact-foveated", "type": "toggle", "label": "Foveated Sampling", "help": "Reduces contact-shadow work outside the center view without changing center fidelity.", "default": true, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "ContactShadows", "key": "bFoveated"}}
               ]
             }
           ]
@@ -700,12 +506,11 @@
               "label": "Native shadow contract",
               "description": "These settings patch verified engine state during plugin startup. Changes are saved immediately and take effect on the next game launch.",
               "controls": [
-                { "id": "native-shadows-enabled", "type": "toggle", "label": "Native Shadow Fixes", "help": "Independent from the CSAH visual suite; restart required.", "default": true, "binding": { "type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "NativeShadows", "key": "bEnabled" } },
-                { "id": "extended-cascades", "type": "toggle", "label": "Extended Directional Cascades", "help": "Restart required.", "default": true, "binding": { "type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "NativeShadows", "key": "bExtendedDirectionalCascades" } },
-                { "id": "tiled-lighting", "type": "toggle", "label": "Tiled Deferred Lighting", "help": "Restart required.", "default": true, "binding": { "type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "NativeShadows", "key": "bTiledDeferredLighting" } },
-                { "id": "shadow-distance", "type": "number", "label": "Directional Shadow Distance", "help": "Restart required.", "default": 15000.0, "min": 3000.0, "max": 50000.0, "step": 250.0, "binding": { "type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "NativeShadows", "key": "fDirectionalShadowDistance" } },
-                { "id": "cascade-blend", "type": "number", "label": "Cascade Blend Distance", "help": "Restart required.", "default": 100.0, "min": 0.0, "max": 5000.0, "step": 25.0, "binding": { "type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "NativeShadows", "key": "fCascadeBlendDistance" } },
-                { "id": "shadow-filter", "type": "number", "label": "Orthographic Shadow Filter", "help": "Restart required; accepted engine range is 0 through 5.", "default": 3, "min": 0, "max": 5, "step": 1, "binding": { "type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "NativeShadows", "key": "iOrthographicShadowFilter" } }
+                {"id": "extended-cascades", "type": "toggle", "label": "Extended Directional Cascades", "help": "Restart required.", "default": true, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "NativeShadows", "key": "bExtendedDirectionalCascades"}},
+                {"id": "tiled-lighting", "type": "toggle", "label": "Tiled Deferred Lighting", "help": "Restart required.", "default": true, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "NativeShadows", "key": "bTiledDeferredLighting"}},
+                {"id": "shadow-distance", "type": "number", "label": "Directional Shadow Distance", "help": "Restart required.", "default": 15000.0, "min": 3000.0, "max": 50000.0, "step": 250.0, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "NativeShadows", "key": "fDirectionalShadowDistance"}},
+                {"id": "cascade-blend", "type": "number", "label": "Cascade Blend Distance", "help": "Restart required.", "default": 100.0, "min": 0.0, "max": 5000.0, "step": 25.0, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "NativeShadows", "key": "fCascadeBlendDistance"}},
+                {"id": "shadow-filter", "type": "number", "label": "Orthographic Shadow Filter", "help": "Restart required; accepted engine range is 0 through 5.", "default": 3, "min": 0, "max": 5, "step": 1, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "NativeShadows", "key": "iOrthographicShadowFilter"}}
               ]
             }
           ]

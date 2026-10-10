@@ -28,11 +28,21 @@ if(NOT packageId STREQUAL "csah")
     "CSAH PALM settings package id changed: '${packageId}'")
 endif()
 
+# Feature gates belong in Features; tuning pages contain only subordinate settings.
+set(mainFeatureGates
+  inverse-square-bEnabled height-fog-bHeightFogEnabled
+  ssgi-bEnabled ssgi-bIndirectLight ssgi-bExperimentalSpecular
+  water-effects-enabled water-parallax-enabled water-caustics-enabled
+  water-reflections-enabled water-fx-screen-reflections
+  terrain-variation lod-matching cloud-shadows terrain-shadows-bEnabled
+  native-shadows-enabled)
 set(controlIds)
+set(bindingIds)
 set(controlCount 0)
 string(JSON tabCount LENGTH "${manifest}" tabs)
 math(EXPR lastTab "${tabCount} - 1")
 foreach(tabIndex RANGE 0 ${lastTab})
+  string(JSON tabId GET "${manifest}" tabs ${tabIndex} id)
   string(JSON pageCount LENGTH "${manifest}" tabs ${tabIndex} pages)
   math(EXPR lastPage "${pageCount} - 1")
   foreach(pageIndex RANGE 0 ${lastPage})
@@ -61,6 +71,16 @@ foreach(tabIndex RANGE 0 ${lastTab})
         string(JSON bindingPath GET "${manifest}" ${controlPath} binding path)
         string(JSON bindingSection GET "${manifest}" ${controlPath} binding section)
         string(JSON bindingKey GET "${manifest}" ${controlPath} binding key)
+        if((bindingKey STREQUAL "bEnabled" OR controlId IN_LIST mainFeatureGates)
+           AND NOT tabId STREQUAL "features")
+          message(FATAL_ERROR
+            "Main feature toggle '${controlId}' must stay on a Features page, not '${tabId}'")
+        endif()
+        set(bindingId "${bindingRoot}/${bindingPath}/${bindingSection}/${bindingKey}")
+        if(bindingId IN_LIST bindingIds)
+          message(FATAL_ERROR "PALM setting has duplicate controls: '${bindingId}'")
+        endif()
+        list(APPEND bindingIds "${bindingId}")
         if(NOT bindingType STREQUAL "ini" OR
            NOT bindingRoot STREQUAL "documents" OR
            NOT bindingPath STREQUAL
