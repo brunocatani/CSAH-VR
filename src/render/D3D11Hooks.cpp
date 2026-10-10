@@ -1,3 +1,4 @@
+#include "diagnostics/stereo_measurement/StereoMeasurement.h"
 #include "Features/local_lighting/LocalLightingScope.h"
 #include "Features/inverse_square/InverseSquareRuntime.h"
 #include "Features/terrain_shadows/TerrainShadowRuntime.h"
@@ -3667,6 +3668,9 @@ namespace csah::render
                 }
                 return;
             }
+            diagnostics::stereo_measurement::Runtime::get().observeDraw(context,
+                activeReplacementBinding.family==linear_lighting::ReplacementShaderFamily::material,
+                activeReplacementBinding.family==linear_lighting::ReplacementShaderFamily::dFLightAmbient);
             const local_lighting::ScopedMaterials localMaterials(context,false,activeInverseSquarePixel && localMaterialsEnabled());
             const auto inverseSquare=inverse_square::Runtime::get().scope(context,false,activeInverseSquarePixel,localMaterials.active());
             const auto constants =
@@ -3774,6 +3778,9 @@ namespace csah::render
                 }
                 return;
             }
+            diagnostics::stereo_measurement::Runtime::get().observeDraw(context,
+                activeReplacementBinding.family==linear_lighting::ReplacementShaderFamily::material,
+                activeReplacementBinding.family==linear_lighting::ReplacementShaderFamily::dFLightAmbient);
             const local_lighting::ScopedMaterials localMaterials(context,false,activeInverseSquarePixel && localMaterialsEnabled());
             const auto inverseSquare=inverse_square::Runtime::get().scope(context,false,activeInverseSquarePixel,localMaterials.active());
             const auto constants =
@@ -3893,6 +3900,9 @@ namespace csah::render
                 }
                 return;
             }
+            diagnostics::stereo_measurement::Runtime::get().observeDraw(context,
+                activeReplacementBinding.family==linear_lighting::ReplacementShaderFamily::material,
+                activeReplacementBinding.family==linear_lighting::ReplacementShaderFamily::dFLightAmbient);
             const local_lighting::ScopedMaterials localMaterials(context,false,activeInverseSquarePixel && localMaterialsEnabled());
             const auto inverseSquare=inverse_square::Runtime::get().scope(context,false,activeInverseSquarePixel,localMaterials.active());
             const auto constants =
@@ -4015,6 +4025,9 @@ namespace csah::render
                 }
                 return;
             }
+            diagnostics::stereo_measurement::Runtime::get().observeDraw(context,
+                activeReplacementBinding.family==linear_lighting::ReplacementShaderFamily::material,
+                activeReplacementBinding.family==linear_lighting::ReplacementShaderFamily::dFLightAmbient);
             const local_lighting::ScopedMaterials localMaterials(context,false,activeInverseSquarePixel && localMaterialsEnabled());
             const auto inverseSquare=inverse_square::Runtime::get().scope(context,false,activeInverseSquarePixel,localMaterials.active());
             const auto constants =
@@ -4843,6 +4856,7 @@ namespace csah::render
             inverse_square::Runtime::get().onDeviceCreated(*device,*immediateContext);
             terrain_shadows::Runtime::get().onDeviceCreated(*device,*immediateContext);
             screen_space_gi::Runtime::get().onDeviceCreated(*device, *immediateContext);
+            diagnostics::stereo_measurement::Runtime::get().onDeviceCreated(*device, *immediateContext);
             basic_wetness::Runtime::get().onDeviceCreated(
                 *device,
                 *immediateContext);

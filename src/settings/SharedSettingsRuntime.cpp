@@ -1,3 +1,4 @@
+#include "diagnostics/stereo_measurement/StereoMeasurement.h"
 #include "Features/inverse_square/InverseSquareRuntime.h"
 #include "Features/terrain_shadows/TerrainShadowRuntime.h"
 #include "Features/water_effects/WaterEffectsRuntime.h"
@@ -143,7 +144,8 @@ namespace csah::shared_settings
         {
             if (changes.diagnostics) {
                 render::GpuTimingProfiler::setOnDemandGroups(
-                    next.diagnostics.gpuProfilingGroups);
+                    next.diagnostics.gpuProfilingGroups | (next.diagnostics.measureStereoSharing ? 8u : 0u));
+                diagnostics::stereo_measurement::Runtime::get().setEnabled(next.diagnostics.measureStereoSharing);
                 if (next.diagnostics.captureFrame && !previous.diagnostics.captureFrame) {
                     (void)diagnostics::requestRenderDocCapture(next.diagnostics.captureDirectory.data());
                     if (WritePrivateProfileStringW(L"Diagnostics", L"bCaptureFrame", L"0", configPath.c_str()))
@@ -253,7 +255,8 @@ namespace csah::shared_settings
                 }
                 active_ = loadSnapshot(configPath_);
                 render::GpuTimingProfiler::setOnDemandGroups(
-                    active_.diagnostics.gpuProfilingGroups);
+                    active_.diagnostics.gpuProfilingGroups | (active_.diagnostics.measureStereoSharing ? 8u : 0u));
+                diagnostics::stereo_measurement::Runtime::get().setEnabled(active_.diagnostics.measureStereoSharing);
                 if (active_.diagnostics.captureFrame) {
                     (void)diagnostics::requestRenderDocCapture(active_.diagnostics.captureDirectory.data());
                     if (WritePrivateProfileStringW(L"Diagnostics", L"bCaptureFrame", L"0", configPath_.c_str()))

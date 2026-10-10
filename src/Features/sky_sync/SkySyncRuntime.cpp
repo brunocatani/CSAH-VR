@@ -1,3 +1,4 @@
+#include "diagnostics/stereo_measurement/StereoMeasurement.h"
 #include "Features/cloud_shadows/CloudShadowRuntime.h"
 #include "Features/terrain_shadows/TerrainShadowRuntime.h"
 #include "Features/water_effects/WaterEffectsRuntime.h"
@@ -481,6 +482,7 @@ namespace csah::sky_sync
         worldReady_.store(false, std::memory_order_release);
         water_effects::Runtime::get().resetWorld();
         terrain_shadows::Runtime::get().resetWorld();
+        diagnostics::stereo_measurement::Runtime::get().resetWorld();
         cloud_shadows::Runtime::get().resetWorld();
         applied_.store(false, std::memory_order_release);
         currentDirectionValid_ = false;

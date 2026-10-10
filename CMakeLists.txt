@@ -2002,6 +2002,18 @@ add_custom_target(VerifyFilmicTonemapping ALL
     -P "${FILMIC_TONEMAPPING_VERIFY_SCRIPT}"
   COMMENT "Verifying filmic tonemapping output-stage ownership"
   VERBATIM)
+set(STEREO_MEASUREMENT_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated/StereoMeasurement")
+set(STEREO_MEASUREMENT_HEADER "${STEREO_MEASUREMENT_DIR}/StereoMeasurementCS.h")
+add_custom_command(OUTPUT "${STEREO_MEASUREMENT_HEADER}"
+  COMMAND "${CMAKE_COMMAND}" -E make_directory "${STEREO_MEASUREMENT_DIR}"
+  COMMAND "${CSAH_FXC_EXECUTABLE}" /nologo /T cs_5_0 /E main /O3 /Ges /WX
+    /Vncsah_stereo_measurement_cs /Fh "${STEREO_MEASUREMENT_HEADER}"
+    /Fo "${STEREO_MEASUREMENT_DIR}/StereoMeasurementCS.dxbc"
+    "${ROOT_DIR}/package/Shaders/Community/StereoMeasurement/CompareCS.hlsl"
+  DEPENDS "${ROOT_DIR}/package/Shaders/Community/StereoMeasurement/CompareCS.hlsl"
+  VERBATIM)
+add_custom_target(StereoMeasurementShader DEPENDS "${STEREO_MEASUREMENT_HEADER}")
+
 set(BLOOM_GLARE_GENERATED_DIR
   "${CMAKE_CURRENT_BINARY_DIR}/generated/BloomGlare")
 set(BLOOM_GLARE_SHADER_HEADER
@@ -2332,6 +2344,7 @@ add_custom_command(OUTPUT "${SSGI_GENERATED_HEADER}"
 add_custom_target(ScreenSpaceGIShaders DEPENDS "${SSGI_GENERATED_HEADER}")
 
 add_library(${PROJECT_NAME} SHARED
+  "${SOURCE_DIR}/diagnostics/stereo_measurement/StereoMeasurement.cpp"
   "${SOURCE_DIR}/Features/water_effects/WaterEffectsRuntime.cpp"
   "${SOURCE_DIR}/Features/terrain_shadows/TerrainShadowRuntime.cpp"
   "${SOURCE_DIR}/Features/inverse_square/InverseSquareRuntime.cpp"
@@ -2676,7 +2689,9 @@ add_dependencies(${PROJECT_NAME}
   VerifyLinearLightingQualification
   VerifySkyLinearLighting
   VerifySkyLinearLightingContracts
-  VerifyPALMSettings)
+  VerifyPALMSettings
+  StereoMeasurementShader)
+target_include_directories(${PROJECT_NAME} PRIVATE "${STEREO_MEASUREMENT_DIR}")
 
 target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_23)
 target_include_directories(${PROJECT_NAME} PRIVATE
@@ -3200,6 +3215,17 @@ if(BUILD_CSAH_TESTS)
       "-DNATIVE_SHADOW_PATCH_MODEL=${NATIVE_SHADOW_PATCH_MODEL}"
       "-DPLUGIN_SOURCE=${PLUGIN_SOURCE}"
       -P "${NATIVE_SHADOW_VERIFY_SCRIPT}")
+
+  add_executable(CSAHStereoMeasurementTests "${ROOT_DIR}/tests/StereoMeasurementTests.cpp"
+    "${SOURCE_DIR}/diagnostics/stereo_measurement/StereoMeasurement.cpp"
+    "${IBL_COMPUTE_STATE_SCOPE_SOURCE}" "${GPU_TIMING_PROFILER_SOURCE}")
+  add_dependencies(CSAHStereoMeasurementTests StereoMeasurementShader)
+  target_compile_features(CSAHStereoMeasurementTests PRIVATE cxx_std_23)
+  target_compile_definitions(CSAHStereoMeasurementTests PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_include_directories(CSAHStereoMeasurementTests PRIVATE "${SOURCE_DIR}" "${STEREO_MEASUREMENT_DIR}")
+  target_precompile_headers(CSAHStereoMeasurementTests PRIVATE "${SOURCE_DIR}/PCH.h")
+  target_link_libraries(CSAHStereoMeasurementTests PRIVATE CommonLibF4::CommonLibF4 d3d11 d3dcompiler spdlog::spdlog)
+  add_test(NAME CSAH.StereoMeasurement COMMAND CSAHStereoMeasurementTests)
 
   add_executable(CSAHFeatureComputeOptimizationTests "${ROOT_DIR}/tests/FeatureComputeOptimizationTests.cpp"
     "${BLOOM_GLARE_RUNTIME_SOURCE}" "${IBL_COMPUTE_STATE_SCOPE_SOURCE}")

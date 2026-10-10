@@ -94,9 +94,9 @@ foreach(tabIndex RANGE 0 ${lastTab})
   endforeach()
 endforeach()
 
-if(NOT controlCount EQUAL 182)
+if(NOT controlCount EQUAL 183)
   message(FATAL_ERROR
-    "CSAH PALM settings coverage changed: expected 182 controls, found ${controlCount}")
+    "CSAH PALM settings coverage changed: expected 183 controls, found ${controlCount}")
 endif()
 
 foreach(required IN ITEMS
@@ -128,7 +128,7 @@ foreach(required IN ITEMS
     hair-highlight skin-strength wetness-amount cloud-opacity strength
     quality precipitation native-shadows-enabled shadow-distance mode
     center-width stereo-sun-occlusion directional-diagnostic
-    gpu-profiling-mode lod-matching lod-terrain-brightness lod-terrain-gamma
+    stereo-sharing-measurement gpu-profiling-mode lod-matching lod-terrain-brightness lod-terrain-gamma
     lod-object-brightness lod-object-gamma terrain-variation terrain-variation-lod)
   list(FIND controlIds "${required}" controlIndex)
   if(controlIndex EQUAL -1)

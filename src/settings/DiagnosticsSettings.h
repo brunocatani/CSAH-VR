@@ -15,6 +15,7 @@ namespace csah::diagnostics_settings
     struct Settings final
     {
         std::uint32_t gpuProfilingGroups{};
+        bool measureStereoSharing{};
         bool captureFrame{};
         std::array<wchar_t, 1024> captureDirectory{};
 
@@ -36,6 +37,7 @@ namespace csah::diagnostics_settings
         Settings result{
             .gpuProfilingGroups = static_cast<std::uint32_t>(
                 value >= 0 && value <= 7 ? value : 0),
+            .measureStereoSharing = GetPrivateProfileIntW(kSection,L"bMeasureStereoSharing",0,path.c_str()) != 0,
             .captureFrame = GetPrivateProfileIntW(kSection, L"bCaptureFrame", 0, path.c_str()) != 0,
         };
         const auto length = GetPrivateProfileStringW(kSection, L"sCaptureDirectory", L"",

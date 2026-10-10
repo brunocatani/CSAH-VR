@@ -19,6 +19,7 @@ namespace csah::render
             ContactShadows = 1u,
             Skylighting = 2u,
             General = 4u,
+            StereoMeasurements = 8u,
         };
 
         static constexpr std::size_t kMaximumSegments = 4;

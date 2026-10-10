@@ -23,6 +23,7 @@ int main(int argumentCount, char** arguments)
     using csah::shared_settings::diff;
 
     const Snapshot baseline{};
+    require(!baseline.diagnostics.measureStereoSharing,"stereo measurement must default off");
     require(!baseline.diagnostics.captureFrame, "manual capture must default off");
     if (argumentCount == 2) {
         const auto directory = std::filesystem::absolute(arguments[1]);
@@ -30,10 +31,10 @@ int main(int argumentCount, char** arguments)
         const auto file = directory / "diagnostics-settings.ini";
         {
             std::ofstream output(file);
-            output << "[Diagnostics]\niGpuProfilingMode=4\nbCaptureFrame=1\nsCaptureDirectory=F:/fixture/captures\n";
+            output << "[Diagnostics]\niGpuProfilingMode=4\nbMeasureStereoSharing=1\nbCaptureFrame=1\nsCaptureDirectory=F:/fixture/captures\n";
         }
         auto loaded = csah::diagnostics_settings::load(file);
-        require(loaded.gpuProfilingGroups == 4 && loaded.captureFrame, "IBL profiling or manual capture request was lost");
+        require(loaded.measureStereoSharing && loaded.gpuProfilingGroups == 4 && loaded.captureFrame, "IBL profiling or manual capture request was lost");
         require(std::wstring_view(loaded.captureDirectory.data()) == L"F:/fixture/captures", "capture path changed");
         require(WritePrivateProfileStringW(L"Diagnostics", L"iGpuProfilingMode", L"7", file.c_str()), "test settings write failed");
         require(csah::diagnostics_settings::load(file).gpuProfilingGroups == 7, "all-feature profiling unavailable");
@@ -46,6 +47,8 @@ int main(int argumentCount, char** arguments)
         "unfinished effects must default to disabled");
     require(!diff(baseline, baseline).any(), "equal snapshots changed");
 
+    auto stereoMeasurement=baseline;stereoMeasurement.diagnostics.measureStereoSharing=true;
+    require(diff(baseline,stereoMeasurement).diagnostics,"stereo measurement hot reload diff");
     auto profiling = baseline;
     profiling.diagnostics.gpuProfilingGroups = 3;
     const auto profilingChanges = diff(baseline, profiling);

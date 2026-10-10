@@ -18,7 +18,8 @@ namespace csah::render
                 GpuTimingProfiler::Group::ContactShadows) |
             static_cast<std::uint32_t>(
                 GpuTimingProfiler::Group::Skylighting) |
-            static_cast<std::uint32_t>(GpuTimingProfiler::Group::General);
+            static_cast<std::uint32_t>(GpuTimingProfiler::Group::General) |
+            static_cast<std::uint32_t>(GpuTimingProfiler::Group::StereoMeasurements);
         std::atomic_uint32_t onDemandGroups{};
         std::atomic_uint64_t collectionRequestRevision{};
     }
@@ -288,13 +289,16 @@ namespace csah::render
             if (disjointResult == S_FALSE) {
                 continue;
             }
-            if (FAILED(disjointResult) || disjoint.Disjoint ||
-                disjoint.Frequency == 0 ||
-                slot.pointCount != segmentCount_ + 1 ||
-                slot.collectionRevision != collectionRequestRevision_) {
+            if (FAILED(disjointResult) || slot.pointCount == 0 ||
+                slot.pointCount > segmentCount_ + 1) {
                 discard(slot);
                 continue;
             }
+            // Retired/incomplete scopes still own timestamp results. Drain the
+            // points actually submitted before reusing their query objects.
+            const bool publish = !disjoint.Disjoint && disjoint.Frequency != 0 &&
+                slot.pointCount == segmentCount_ + 1 &&
+                slot.collectionRevision == collectionRequestRevision_;
             std::array<std::uint64_t, kMaximumSegments + 1> timestamps{};
             auto ready = true;
             auto failed = false;
@@ -318,7 +322,7 @@ namespace csah::render
             if (!ready) {
                 continue;
             }
-            if (failed) {
+            if (failed || !publish) {
                 discard(slot);
                 continue;
             }

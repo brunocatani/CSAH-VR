@@ -1,3 +1,4 @@
+#include "diagnostics/stereo_measurement/StereoMeasurement.h"
 #include "Features/surface_classification/SurfaceClassificationRuntime.h"
 #include "Features/volumetric_lighting/VolumetricLightingRuntime.h"
 #include "Features/subsurface_scattering/SubsurfaceScatteringRuntime.h"
@@ -276,6 +277,7 @@ namespace csah::dlaa
                 // Retire the prior material mask even when the cell has no directional light.
                 surface_classification::Runtime::get().markWorldFrameConsumed();
                 screen_space_gi::Runtime::get().beginFrame();
+                diagnostics::stereo_measurement::Runtime::get().beginFrame();
                 subsurface_scattering::Runtime::get().beginFrame();
                 volumetric_lighting::Runtime::get().beginFrame();
                 cloud_shadows::Runtime::get().beginFrame();
