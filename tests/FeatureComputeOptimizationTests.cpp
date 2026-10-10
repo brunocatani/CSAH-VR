@@ -65,6 +65,8 @@ struct GPU {
  void validateMessages(){if(!messages)return;for(UINT64 i=0;i<messages->GetNumStoredMessages();i++){SIZE_T size{};check(messages->GetMessage(i,nullptr,&size),"message size");std::vector<char> data(size);auto* m=reinterpret_cast<D3D11_MESSAGE*>(data.data());check(messages->GetMessage(i,m,&size),"message");if(m->Severity<=D3D11_MESSAGE_SEVERITY_WARNING){std::cerr<<m->pDescription<<'\n';throw std::runtime_error("D3D validation warning");}}messages->ClearStoredMessages();}
 };
 
+#include "PbrMetalReflectionTests.inl"
+
 void giFilterTest(GPU& gpu,const std::filesystem::path& root,bool hardware) {
  auto dir=root/"package/Shaders/Community/ScreenSpaceGI";
  auto before=gpu.shader(root/"tests/fixtures/gi/ReferenceFilter.hlsl",dir,false,false,false,false,"main");
@@ -128,7 +130,7 @@ void runtimeTest(GPU& gpu) {
  std::cout<<"Physical glare runtime: live output, cached aperture, eye/channel isolation and restoration passed\n";
 }
 void run(const std::filesystem::path& root,bool hardware) {
- GPU gpu(hardware);giFilterTest(gpu,root,hardware);runtimeTest(gpu);auto source=root/"package/Shaders/Community/BloomGlare";auto reference=root/"tests/fixtures/glare";
+ GPU gpu(hardware);metalReflectionTest(gpu,root);giFilterTest(gpu,root,hardware);runtimeTest(gpu);auto source=root/"package/Shaders/Community/BloomGlare";auto reference=root/"tests/fixtures/glare";
  auto oldRow=gpu.shader(reference/"ReferenceFft.hlsl",source,true,false),oldCol=gpu.shader(reference/"ReferenceFft.hlsl",source,false,false),oldInvRow=gpu.shader(reference/"ReferenceFft.hlsl",source,true,true),oldInvCol=gpu.shader(reference/"ReferenceFft.hlsl",source,false,true),multiply=gpu.shader(reference/"ReferenceMultiply.hlsl",source,false,false,false,true);
  auto row=gpu.shader(source/"GlareFftCS.hlsl",source,true,false),col=gpu.shader(source/"GlareFftCS.hlsl",source,false,false),convolve=gpu.shader(source/"GlareFftCS.hlsl",source,true,true,true),invCol=gpu.shader(source/"GlareFftCS.hlsl",source,false,true);
  for(unsigned n:{128,256,512}) {

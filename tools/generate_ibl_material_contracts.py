@@ -752,18 +752,92 @@ def multiply_temp_rgb(register: int, lobe_register: int) -> list[int]:
     return result
 
 
-def initialize_temp_unity(register: int) -> list[int]:
+def initialize_reflection_lobe(register: int) -> list[int]:
     destination = temp_mask_operand(register, 0xF)
     source = [
         0x00004002,
         0x3F800000,
         0x3F800000,
         0x3F800000,
-        0x3F800000,
+        0,
     ]
     result = [MOV_OPCODE, *destination, *source]
     result[0] |= len(result) << 24
     return result
+
+
+def reflection_diffuse_operand(words: list[int], body: list[tuple[int, int]]) -> tuple[int, Operand]:
+    """Trace native t8 reflection and t5/t11 diffuse carriers through branches."""
+    tags: dict[tuple[int, int], int] = {}
+    stack = []
+    matches = []
+    for start, end in body:
+        opcode = words[start] & 0x7FF
+        if opcode == 0x1F:  # if
+            stack.append((dict(tags), None))
+            continue
+        if opcode == 0x12:  # else
+            base, _ = stack[-1]
+            stack[-1] = (base, dict(tags))
+            tags = dict(base)
+            continue
+        if opcode == 0x15:  # endif
+            base, arm = stack.pop()
+            other = base if arm is None else arm
+            tags = {key: tags.get(key, 0) | other.get(key, 0) for key in tags.keys() | other.keys()}
+            continue
+        operands = executable_operands(words, start, end)
+        if not operands:
+            continue
+        destination = operands[0]
+        if destination.operand_type not in (OPERAND_TEMP, OPERAND_OUTPUT) or len(destination.immediate_indices) != 1:
+            continue
+        token = words[destination.start]
+        if (token & 3) != 2 or ((token >> 2) & 3) != 0:
+            continue
+        mask = (token >> 4) & 15
+        source_tags = []
+        for operand in operands[1:]:
+            value = 0
+            if operand.operand_type == OPERAND_TEMP and len(operand.immediate_indices) == 1:
+                selection = words[operand.start]
+                mode = (selection >> 2) & 3
+                lanes = [(selection >> (4 + lane * 2)) & 3 for lane in range(4)] if mode == 1 else [(selection >> 4) & 3]
+                for lane in lanes:
+                    value |= tags.get((int(operand.immediate_indices[0]), lane), 0)
+            source_tags.append(value)
+        if opcode == MAD_OPCODE and len(source_tags) == 3:
+            for index in (0, 1):
+                if source_tags[index] == 1 and source_tags[1-index] & 2:
+                    matches.append((start, operands[index+1]))
+        value = 0
+        if opcode in (SAMPLE_OPCODE, SAMPLE_L_OPCODE):
+            for operand in operands:
+                if operand.operand_type == OPERAND_RESOURCE:
+                    value = 2 if operand.immediate_indices == (8,) else 1 if operand.immediate_indices in ((5,), (11,)) else 0
+        else:
+            for source in source_tags:
+                value |= source
+        for lane in range(4):
+            if mask & (1 << lane):
+                tags[(int(destination.immediate_indices[0]), lane)] = value
+    if stack or len(matches) != 1:
+        raise ContractError(f"expected one native reflection/diffuse product, found {len(matches)}")
+    return matches[0]
+
+
+def metallic_reflection_factor(source: list[int], scratch: int, lobe: int) -> list[int]:
+    # Evaluate lerp(nativeDiffuse, 1, metallicPbr) without mutating the native
+    # diffuse register: it can also be live in the MAD's lighting addend.
+    def emit(opcode: int, *operands: list[int]) -> list[int]:
+        result = [opcode, *[word for operand in operands for word in operand]]
+        result[0] |= len(result) << 24
+        return result
+    dest = temp_mask_operand(scratch, 15)
+    identity = [0x00100E46, scratch]
+    return (emit(MOV_OPCODE, dest, source) +
+        emit(ADD_OPCODE, dest, [0x00004001, 0x3F800000], [0x80100E46, 0x41, scratch]) +
+        emit(MAD_OPCODE, dest, identity, [0x00100FF6, lobe], source))
 
 
 def patch_shader(
@@ -984,6 +1058,8 @@ def patch_shader(
     material_tag_scratch = output_scratch + 1
     material_restore_scratch = material_tag_scratch + 1
     lobe_scratch = material_restore_scratch + 1
+    factor_scratch = lobe_scratch + 1
+    reflection_product, diffuse_operand = reflection_diffuse_operand(words, body)
     replacement: list[int] = []
     for instruction in transform:
         replacement.extend(
@@ -1007,15 +1083,9 @@ def patch_shader(
     for declaration in declarations:
         prefix.extend(declaration)
     updated_temp_declaration = words[temp_declaration[0] : temp_declaration[1]]
-    updated_temp_declaration[1] = original_temp_count + template_temp_count + 4
+    updated_temp_declaration[1] = original_temp_count + template_temp_count + 5
 
-    rewritten_body: list[int] = []
-    if sslr_sample is not None:
-        # The environment sample can sit inside an original DFComposite
-        # branch while the native SSLR sample is outside it. Seed the shared
-        # lobe before all original control flow so a skipped environment path
-        # leaves SSLR unchanged instead of consuming an uninitialized temp.
-        rewritten_body.extend(initialize_temp_unity(lobe_scratch))
+    rewritten_body: list[int] = initialize_reflection_lobe(lobe_scratch)
     for start, end in body:
         if start == material_start and end == material_end:
             material_sample = list(words[start:end])
@@ -1060,6 +1130,11 @@ def patch_shader(
                         0,
                     )
                 )
+        elif start == reflection_product:
+            rewritten_body.extend(metallic_reflection_factor(words[diffuse_operand.start:diffuse_operand.end], factor_scratch, lobe_scratch))
+            native = list(words[start:diffuse_operand.start]) + [0x00100E46, factor_scratch] + list(words[diffuse_operand.end:end])
+            native[0] = (native[0] & 0x00FFFFFF) | (len(native) << 24)
+            rewritten_body.extend(native)
         elif start == sample_start and end == sample_end:
             rewritten_body.extend(replacement)
         elif sslr_sample is not None and (
@@ -1270,7 +1345,7 @@ def validate_candidate(
         lobe_register = sslr_lobe.group(2)
         lobe_initializer = re.search(
             rf"^\s*mov r{lobe_register}\.xyzw, "
-            r"l\(1\.000000,\s*1\.000000,\s*1\.000000,\s*1\.000000\)",
+            r"l\(1\.000000,\s*1\.000000,\s*1\.000000,\s*0\)",
             candidate_text,
             re.MULTILINE,
         )

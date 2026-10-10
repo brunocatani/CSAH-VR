@@ -441,6 +441,9 @@ PixelOutput PSMain(PixelInput input)
     }
     vanilla.xyz *= max(reflectionLobe, 0.0f);
     output.Reflection = vanilla;
-    output.ReflectionLobe = float4(max(reflectionLobe, 0.0f), 1.0f);
+    // The native compositor multiplies environment light by diffuse lighting.
+    // Metallic PBR deliberately removes that diffuse share; transport the
+    // metal fraction so composition cannot erase its independent reflection.
+    output.ReflectionLobe = float4(max(reflectionLobe, 0.0f), saturate(pbrActive * metalness));
     return output;
 }
