@@ -3236,6 +3236,8 @@ if(BUILD_CSAH_TESTS)
   target_compile_definitions(CSAHFeatureComputeOptimizationTests PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
   target_link_libraries(CSAHFeatureComputeOptimizationTests PRIVATE CommonLibF4::CommonLibF4 d3d11 d3dcompiler spdlog::spdlog)
   add_test(NAME CSAH.FeatureComputeOptimization COMMAND CSAHFeatureComputeOptimizationTests "${ROOT_DIR}")
+  add_test(NAME CSAH.IblTemplateInputs
+    COMMAND "${Python3_EXECUTABLE}" "${ROOT_DIR}/tests/test_ibl_template_inputs.py")
 
   add_executable(CSAHRenderOverheadTests "${ROOT_DIR}/tests/RenderOverheadTests.cpp"
     "${SOURCE_DIR}/render/GpuTimingProfiler.cpp")

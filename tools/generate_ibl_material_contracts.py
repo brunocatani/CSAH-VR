@@ -578,27 +578,10 @@ def replace_instruction_operands(
     return result
 
 
-def replace_scalar_operand_with_temp_component(
-    instruction: list[int],
-    operand: Operand,
-    register: int,
-    component: int,
-) -> list[int]:
-    if component < 0 or component > 3:
-        raise ContractError("temporary component is invalid")
-    result = replace_operand_with_temp(instruction, operand, register)
-    if ((result[0] >> 2) & 0x3) != 2:
-        raise ContractError("template material tag is no longer scalar-selected")
-    result[0] = (result[0] & ~(0x3 << 4)) | (component << 4)
-    return result
-
-
 def remap_template_instruction(
     instruction: list[int],
-    coordinate: list[int],
-    lod: list[int],
-    material_tag_register: int,
-    material_coordinate: list[int],
+    coordinate_register: int,
+    material_register: int,
     first_scratch: int,
     template_temp_count: int,
     output_scratch: int,
@@ -620,65 +603,18 @@ def remap_template_instruction(
                 first_scratch + int(operand.immediate_indices[0]),
             )
         elif operand.operand_type == OPERAND_INPUT:
-            if operand.immediate_indices == (0,):
-                replacements[operand.start] = coordinate
-            elif operand.immediate_indices == (1,):
-                token = instruction[operand.start]
-                selection_mode = (token >> 2) & 0x3
-                if selection_mode == 2:
-                    component = (token >> 4) & 0x3
-                    if component == 0:
-                        replacements[operand.start] = lod
-                    elif component == 1:
-                        replacements[operand.start] = (
-                            replace_scalar_operand_with_temp_component(
-                                instruction,
-                                operand,
-                                material_tag_register,
-                                0,
-                            )
-                        )
-                    elif component in (2, 3):
-                        if len(material_coordinate) != 2:
-                            raise ContractError(
-                                "DFComposite material coordinate changed shape"
-                            )
-                        coordinate_token = material_coordinate[0]
-                        if ((coordinate_token >> 2) & 0x3) != 1:
-                            raise ContractError(
-                                "DFComposite material coordinate is not swizzled"
-                            )
-                        coordinate_component = (
-                            coordinate_token >>
-                            (4 + (component - 2) * 2)
-                        ) & 0x3
-                        replacements[operand.start] = temp_scalar_operand(
-                            material_coordinate[1],
-                            coordinate_component,
-                        )
-                    else:
-                        raise ContractError(
-                            "IBL material template scalar input packing changed"
-                        )
-                elif selection_mode == 1:
-                    swizzle = (token >> 4) & 0xFF
-                    used_components = {
-                        (swizzle >> (component * 2)) & 0x3
-                        for component in range(4)
-                    }
-                    if not used_components.issubset({2, 3}):
-                        raise ContractError(
-                            "IBL material template UV input packing changed"
-                        )
-                    replacements[operand.start] = material_coordinate
-                else:
-                    raise ContractError(
-                        "IBL material template input selection changed"
-                    )
-            else:
-                raise ContractError(
-                    "IBL material template uses an unexpected input"
-                )
+            input_register = {
+                (0,): coordinate_register,
+                (1,): material_register,
+            }.get(operand.immediate_indices)
+            if input_register is None:
+                raise ContractError("IBL material template uses an unexpected input")
+            # Preserve the compiled operand's swizzle, scalar selection and
+            # negate/absolute modifiers. Replacing it with the native cube
+            # coordinate silently changes -v0.xyzx and v0.yyzx semantics.
+            replacements[operand.start] = replace_operand_with_temp(
+                instruction, operand, input_register
+            )
         elif operand.operand_type == OPERAND_OUTPUT:
             output_register = {
                 (0,): output_scratch,
@@ -706,6 +642,12 @@ def temp_mask_operand(register: int, mask: int) -> list[int]:
     if register < 0 or mask <= 0 or mask > 0xF:
         raise ContractError("temporary mask operand is invalid")
     return [0x00100002 | (mask << 4), register]
+
+
+def move_operand(register: int, mask: int, source: list[int]) -> list[int]:
+    result = [MOV_OPCODE, *temp_mask_operand(register, mask), *source]
+    result[0] |= len(result) << 24
+    return result
 
 
 def move_temp_component(
@@ -1052,23 +994,29 @@ def patch_shader(
     material_coordinate_words = words[
         material_coordinate.start : material_coordinate.end
     ]
+    if len(material_coordinate_words) != 2 or (
+        (material_coordinate_words[0] >> 2) & 3
+    ) != 1:
+        raise ContractError("DFComposite material UV must be a swizzled temporary")
 
     first_scratch = original_temp_count
     output_scratch = original_temp_count + template_temp_count
-    material_tag_scratch = output_scratch + 1
-    material_restore_scratch = material_tag_scratch + 1
+    material_input_scratch = output_scratch + 1
+    material_restore_scratch = material_input_scratch + 1
     lobe_scratch = material_restore_scratch + 1
     factor_scratch = lobe_scratch + 1
+    coordinate_scratch = factor_scratch + 1
     reflection_product, diffuse_operand = reflection_diffuse_operand(words, body)
-    replacement: list[int] = []
+    # v0 is the cube coordinate; v1 packs LOD, material tag and screen UV.
+    # Snapshot native values before running the compiler-generated transform.
+    replacement = move_operand(coordinate_scratch, 0xF, coordinate_words)
+    replacement.extend(move_operand(material_input_scratch, 0x1, lod_words))
     for instruction in transform:
         replacement.extend(
             remap_template_instruction(
                 instruction,
-                coordinate_words,
-                lod_words,
-                material_tag_scratch,
-                material_coordinate_words,
+                coordinate_scratch,
+                material_input_scratch,
                 first_scratch,
                 template_temp_count,
                 output_scratch,
@@ -1083,7 +1031,7 @@ def patch_shader(
     for declaration in declarations:
         prefix.extend(declaration)
     updated_temp_declaration = words[temp_declaration[0] : temp_declaration[1]]
-    updated_temp_declaration[1] = original_temp_count + template_temp_count + 5
+    updated_temp_declaration[1] = original_temp_count + template_temp_count + 6
 
     rewritten_body: list[int] = initialize_reflection_lobe(lobe_scratch)
     for start, end in body:
@@ -1112,11 +1060,18 @@ def patch_shader(
                     material_sample[relative_resource] & ~(0x3 << swizzle_shift)
                 ) | (0x3 << swizzle_shift)
                 sampled_component = material_spare_component
+            # Keep UV at the original material sample boundary: native code
+            # may reuse the coordinate registers before sampling the cube.
+            for component in range(2):
+                uv_component = (material_coordinate_words[0] >> (4 + component * 2)) & 3
+                rewritten_body.extend(move_temp_component(
+                    material_input_scratch, component + 2,
+                    material_coordinate_words[1], uv_component))
             rewritten_body.extend(material_sample)
             rewritten_body.extend(
                 move_temp_component(
-                    material_tag_scratch,
-                    0,
+                    material_input_scratch,
+                    1,
                     int(material_destination.immediate_indices[0]),
                     int(sampled_component),
                 )

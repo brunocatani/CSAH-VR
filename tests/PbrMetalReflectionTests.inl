@@ -9,7 +9,11 @@ void metalReflectionTest(GPU& gpu,const std::filesystem::path& root)
  const auto texture=[&](F4 value,bool cube=false,bool array=false){Texture t;D3D11_TEXTURE2D_DESC d{};d.Width=cube?1:2;d.Height=d.MipLevels=d.SampleDesc.Count=1;d.ArraySize=cube?6:1;d.Format=DXGI_FORMAT_R32G32B32A32_FLOAT;d.BindFlags=D3D11_BIND_SHADER_RESOURCE;d.MiscFlags=cube?D3D11_RESOURCE_MISC_TEXTURECUBE:0;check(gpu.device->CreateTexture2D(&d,nullptr,&t.texture),"metal texture");std::array<F4,2> pixels{value,value};for(UINT i=0;i<d.ArraySize;i++)gpu.context->UpdateSubresource(t.texture.Get(),i,nullptr,pixels.data(),d.Width*16,0);D3D11_SHADER_RESOURCE_VIEW_DESC sd{};sd.Format=d.Format;sd.ViewDimension=array?D3D11_SRV_DIMENSION_TEXTURECUBEARRAY:cube?D3D11_SRV_DIMENSION_TEXTURECUBE:D3D11_SRV_DIMENSION_TEXTURE2D;if(array){sd.TextureCubeArray.MipLevels=1;sd.TextureCubeArray.NumCubes=1;}else if(cube)sd.TextureCube.MipLevels=1;else sd.Texture2D.MipLevels=1;check(gpu.device->CreateShaderResourceView(t.texture.Get(),&sd,&t.view),"metal texture view");return t;};
  auto black=texture({0,0,0,0}),white=texture({1,1,1,1}),base=texture({.8f,.6f,.3f,1}),material=texture({.5f,1.f/255,.2f,1}),shading=texture({.9f,.5f,0,1}),normal=texture({.5f,.5f,.5f,.5f}),depth=texture({.5f,.5f,.5f,.5f});
  auto authored=texture({.625f,1,1,.5f}),style=texture({1,1,1,-1});auto native=texture({.4f,.6f,.8f,1},true,true),dynamic=texture({.8f,.3f,.2f,1},true),validity=texture({1,1,1,1},true);
- std::array<ID3D11ShaderResourceView*,48> views{};for(auto& view:views)view=black.view.Get();views[0]=base.view.Get();views[1]=normal.view.Get();views[2]=material.view.Get();views[3]=shading.view.Get();views[7]=depth.view.Get();views[8]=native.view.Get();views[9]=white.view.Get();views[29]=base.view.Get();views[30]=dynamic.view.Get();views[31]=validity.view.Get();views[32]=dynamic.view.Get();views[33]=validity.view.Get();views[34]=dynamic.view.Get();views[35]=dynamic.view.Get();views[36]=material.view.Get();views[37]=style.view.Get();views[45]=authored.view.Get();
+ // At the tested pixel, the native incident direction is +Z. Our outgoing
+ // dynamic environment must sample -Z, whose red differs from every other face.
+ const F4 oppositeFace{.01f,.3f,.8f,1};
+ for(UINT face=0;face<5;face++)gpu.context->UpdateSubresource(dynamic.texture.Get(),face,nullptr,oppositeFace.data(),16,0);
+ std::array<ID3D11ShaderResourceView*,48> views{};for(auto& view:views)view=black.view.Get();views[0]=base.view.Get();views[1]=normal.view.Get();views[2]=material.view.Get();views[3]=shading.view.Get();views[7]=depth.view.Get();views[8]=native.view.Get();views[9]=white.view.Get();views[29]=base.view.Get();views[30]=dynamic.view.Get();views[31]=validity.view.Get();views[32]=dynamic.view.Get();views[33]=validity.view.Get();views[34]=dynamic.view.Get();views[35]=dynamic.view.Get();views[36]=shading.view.Get();views[37]=style.view.Get();views[45]=authored.view.Get();
  gpu.context->PSSetShaderResources(0,UINT(views.size()),views.data());
  D3D11_SAMPLER_DESC samplerDesc{};samplerDesc.Filter=D3D11_FILTER_MIN_MAG_MIP_POINT;samplerDesc.AddressU=samplerDesc.AddressV=samplerDesc.AddressW=D3D11_TEXTURE_ADDRESS_CLAMP;samplerDesc.MaxLOD=D3D11_FLOAT32_MAX;ComPtr<ID3D11SamplerState> sampler;check(gpu.device->CreateSamplerState(&samplerDesc,&sampler),"metal sampler");std::array<ID3D11SamplerState*,16> samplers{};samplers.fill(sampler.Get());gpu.context->PSSetSamplers(0,16,samplers.data());
  const auto buffer=[&](const void* data,UINT bytes){ComPtr<ID3D11Buffer> b;D3D11_BUFFER_DESC d{};d.ByteWidth=bytes;d.BindFlags=D3D11_BIND_CONSTANT_BUFFER;D3D11_SUBRESOURCE_DATA initial{data,0,0};check(gpu.device->CreateBuffer(&d,&initial,&b),"metal constants");return b;};
@@ -23,8 +27,8 @@ void metalReflectionTest(GPU& gpu,const std::filesystem::path& root)
  for(const char* name:{"DFComposite_00_05f5cabf.dxbc","DFComposite_01_05fa2982.dxbc","DFComposite_09_3c3cc20b.dxbc","DFComposite_15_618ab40a.dxbc"}) {
   auto shader=compilePixel(root/"package/Shaders/Community/IBLMaterial"/name);gpu.context->PSSetShader(shader.Get(),nullptr,0);
   F4 precedingNative{};
-  for(bool authoredMode:{false,true})for(bool enabled:{false,true})for(bool metal:{false,true})for(bool dynamicMode:{false,true}) {
-   parameters[0][0]=dynamicMode?1.f:0.f;parameters[3][0]=enabled?1.f:0.f;gpu.context->UpdateSubresource(params.Get(),0,nullptr,parameters.data(),0,0);
+  for(bool occlusion:{false,true})for(bool authoredMode:{false,true})for(bool enabled:{false,true})for(bool metal:{false,true})for(bool dynamicMode:{false,true}) {
+   parameters[4][3]=occlusion?1.f:0.f;parameters[0][0]=dynamicMode?1.f:0.f;parameters[3][0]=enabled?1.f:0.f;gpu.context->UpdateSubresource(params.Get(),0,nullptr,parameters.data(),0,0);
    const F4 colour{.8f,.6f,.3f,1};std::array<F4,2> pixels{colour,colour};
    if(!authoredMode&&metal)for(auto& c:pixels)for(UINT i=0;i<3;i++)c[i]/=255;
    gpu.context->UpdateSubresource(base.texture.Get(),0,nullptr,pixels.data(),32,0);
@@ -38,5 +42,5 @@ void metalReflectionTest(GPU& gpu,const std::filesystem::path& root)
    else require(value[0]==0&&value[1]==0&&value[2]==0,"nonmetal or PBR-off native response changed");
   }
  }
- gpu.context->ClearState();gpu.validateMessages();std::cout<<"Authored/legacy metals retain native and dynamic cubemaps with zero diffuse; dielectrics and PBR-off stay unchanged\n";
+ gpu.context->ClearState();gpu.validateMessages();std::cout<<"Authored/legacy metals retain native and correctly directed dynamic cubemaps with zero diffuse, occlusion on/off; dielectrics and PBR-off stay unchanged\n";
 }
