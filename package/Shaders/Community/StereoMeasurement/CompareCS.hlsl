@@ -5,15 +5,21 @@ Texture2D<float2> Normal : register(t1);
 Texture2D<float4> Material : register(t2);
 Texture2D<float> Depth : register(t3);
 Texture2D<float2> Motion : register(t4);
+Texture2D<float> SurfaceClass : register(t5);
 RWBuffer<uint> Counters : register(u0);
 cbuffer Parameters : register(b0) {
     uint2 Origin;uint2 Extent;
     uint Stride;uint HasMotion;float NearDistance;float DepthTolerance;
-    uint2 Phase;uint2 Reserved;
+    uint2 Phase;uint HasClasses;uint Reserved;
 };
 cbuffer NativeStereo : register(b8) {float4 Stereo;};
 cbuffer NativeCamera : register(b12) {float4 Camera[61];};
-groupshared uint Counts[24];
+groupshared uint Counts[78];
+uint ClassAt(int2 p) {
+    if(HasClasses==0)return 5;
+    uint code=(uint)round(saturate(SurfaceClass.Load(int3(p,0)))*255);
+    return code<5?code:5;
+}
 void Count(uint index) {InterlockedAdd(Counts[index],1);}
 void Maximum(uint index,float value,float scale) {
     InterlockedMax(Counts[index],(uint)round(clamp(value*scale,0,4294967040.0)));
@@ -61,6 +67,7 @@ void Evaluate(uint2 id) {
     int2 p=int2(Origin)+int2(Extent.x/2,0)+int2(id*Stride+Phase);
     if(!Inside(p,1,0)) return;
     Count(0);
+    uint category=ClassAt(p),b=24+category*9;Count(b);
     if(!isfinite(Stereo.x)||Stereo.x<.5){Count(22);return;}
     float depth=Depth.Load(int3(p,0));
     if(!isfinite(depth)){Count(5);return;}
@@ -82,28 +89,30 @@ void Evaluate(uint2 id) {
     if(abs(leftInRight.z-right.z)>max(.5,abs(right.z)*DepthTolerance)){Count(7);return;}
     float2 back=ProjectPixel(leftInRight,1);
     if(!all(isfinite(back))||length(back-float2(p))>1.5){Count(8);return;}
-    Count(9);
+    Count(9);Count(b+1);
+    bool sameClass=category<5&&ClassAt(q)==category;
+    if(HasClasses!=0&&!sameClass)Count(b+8);
     float3 nr=DecodeNormal(Normal.Load(int3(p,0))),nl=DecodeNormal(Normal.Load(int3(q,0)));
     float4 ar=Albedo.Load(int3(p,0)),al=Albedo.Load(int3(q,0));
     float4 mr=Material.Load(int3(p,0)),ml=Material.Load(int3(q,0));
     if(!Finite3(nr)||!Finite3(nl)||!all(isfinite(ar))||!all(isfinite(al))||!all(isfinite(mr))||!all(isfinite(ml)))return;
     float ne=1-saturate(dot(nr,nl)),ae=Max4(abs(ar-al)),me=Max4(abs(mr-ml));
     bool normalMatch=ne<=.005,albedoMatch=ae<=2.0/255,materialMatch=me<=1.0/255;
-    if(normalMatch)Count(10);if(albedoMatch)Count(11);if(materialMatch)Count(12);
+    if(normalMatch){Count(10);Count(b+2);}if(albedoMatch){Count(11);Count(b+3);}if(materialMatch){Count(12);Count(b+4);}
     bool matches=normalMatch&&albedoMatch&&materialMatch;
     if(matches)Count(13);
     Maximum(18,ne,1000000);Maximum(19,ae,1000000);Maximum(20,me,1000000);
     if(HasMotion!=0){
         float2 r=Motion.Load(int3(p,0)),l=Motion.Load(int3(q,0));
         if(!all(isfinite(r))||!all(isfinite(l))){Count(17);return;}
-        Count(14);float error=max(abs(r.x-l.x),abs(r.y-l.y));Maximum(21,error,1000000);
-        if(error<=.0001){Count(15);if(matches)Count(16);}
+        Count(14);Count(b+5);float error=max(abs(r.x-l.x),abs(r.y-l.y));Maximum(21,error,1000000);
+        if(error<=.0001){Count(15);Count(b+6);if(matches){Count(16);if(sameClass)Count(b+7);}}
     }
 }
 [numthreads(8,8,1)] void main(uint3 id:SV_DispatchThreadID,uint index:SV_GroupIndex) {
-    if(index<24)Counts[index]=0;
+    for(uint clearIndex=index;clearIndex<78;clearIndex+=64)Counts[clearIndex]=0;
     GroupMemoryBarrierWithGroupSync();
     Evaluate(id.xy);
     GroupMemoryBarrierWithGroupSync();
-    if(index<24){if(index>=18&&index<=21)InterlockedMax(Counters[index],Counts[index]);else InterlockedAdd(Counters[index],Counts[index]);}
+    for(uint i=index;i<78;i+=64){if(i>=18&&i<=21)InterlockedMax(Counters[i],Counts[i]);else InterlockedAdd(Counters[i],Counts[i]);}
 }

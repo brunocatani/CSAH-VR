@@ -7,6 +7,8 @@
 #include <cstring>
 namespace csah::diagnostics::stereo_measurement {
 namespace {
+constexpr const char* classNames[]{"ordinary-or-untagged","grass","hair","skin","terrain","unavailable"};
+constexpr const char* drawNames[]{"Stereo native ordinary draw","Stereo native grass draw","Stereo native hair draw","Stereo native skin draw","Stereo native terrain draw","Stereo native authored-PBR draw"};
 template<class T> using Ptr=Microsoft::WRL::ComPtr<T>;
 struct ProbeState {
     ID3D11DeviceContext* context;Ptr<ID3D11DeviceContext1> extended;
@@ -15,7 +17,7 @@ struct ProbeState {
     static constexpr UINT slots[]{0,8,12};
     std::array<UINT,3> first{},count{};
     Ptr<ID3D11Predicate> predicate;BOOL predicateValue{};
-    ProbeState(ID3D11DeviceContext* c):context(c),compute(c,{0,5,0,1,0,0,0,0}) {
+    ProbeState(ID3D11DeviceContext* c):context(c),compute(c,{0,6,0,1,0,0,0,0}) {
         (void)c->QueryInterface(IID_PPV_ARGS(&extended));
         for(UINT i=0;i<3;i++) {const UINT slot=slots[i];
             if(extended)extended->CSGetConstantBuffers1(slot,1,&buffers[i],&first[i],&count[i]);
@@ -49,15 +51,16 @@ void Runtime::setEnabled(bool value) noexcept {
 }
 void Runtime::synchronize() noexcept {
     const auto current=epoch_.load(std::memory_order_acquire);if(current==observedEpoch_)return;
-    span_.finish();observedEpoch_=current;materialNormal_.Reset();motionView_.Reset();motionResource_.Reset();motionThisFrame_=false;
+    span_.finish();classView_.Reset();classResource_.Reset();classThisFrame_=false;classRetryAfter_=0;drawAttempts_={};drawCounts_={};drawTimed_={};depthWrites_={};depthEqual_={};depthOther_={};frameTimedDraws_=0;observedEpoch_=current;materialNormal_.Reset();motionView_.Reset();motionResource_.Reset();motionThisFrame_=false;
     snapshot_={};totals_={};windowFrames_=windowDraws_=timedFrames_=frame_=draws_=retryAfter_=motionRetryAfter_=0;
     sampleFrame_=~0ull;width_=height_=0;firstReject_=firstSample_=noSampleWarning_=false;
     for(auto& slot:slots_)slot.pending=false;
 }
 void Runtime::onDeviceCreated(ID3D11Device* d,ID3D11DeviceContext* c) noexcept {
-    span_.finish();spanTiming_.reset();probeTiming_.reset();slots_={};shader_.Reset();parameters_.Reset();
+    span_.finish();spanTiming_.reset();probeTiming_.reset();for(auto& timer:drawTiming_)timer.reset();slots_={};shader_.Reset();parameters_.Reset();
     motionView_.Reset();motionResource_.Reset();materialNormal_.Reset();device_=d;context_=c;context1_.Reset();
     resetWorld();synchronize();if(!d||!c)return;(void)c->QueryInterface(IID_PPV_ARGS(&context1_));
+    for(UINT i=0;i<drawTiming_.size();i++)(void)drawTiming_[i].initialize(d,c,drawNames[i],{"native draw",nullptr,nullptr,nullptr},1,8,1,render::GpuTimingProfiler::Group::StereoMeasurements);
     (void)spanTiming_.initialize(d,c,"Stereo measurement",{"before first material","material-to-ambient span","comparison","stats copy"},4,128,1,render::GpuTimingProfiler::Group::StereoMeasurements);
     (void)probeTiming_.initialize(d,c,"Stereo comparison without material timing",{"comparison + stats copy",nullptr,nullptr,nullptr},1,128,1,render::GpuTimingProfiler::Group::StereoMeasurements);
 }
@@ -83,10 +86,12 @@ bool Runtime::ensureResources() noexcept {
     slots_=std::move(next);return true;
 }
 void Runtime::beginFrame() noexcept {
-    synchronize();span_.finish();materialNormal_.Reset();motionThisFrame_=false;draws_=0;
+    synchronize();span_.finish();materialNormal_.Reset();classThisFrame_=false;motionThisFrame_=false;draws_=0;frameTimedDraws_=0;
     if(!enabled_.load(std::memory_order_acquire)||!context_)return;
     ++frame_;if(!ensureResources())return;poll();spanTiming_.poll();probeTiming_.poll();
-    span_=spanTiming_.begin();
+    for(auto& timer:drawTiming_)timer.poll();
+    // Separate draw-sampling frames prevent nested disjoint-query intervals.
+    if(frame_%4!=0)span_=spanTiming_.begin();
     if(frame_>=120&&snapshot_.submitted==0&&!noSampleWarning_){noSampleWarning_=true;
         logging::warn("Stereo measurement has no qualified ambient samples. Linear Lighting or Skylighting must expose a tracked DFLight ambient draw; no culling is active.");}
 }
@@ -94,6 +99,26 @@ void Runtime::observeDraw(ID3D11DeviceContext* c,bool material,bool ambient) noe
     if(!enabled_.load(std::memory_order_acquire)||c!=context_.Get()||(!material&&!ambient))return;
     synchronize();if(sampleFrame_==frame_)return;
     if(material)materialDraw(c);if(ambient)sample(c);
+}
+render::GpuTimingProfiler::Scope Runtime::timeMaterialDraw(ID3D11DeviceContext* c,bool material,UINT classCode,bool authoredPbr) noexcept {
+    if(!enabled_.load(std::memory_order_acquire)||c!=context_.Get()||!material||!materialNormal_||sampleFrame_==frame_)return {};
+    const UINT category=authoredPbr?5:classCode;
+    if(category>=drawTiming_.size())return {};
+    ++drawCounts_[category];
+    if(frame_%4!=0)return {};
+    // Rotate through the draw stream, bounded to eight timed native calls per
+    // frame. These are whole native-call costs, not isolated right-eye shading cost.
+    if((drawAttempts_[category]++%127)!=0||frameTimedDraws_>=8)return {};
+    // Read-only evidence of depth state at sampled material draws. EQUAL is not
+    // proof that a complete current two-eye prepass preceded the draw.
+    Ptr<ID3D11DepthStencilState> state;UINT reference{};c->OMGetDepthStencilState(&state,&reference);
+    D3D11_DEPTH_STENCIL_DESC desc{};desc.DepthEnable=TRUE;desc.DepthWriteMask=D3D11_DEPTH_WRITE_MASK_ALL;desc.DepthFunc=D3D11_COMPARISON_LESS;
+    if(state)state->GetDesc(&desc);
+    auto timing=drawTiming_[category].begin();if(!timing)return {};
+    ++frameTimedDraws_;++drawTimed_[category];
+    if(desc.DepthEnable&&desc.DepthWriteMask==D3D11_DEPTH_WRITE_MASK_ALL)++depthWrites_[category];
+    if(desc.DepthEnable&&desc.DepthFunc==D3D11_COMPARISON_EQUAL)++depthEqual_[category];else ++depthOther_[category];
+    return timing;
 }
 void Runtime::materialDraw(ID3D11DeviceContext* c) noexcept {
     ++draws_;if(materialNormal_)return;
@@ -110,6 +135,20 @@ void Runtime::materialDraw(ID3D11DeviceContext* c) noexcept {
     UINT count=1;D3D11_VIEWPORT vp{};c->RSGetViewports(&count,&vp);
     if(count!=1||!validViewport(vp,normalDescription.Width,normalDescription.Height))return;
     materialNormal_=normal;
+    // Observe only an existing private MRT6. Do not enable classification or
+    // append targets for diagnostics. Cache the view, but qualify its use each frame.
+    if(views[6]){Ptr<ID3D11Resource> resource;views[6]->GetResource(&resource);Ptr<ID3D11Texture2D> t;
+        D3D11_RENDER_TARGET_VIEW_DESC vd{};views[6]->GetDesc(&vd);
+        if(vd.ViewDimension==D3D11_RTV_DIMENSION_TEXTURE2D&&vd.Texture2D.MipSlice==0&&vd.Format==DXGI_FORMAT_R8_UNORM&&SUCCEEDED(resource.As(&t))){
+            D3D11_TEXTURE2D_DESC td{};t->GetDesc(&td);
+            if(td.Width==normalDescription.Width&&td.Height==normalDescription.Height&&td.ArraySize==1&&td.SampleDesc.Count==1&&(td.BindFlags&D3D11_BIND_SHADER_RESOURCE)){
+                if(resource.Get()!=classResource_.Get()){classView_.Reset();classResource_=resource;classRetryAfter_=0;}
+                if(!classView_&&frame_>=classRetryAfter_){classRetryAfter_=frame_+120;
+                    if(FAILED(device_->CreateShaderResourceView(resource.Get(),nullptr,&classView_)))reject("class SRV unavailable; class attribution will be unavailable");}
+                classThisFrame_=classView_!=nullptr;
+            }
+        }
+    }
     if(motion){Ptr<ID3D11Texture2D> t;if(SUCCEEDED(motion.As(&t))){D3D11_TEXTURE2D_DESC td{};t->GetDesc(&td);
         if(td.Width==normalDescription.Width&&td.Height==normalDescription.Height&&td.ArraySize==1&&td.SampleDesc.Count==1&&(td.BindFlags&D3D11_BIND_SHADER_RESOURCE)){
             if(motion.Get()!=motionResource_.Get()){motionView_.Reset();motionResource_=motion;motionRetryAfter_=0;}
@@ -152,22 +191,22 @@ void Runtime::sample(ID3D11DeviceContext* c) noexcept {
     auto late=timed?render::GpuTimingProfiler::Scope{}:probeTiming_.begin();
     if(timed)span_.mark();
     const bool motion=matched&&motionThisFrame_&&motionView_;
-    struct Parameters{UINT x,y,w,h,stride,motion;float nearDistance,depthTolerance;UINT phaseX,phaseY,pad0,pad1;};
+    struct Parameters{UINT x,y,w,h,stride,motion;float nearDistance,depthTolerance;UINT phaseX,phaseY,hasClasses,pad1;};
     static_assert(sizeof(Parameters)==48);
-    const Parameters parameters{UINT(vp.TopLeftX),UINT(vp.TopLeftY),UINT(vp.Width),UINT(vp.Height),4,motion?1u:0u,200,.001f,UINT(snapshot_.submitted&3u),UINT((snapshot_.submitted>>2u)&3u),0,0};
+    const Parameters parameters{UINT(vp.TopLeftX),UINT(vp.TopLeftY),UINT(vp.Width),UINT(vp.Height),4,motion?1u:0u,200,.001f,UINT(snapshot_.submitted&3u),UINT((snapshot_.submitted>>2u)&3u),matched&&classThisFrame_?1u:0u,0};
     ProbeState restore(c);if(!restore.compute.captured()){reject("compute state could not be retained");span_.finish();return;}
     c->UpdateSubresource(parameters_.Get(),0,nullptr,&parameters,0,0);auto* cb=parameters_.Get();c->CSSetConstantBuffers(0,1,&cb);
     cb=camera.Get();if(context1_)context1_->CSSetConstantBuffers1(12,1,&cb,&first,&constants);else c->CSSetConstantBuffers(12,1,&cb);
     cb=stereo.Get();if(context1_)context1_->CSSetConstantBuffers1(8,1,&cb,&stereoFirst,&stereoCount);else c->CSSetConstantBuffers(8,1,&cb);
-    const std::array<ID3D11ShaderResourceView*,5> inputs{views[0].Get(),views[1].Get(),views[2].Get(),views[3].Get(),motion?motionView_.Get():nullptr};
+    const std::array<ID3D11ShaderResourceView*,6> inputs{views[0].Get(),views[1].Get(),views[2].Get(),views[3].Get(),motion?motionView_.Get():nullptr,matched&&classThisFrame_?classView_.Get():nullptr};
     constexpr UINT zero[4]{};c->ClearUnorderedAccessViewUint(slot.output.Get(),zero);
-    auto* out=slot.output.Get();c->CSSetShaderResources(0,5,inputs.data());c->CSSetUnorderedAccessViews(0,1,&out,nullptr);c->CSSetShader(shader_.Get(),nullptr,0);
+    auto* out=slot.output.Get();c->CSSetShaderResources(0,6,inputs.data());c->CSSetUnorderedAccessViews(0,1,&out,nullptr);c->CSSetShader(shader_.Get(),nullptr,0);
     c->Dispatch(((parameters.w/2+3)/4+7)/8,((parameters.h+3)/4+7)/8,1);
     if(timed)span_.mark();out=nullptr;c->CSSetUnorderedAccessViews(0,1,&out,nullptr);
     c->CopyResource(slot.staging.Get(),slot.gpu.Get());c->End(slot.event.Get());
     span_.finish();late.finish();slot.pending=true;slot.epoch=observedEpoch_;slot.motion=motion;slot.timed=timed;slot.draws=draws_;
     sampleFrame_=frame_;++snapshot_.submitted;
-    if(!firstSample_){firstSample_=true;logging::info("Stereo measurement active: allocation={}x{}, viewport=({},{},{}x{}), spatial stride=4 with 16 rotating phases, near exclusion=200 units, depth tolerance=0.1%, normal cosine>=0.995, albedo<=2/255, material<=1/255, copied motion delta<=0.0001 native UV. Both eyes render normally; no scene writes or culling. Material/PBR eligibility and net savings are NOT established by matches.",width_,height_,vp.TopLeftX,vp.TopLeftY,vp.Width,vp.Height);}
+    if(!firstSample_){firstSample_=true;logging::info("Stereo measurement active: allocation={}x{}, viewport=({},{},{}x{}), spatial stride=4 with 16 rotating phases, near exclusion=200 units, depth tolerance=0.1%, normal cosine>=0.995, albedo<=2/255, material<=1/255, copied motion delta<=0.0001 native UV. Both eyes render normally; no scene writes or culling. Class zero includes untagged pixels; missing class targets are unavailable. Every fourth frame samples at most eight native draw calls, rotating every 127 eligible calls per class. Draw timings cover whole native calls and are not isolated right-eye shading cost. Material/PBR eligibility and net savings are NOT established by matches.",width_,height_,vp.TopLeftX,vp.TopLeftY,vp.Width,vp.Height);}
 }
 void Runtime::poll() noexcept {
     for(auto& slot:slots_){if(!slot.pending)continue;
@@ -186,6 +225,13 @@ void Runtime::poll() noexcept {
         windowFrames_,percent(GeometryMatch,Samples),totals_[Samples],percent(NormalMatch,GeometryMatch),percent(AlbedoMatch,GeometryMatch),percent(MaterialMatch,GeometryMatch),percent(AllMaterialMatch,GeometryMatch),percent(MotionMatch,MotionAvailable),totals_[MotionAvailable],percent(AllWithMotion,Samples),
         totals_[Sky],totals_[FirstPerson],totals_[Near],totals_[Outside],totals_[Invalid],totals_[Edge],totals_[DepthMismatch],totals_[RoundTripMismatch],
         totals_[MaxNormalError]/1e6,totals_[MaxAlbedoError]/1e6,totals_[MaxMaterialError]/1e6,totals_[MaxMotionError]/1e6,totals_[InvalidMotion],totals_[NonStereo],timedFrames_,windowFrames_,double(windowDraws_)/double(windowFrames_),snapshot_.skipped);
+    for(UINT c=0;c<kClassCount;c++){
+        const UINT b=kClassBase+c*kClassStride;if(!totals_[b])continue;
+        logging::info("Stereo class {}: samples={}, geometry={}, within geometry normal/albedo/material={:.2f}/{:.2f}/{:.2f}%, motion={:.2f}% of {} pairs, all checks={:.2f}% of class samples, other-eye class mismatches={}. Zero includes untagged pixels; classes do not establish shader eligibility.",
+            classNames[c],totals_[b],totals_[b+ClassGeometry],percent(b+ClassNormal,b+ClassGeometry),percent(b+ClassAlbedo,b+ClassGeometry),percent(b+ClassMaterial,b+ClassGeometry),percent(b+ClassMotionMatch,b+ClassMotionPairs),totals_[b+ClassMotionPairs],percent(b+ClassAll,b),totals_[b+ClassMismatch]);
+    }
+    for(UINT c=0;c<drawCounts_.size();c++)if(drawCounts_[c])
+        logging::info("{} census since measurement reset: draws={}, timed submissions={}, sampled depth-write enabled={}, EQUAL={}, other/disabled={}. Native timings cover whole draw calls; depth state alone does not prove a complete prepass.",drawNames[c],drawCounts_[c],drawTimed_[c],depthWrites_[c],depthEqual_[c],depthOther_[c]);
     totals_={};windowFrames_=windowDraws_=timedFrames_=0;
 }
 }

@@ -18,15 +18,15 @@ struct Texture{ComPtr<ID3D11Texture2D> texture;ComPtr<ID3D11ShaderResourceView> 
 struct Fixture {
     static constexpr UINT Width=128,Height=64;
     ComPtr<ID3D11Device> device;ComPtr<ID3D11DeviceContext> context;ComPtr<ID3D11DeviceContext1> extended;ComPtr<ID3D11InfoQueue> messages;
-    std::array<Texture,5> textures;std::array<std::array<float,4>,96> camera{};
+    std::array<Texture,6> textures;std::array<std::array<float,4>,96> camera{};
     ComPtr<ID3D11Buffer> cameraBuffer,stereoBuffer,sentinel;ComPtr<ID3D11UnorderedAccessView> sentinelView;
     ComPtr<ID3D11ComputeShader> compute;ComPtr<ID3D11Predicate> predicate;
     Fixture(D3D_DRIVER_TYPE driver){
         auto hr=D3D11CreateDevice(nullptr,driver,nullptr,D3D11_CREATE_DEVICE_DEBUG,nullptr,0,D3D11_SDK_VERSION,&device,nullptr,&context);
         if(hr==DXGI_ERROR_SDK_COMPONENT_MISSING)hr=D3D11CreateDevice(nullptr,driver,nullptr,0,nullptr,0,D3D11_SDK_VERSION,&device,nullptr,&context);
         check(hr,"device");check(context.As(&extended),"context1");(void)device.As(&messages);
-        constexpr DXGI_FORMAT formats[]{DXGI_FORMAT_R8G8B8A8_UNORM,DXGI_FORMAT_R16G16_UNORM,DXGI_FORMAT_R8G8B8A8_UNORM,DXGI_FORMAT_R32_FLOAT,DXGI_FORMAT_R16G16_FLOAT};
-        for(UINT i=0;i<5;i++){auto& t=textures[i];t.bytes=4;D3D11_TEXTURE2D_DESC d{};d.Width=Width;d.Height=Height;d.Format=formats[i];d.ArraySize=d.MipLevels=d.SampleDesc.Count=1;d.BindFlags=D3D11_BIND_SHADER_RESOURCE|D3D11_BIND_RENDER_TARGET;
+        constexpr DXGI_FORMAT formats[]{DXGI_FORMAT_R8G8B8A8_UNORM,DXGI_FORMAT_R16G16_UNORM,DXGI_FORMAT_R8G8B8A8_UNORM,DXGI_FORMAT_R32_FLOAT,DXGI_FORMAT_R16G16_FLOAT,DXGI_FORMAT_R8_UNORM};
+        for(UINT i=0;i<6;i++){auto& t=textures[i];t.bytes=i==5?1:4;D3D11_TEXTURE2D_DESC d{};d.Width=Width;d.Height=Height;d.Format=formats[i];d.ArraySize=d.MipLevels=d.SampleDesc.Count=1;d.BindFlags=D3D11_BIND_SHADER_RESOURCE|D3D11_BIND_RENDER_TARGET;
             check(device->CreateTexture2D(&d,nullptr,&t.texture),"texture");check(device->CreateShaderResourceView(t.texture.Get(),nullptr,&t.view),"SRV");check(device->CreateRenderTargetView(t.texture.Get(),nullptr,&t.target),"RTV");}
         D3D11_BUFFER_DESC bd{};bd.ByteWidth=sizeof(camera);bd.BindFlags=D3D11_BIND_CONSTANT_BUFFER;check(device->CreateBuffer(&bd,nullptr,&cameraBuffer),"camera");
         bd.ByteWidth=16;const std::array<float,4> stereo{1,0,0,0};D3D11_SUBRESOURCE_DATA initialStereo{stereo.data(),0,0};check(device->CreateBuffer(&bd,&initialStereo,&stereoBuffer),"stereo");
@@ -55,6 +55,7 @@ struct Fixture {
         fill<std::array<std::uint16_t,2>>(1,[](UINT,UINT){return std::array<std::uint16_t,2>{32768,32768};});
         fill<std::array<unsigned char,4>>(2,[](UINT,UINT){return std::array<unsigned char,4>{64,16,0,0};});
         fill<float>(3,[](UINT,UINT){return .5f;});
+        fill<unsigned char>(5,[](UINT,UINT){return 0;});
         fill<std::array<std::uint16_t,2>>(4,[](UINT,UINT){return std::array<std::uint16_t,2>{0,0};});
     }
     std::vector<std::byte> read(Texture& t){
@@ -62,17 +63,17 @@ struct Fixture {
         ComPtr<ID3D11Texture2D> staging;check(device->CreateTexture2D(&d,nullptr,&staging),"staging");context->CopyResource(staging.Get(),t.texture.Get());D3D11_MAPPED_SUBRESOURCE m{};check(context->Map(staging.Get(),0,D3D11_MAP_READ,0,&m),"read texture");
         std::vector<std::byte> result(Width*Height*t.bytes);for(UINT y=0;y<Height;y++)std::memcpy(result.data()+y*Width*t.bytes,static_cast<const std::byte*>(m.pData)+y*m.RowPitch,Width*t.bytes);context->Unmap(staging.Get(),0);return result;
     }
-    std::array<UINT,sm::kCounterCount> take(bool material=true,D3D11_VIEWPORT vp={0,0,float(Width),float(Height),0,1},bool reset=true){
+    std::array<UINT,sm::kCounterCount> take(bool material=true,D3D11_VIEWPORT vp={0,0,float(Width),float(Height),0,1},bool reset=true,bool classes=true){
         context->ClearState();auto& runtime=sm::Runtime::get();if(reset)runtime.resetWorld();runtime.beginFrame();
         const auto beforeSubmitted=runtime.snapshot().submitted,beforeCompleted=runtime.snapshot().completed;
-        std::array<std::vector<std::byte>,5> before;for(UINT i=0;i<5;i++)before[i]=read(textures[i]);
+        std::array<std::vector<std::byte>,6> before;for(UINT i=0;i<6;i++)before[i]=read(textures[i]);
         context->UpdateSubresource(cameraBuffer.Get(),0,nullptr,camera.data(),0,0);context->RSSetViewports(1,&vp);
-        if(material){ID3D11RenderTargetView* targets[]{textures[1].target.Get(),textures[4].target.Get()};context->OMSetRenderTargets(2,targets,nullptr);runtime.observeDraw(context.Get(),true,false);context->OMSetRenderTargets(0,nullptr,nullptr);}
-        std::array<ID3D11ShaderResourceView*,5> views{};for(UINT i=0;i<5;i++)views[i]=textures[i].view.Get();context->PSSetShaderResources(0,4,views.data());
+        if(material){ID3D11RenderTargetView* targets[]{textures[1].target.Get(),textures[4].target.Get(),nullptr,nullptr,nullptr,nullptr,classes?textures[5].target.Get():nullptr};context->OMSetRenderTargets(7,targets,nullptr);runtime.observeDraw(context.Get(),true,false);context->OMSetRenderTargets(0,nullptr,nullptr);}
+        std::array<ID3D11ShaderResourceView*,6> views{};for(UINT i=0;i<6;i++)views[i]=textures[i].view.Get();context->PSSetShaderResources(0,4,views.data());
         auto* cb=stereoBuffer.Get();context->PSSetConstantBuffers(8,1,&cb);
         cb=cameraBuffer.Get();UINT first=16,count=64;extended->PSSetConstantBuffers1(12,1,&cb,&first,&count);
         UINT oldFirst=32,oldCount=16;extended->CSSetConstantBuffers1(0,1,&cb,&oldFirst,&oldCount);extended->CSSetConstantBuffers1(12,1,&cb,&oldFirst,&oldCount);extended->CSSetConstantBuffers1(8,1,&cb,&oldFirst,&oldCount);
-        context->CSSetShader(compute.Get(),nullptr,0);context->CSSetShaderResources(0,5,views.data());auto* out=sentinelView.Get();context->CSSetUnorderedAccessViews(0,1,&out,nullptr);
+        context->CSSetShader(compute.Get(),nullptr,0);context->CSSetShaderResources(0,6,views.data());auto* out=sentinelView.Get();context->CSSetUnorderedAccessViews(0,1,&out,nullptr);
         const std::array<UINT,sm::kCounterCount> sentinelData{123,456,789};context->UpdateSubresource(sentinel.Get(),0,nullptr,sentinelData.data(),0,0);
         context->Begin(predicate.Get());context->End(predicate.Get());context->SetPredication(predicate.Get(),TRUE);
         runtime.observeDraw(context.Get(),false,true);require(runtime.snapshot().submitted==beforeSubmitted+1,"qualified native ambient sample missing");
@@ -82,12 +83,12 @@ struct Fixture {
         for(UINT slot:{0,8,12}){ComPtr<ID3D11Buffer> buffer;UINT f{},n{};extended->CSGetConstantBuffers1(slot,1,&buffer,&f,&n);require(buffer==cameraBuffer&&f==32&&n==16,"CS constant window restore");}
         {ComPtr<ID3D11Buffer> buffer;UINT f{},n{};extended->PSGetConstantBuffers1(12,1,&buffer,&f,&n);require(buffer==cameraBuffer&&f==16&&n==64,"PS camera unchanged");}
         ComPtr<ID3D11UnorderedAccessView> restoredOutput;context->CSGetUnorderedAccessViews(0,1,&restoredOutput);require(restoredOutput==sentinelView,"caller UAV restore");
-        for(UINT i=0;i<5;i++){ComPtr<ID3D11ShaderResourceView> restoredView;context->CSGetShaderResources(i,1,&restoredView);require(restoredView.Get()==views[i],"CS input restore");if(i<4){context->PSGetShaderResources(i,1,restoredView.ReleaseAndGetAddressOf());require(restoredView.Get()==views[i],"PS input unchanged");}}
+        for(UINT i=0;i<6;i++){ComPtr<ID3D11ShaderResourceView> restoredView;context->CSGetShaderResources(i,1,&restoredView);require(restoredView.Get()==views[i],"CS input restore");if(i<4){context->PSGetShaderResources(i,1,restoredView.ReleaseAndGetAddressOf());require(restoredView.Get()==views[i],"PS input unchanged");}}
         context->SetPredication(nullptr,FALSE);
         // Only the offline test flushes/waits. Runtime readback is DONOTFLUSH/DO_NOT_WAIT.
         context->Flush();const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(5);
         while(runtime.snapshot().completed==beforeCompleted){runtime.beginFrame();require(std::chrono::steady_clock::now()<deadline,"readback timeout");std::this_thread::sleep_for(std::chrono::milliseconds(1));}
-        for(UINT i=0;i<5;i++)require(before[i]==read(textures[i]),"measurement modified a native scene texture");
+        for(UINT i=0;i<6;i++)require(before[i]==read(textures[i]),"measurement modified a native scene texture");
         D3D11_BUFFER_DESC bd{};sentinel->GetDesc(&bd);bd.Usage=D3D11_USAGE_STAGING;bd.CPUAccessFlags=D3D11_CPU_ACCESS_READ;bd.BindFlags=0;ComPtr<ID3D11Buffer> copy;
         check(device->CreateBuffer(&bd,nullptr,&copy),"sentinel staging");context->CopyResource(copy.Get(),sentinel.Get());D3D11_MAPPED_SUBRESOURCE map{};check(context->Map(copy.Get(),0,D3D11_MAP_READ,0,&map),"sentinel read");require(std::memcmp(map.pData,sentinelData.data(),sizeof(sentinelData))==0,"measurement wrote caller UAV");context->Unmap(copy.Get(),0);
         return runtime.snapshot().last;
@@ -96,6 +97,18 @@ struct Fixture {
 };
 void run(D3D_DRIVER_TYPE driver){
     Fixture f(driver);f.baseline();auto v=f.take();require(v[sm::Samples]==256&&v[sm::GeometryMatch]>200&&v[sm::AllWithMotion]==v[sm::GeometryMatch],"matching stereo plane/camera window");
+    require(v[sm::kClassBase+sm::ClassSamples]==v[sm::Samples]&&v[sm::kClassBase+sm::ClassAll]==v[sm::AllWithMotion],"ordinary-or-untagged class accounting");
+    for(UINT cls=1;cls<5;cls++){
+        f.baseline();f.fill<unsigned char>(5,[&](UINT,UINT){return static_cast<unsigned char>(cls);});v=f.take();
+        const UINT b=sm::kClassBase+cls*sm::kClassStride;
+        require(v[b]==v[sm::Samples]&&v[b+sm::ClassAll]==v[sm::AllWithMotion],"class-specific agreement accounting");
+        f.fill<unsigned char>(5,[&](UINT x,UINT){return static_cast<unsigned char>(x<64?0:cls);});v=f.take();
+        require(v[b+sm::ClassMismatch]==v[sm::GeometryMatch]&&v[b+sm::ClassAll]==0&&v[sm::AllWithMotion]>200,"cross-eye class mismatch excludes class candidates");
+    }
+    f.baseline();v=f.take(true,{0,0,128,64,0,1},false,false);
+    require(v[sm::kClassBase+5*sm::kClassStride]==256&&v[sm::kClassBase+5*sm::kClassStride+sm::ClassAll]==0,"cached class from previous frame is not reused when MRT6 is absent");
+    f.baseline();f.fill<unsigned char>(5,[](UINT,UINT){return 255;});v=f.take();
+    require(v[sm::kClassBase+5*sm::kClassStride]==256,"invalid class does not become ordinary");
     f.baseline();f.fill<float>(3,[](UINT x,UINT){return x<64?.2f:.5f;});v=f.take();require(v[sm::DepthMismatch]>200&&v[sm::GeometryMatch]==0,"disocclusion rejected");
     f.baseline();f.fill<std::array<std::uint16_t,2>>(1,[](UINT x,UINT){return std::array<std::uint16_t,2>{std::uint16_t(x<64?49151:32768),32768};});v=f.take();require(v[sm::GeometryMatch]>200&&v[sm::NormalMatch]==0&&v[sm::AllMaterialMatch]==0,"normal error distinguished from depth match");
     f.baseline();f.fill<std::array<unsigned char,4>>(0,[](UINT x,UINT){return std::array<unsigned char,4>{static_cast<unsigned char>(x<64?255:128),64,32,255};});v=f.take();require(v[sm::AlbedoMatch]==0&&v[sm::AllMaterialMatch]==0,"albedo mismatch measured");
@@ -112,6 +125,16 @@ void run(D3D_DRIVER_TYPE driver){
     UINT skyCount=0;for(UINT phase=0;phase<16;phase++){v=f.take(true,{0,0,128,64,0,1},phase==0);skyCount+=v[sm::Sky];}
     require(skyCount==1,"rotating sample phases visit a thin feature exactly once");
     f.baseline();const std::array<float,4> mono{};f.context->UpdateSubresource(f.stereoBuffer.Get(),0,nullptr,mono.data(),0,0);v=f.take();require(v[sm::NonStereo]==256&&v[sm::GeometryMatch]==0,"mono view is not stereo evidence");
+    f.baseline();auto& timingRuntime=sm::Runtime::get();timingRuntime.resetWorld();
+    for(UINT i=0;i<4;i++)timingRuntime.beginFrame();
+    D3D11_VIEWPORT drawViewport{0,0,128,64,0,1};f.context->RSSetViewports(1,&drawViewport);
+    ID3D11RenderTargetView* drawTargets[]{f.textures[1].target.Get(),f.textures[4].target.Get()};f.context->OMSetRenderTargets(2,drawTargets,nullptr);
+    timingRuntime.observeDraw(f.context.Get(),true,false);
+    UINT timed=0;for(UINT i=0;i<2048;i++){auto scope=timingRuntime.timeMaterialDraw(f.context.Get(),true,i%5);if(scope)++timed;}
+    require(timed==8,"native draw timing is bounded to eight samples per selected frame");
+    {auto scope=timingRuntime.timeMaterialDraw(f.context.Get(),false,0);require(!scope,"non-material calls are not attributed");}
+    f.context->OMSetRenderTargets(0,nullptr,nullptr);f.context->Flush();
+    for(UINT i=0;i<10;i++){timingRuntime.beginFrame();std::this_thread::sleep_for(std::chrono::milliseconds(2));}
     auto& runtime=sm::Runtime::get();runtime.setEnabled(false);runtime.beginFrame();runtime.observeDraw(f.context.Get(),true,false);runtime.observeDraw(f.context.Get(),false,true);require(runtime.snapshot().submitted==0,"off leaves measurement idle");
     f.validate();std::cout<<(driver==D3D_DRIVER_TYPE_WARP?"WARP":"Hardware")<<": stereo agreement, rejection, motion error, viewport, no scene writes and complete state restoration passed\n";
 }

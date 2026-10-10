@@ -2481,13 +2481,20 @@ namespace csah::render
             ID3D11DeviceContext* context,
             Draw&& draw) noexcept
         {
+            const auto measuredDraw = [&](bool authored) noexcept {
+                auto timing = diagnostics::stereo_measurement::Runtime::get().timeMaterialDraw(
+                    context, activeReplacementBinding.family == linear_lighting::ReplacementShaderFamily::material &&
+                        !cloud_shadows::Runtime::internalRenderActive() && !volumetric_lighting::Runtime::internalRenderActive(),
+                    activeSurfaceClassCode, authored);
+                draw();
+            };
             auto* baseTexture = std::exchange(
                 activeAuthoredPbrBaseTexture,
                 nullptr);
             if (!originalPSSetShader ||
                 activeReplacementBinding.family !=
                     linear_lighting::ReplacementShaderFamily::material) {
-                draw();
+                measuredDraw(false);
                 return;
             }
             auto bindings = pbr::Runtime::get().scopeAuthoredMaterialDraw(
@@ -2496,7 +2503,7 @@ namespace csah::render
                 activeSurfaceClassCode,
                 baseTexture);
             if (!bindings.active()) {
-                draw();
+                measuredDraw(false);
                 return;
             }
             originalPSSetShader(
@@ -2504,7 +2511,7 @@ namespace csah::render
                 bindings.authoredShader(),
                 nullptr,
                 0);
-            draw();
+            measuredDraw(true);
             originalPSSetShader(
                 context,
                 bindings.previousShader(),

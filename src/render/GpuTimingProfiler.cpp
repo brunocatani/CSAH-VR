@@ -407,7 +407,7 @@ namespace csah::render
                 name_, ordered[0], ordered[count / 2], ordered[p95], ordered[count - 1], count);
             if (segmentCount_ == 1) {
                 spdlog::info(
-                    "Feature timing {}: GPU {}={:.3f} ms, total={:.3f} ms over {} samples; CPU submit={:.3f} ms over {} calls. Timestamp queries use DONOTFLUSH.",
+                    "Feature timing {}: GPU {}={:.6f} ms, total={:.6f} ms over {} samples; CPU submit={:.6f} ms over {} calls. Timestamp queries use DONOTFLUSH.",
                     name_, labels_[0], average[0], total, completedSamples_,
                     cpuAverage, completedCpuSamples_);
             } else if (segmentCount_ == 2) {
