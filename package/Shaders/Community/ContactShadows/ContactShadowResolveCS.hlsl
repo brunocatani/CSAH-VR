@@ -17,7 +17,7 @@ cbuffer NativeStereo : register(b8)
 
 cbuffer NativeCamera : register(b12)
 {
-    float4 Camera[51];
+    float4 Camera[61];
 };
 
 cbuffer ContactShadowSettings : register(b13)
@@ -55,29 +55,8 @@ float3 ReconstructViewPosition(float2 packedUv, float depth, uint eye)
     return homogeneous.xyz / max(abs(homogeneous.w), 1.0e-7f);
 }
 
-float CloudVisibility(float3 relativeWorldPosition, float3 towardLight)
-{
-    if (CloudParams.x <= 0.5f) {
-        return 1.0f;
-    }
-    const float cloudHeight = max(CloudParams.z, 1.0f);
-    const float planetRadius = max(CloudParams.w, cloudHeight);
-    const float shellRadius = planetRadius + cloudHeight;
-    const float3 p =
-        (relativeWorldPosition + float3(0.0f, 0.0f, planetRadius)) /
-        shellRadius;
-    const float projected = dot(p, towardLight);
-    const float discriminant = max(
-        projected * projected - dot(p, p) + 1.0f,
-        0.0f);
-    const float travel = -projected + sqrt(discriminant);
-    const float3 sampleDirection =
-        (p + towardLight * travel) * shellRadius -
-        float3(0.0f, 0.0f, planetRadius);
-    const float cloud = CloudOcclusion.SampleLevel(
-        CloudSampler, sampleDirection, 0.0f);
-    return saturate(1.0f - cloud * saturate(CloudParams.y));
-}
+Buffer<float4> CloudField : register(t4);
+#include "../CloudShadows/CloudProjection.hlsli"
 
 [numthreads(8, 8, 1)]
 void CSMain(uint3 dispatchThread : SV_DispatchThreadID)
@@ -104,7 +83,9 @@ void CSMain(uint3 dispatchThread : SV_DispatchThreadID)
         centerDepth,
         eye);
     const float3 towardLight = normalize(DFLight[eye + 1u].xyz);
-    const float cloudVisibility = CloudVisibility(surface, towardLight);
+    const float3 receiver = CloudWorldVector(surface) + Camera[59u + eye].xyz;
+    const float cloudVisibility = CloudParams.x > 0.5f && centerDepth > 0.01f && centerDepth < 1.0f ?
+        CapturedCloudVisibility(receiver, towardLight, CloudParams.y, CloudParams.z, CloudParams.w) : 1.0f;
 
     float2 contactVisibility = 1.0f.xx;
     const bool contactEnabled =

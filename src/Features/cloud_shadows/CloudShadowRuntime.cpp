@@ -1,393 +1,239 @@
 #include "Features/cloud_shadows/CloudShadowRuntime.h"
-
+#include "CloudGeometryCapture.h"
+#include "CloudFieldUpdate.h"
+#include "render/ComputeStateScope.h"
 #include "support/Logger.h"
-
-#include <algorithm>
-#include <iterator>
+#include <d3dcompiler.h>
 
 namespace csah::cloud_shadows
 {
     namespace
     {
-        constexpr std::uint32_t kAllCubeFaces = (1u << 6u) - 1u;
-
+        constexpr unsigned kAllCubeFaces = 0x1f;
+        constexpr unsigned kCubeSize = 256;
+        thread_local bool internalRender{};
+        struct InternalScope {
+            bool previous{internalRender};
+            InternalScope() { internalRender = true; }
+            ~InternalScope() { internalRender = previous; }
+        };
     }
-
-    ScopedCloudCapture::ScopedCloudCapture(
-        Runtime* owner,
-        ID3D11DeviceContext* context,
-        std::uint32_t face,
-        ID3D11RenderTargetView* cloudTarget,
-        ID3D11BlendState* captureBlend) noexcept :
-        owner_(owner), context_(context), face_(face)
+    Runtime& Runtime::get() noexcept { static Runtime value; return value; }
+    bool Runtime::internalRenderActive() noexcept { return internalRender; }
+    bool Runtime::requested() const noexcept
     {
-        if (!owner_ || !context_ || !cloudTarget || !captureBlend) {
-            owner_ = nullptr;
-            context_ = nullptr;
-            return;
-        }
-        std::array<ID3D11RenderTargetView*, 8> rawTargets{};
-        ID3D11DepthStencilView* rawDepth{};
-        context_->OMGetRenderTargets(
-            static_cast<UINT>(rawTargets.size()), rawTargets.data(), &rawDepth);
-        for (std::size_t index = 0; index < rawTargets.size(); ++index) {
-            previousTargets_[index].Attach(rawTargets[index]);
-        }
-        previousDepth_.Attach(rawDepth);
-
-        ID3D11BlendState* rawBlend{};
-        context_->OMGetBlendState(
-            &rawBlend, previousBlendFactor_.data(), &previousSampleMask_);
-        previousBlend_.Attach(rawBlend);
-
-        rawTargets[3] = cloudTarget;
-        context_->OMSetRenderTargets(
-            static_cast<UINT>(rawTargets.size()),
-            rawTargets.data(),
-            previousDepth_.Get());
-        context_->OMSetBlendState(
-            captureBlend, previousBlendFactor_.data(), previousSampleMask_);
+        return enabled_.load(std::memory_order_acquire) && resourcesReady_.load(std::memory_order_acquire);
     }
-
-    ScopedCloudCapture::~ScopedCloudCapture() noexcept
-    {
-        if (!context_ || !owner_) {
-            return;
-        }
-        std::array<ID3D11RenderTargetView*, 8> rawTargets{};
-        for (std::size_t index = 0; index < rawTargets.size(); ++index) {
-            rawTargets[index] = previousTargets_[index].Get();
-        }
-        context_->OMSetRenderTargets(
-            static_cast<UINT>(rawTargets.size()),
-            rawTargets.data(),
-            previousDepth_.Get());
-        context_->OMSetBlendState(
-            previousBlend_.Get(),
-            previousBlendFactor_.data(),
-            previousSampleMask_);
-        owner_->markFaceRendered(face_);
-        owner_->restores_.fetch_add(1, std::memory_order_relaxed);
-    }
-
-    Runtime& Runtime::get() noexcept
-    {
-        static Runtime instance;
-        return instance;
-    }
-
-    void Runtime::onDeviceCreated(
-        ID3D11Device* device,
-        ID3D11DeviceContext* context) noexcept
-    {
-        resourcesReady_.store(false, std::memory_order_release);
-        device_ = device;
-        context_ = context;
-        cloudCube_.Reset();
-        cloudView_.Reset();
-        for (auto& target : cloudTargets_) {
-            target.Reset();
-        }
-        sampler_.Reset();
-        sourceBlend_.Reset();
-        captureBlend_.Reset();
-        cubeSize_ = 0;
-        populatedFaces_.store(0, std::memory_order_relaxed);
-        lastFace_ = 6;
-        firstCaptureLogged_.store(false, std::memory_order_relaxed);
-        firstCaptureRejectLogged_.store(false, std::memory_order_relaxed);
-        firstCubeReadyLogged_.store(false, std::memory_order_relaxed);
-        firstLightingBindLogged_.store(false, std::memory_order_relaxed);
-        firstLightingRejectLogged_.store(false, std::memory_order_relaxed);
-        if (!device || !context) {
-            failures_.fetch_add(1, std::memory_order_relaxed);
-            return;
-        }
-
-        D3D11_SAMPLER_DESC samplerDescription{};
-        samplerDescription.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
-        samplerDescription.AddressU = D3D11_TEXTURE_ADDRESS_CLAMP;
-        samplerDescription.AddressV = D3D11_TEXTURE_ADDRESS_CLAMP;
-        samplerDescription.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
-        samplerDescription.MaxLOD = D3D11_FLOAT32_MAX;
-        const auto samplerResult = device->CreateSamplerState(
-            &samplerDescription, sampler_.ReleaseAndGetAddressOf());
-        if (FAILED(samplerResult) || !sampler_) {
-            failures_.fetch_add(1, std::memory_order_relaxed);
-            logging::error(
-                "Cloud Shadows sampler creation failed (HRESULT=0x{:08X}).",
-                static_cast<std::uint32_t>(samplerResult));
-            return;
-        }
-        resourcesReady_.store(true, std::memory_order_release);
-        logging::info(
-            "Cloud Shadows private cube capture ready; Sky descriptors 4/5/6 are armed without an engine vtable hook.");
-    }
-
     void Runtime::applySettings(const Settings& settings) noexcept
     {
         const auto safe = sanitize(settings);
-        enabled_.store(safe.enabled, std::memory_order_release);
+        const auto old = enabled_.exchange(safe.enabled, std::memory_order_acq_rel);
         opacity_.store(safe.opacity, std::memory_order_relaxed);
-        settingsRevision_.fetch_add(1, std::memory_order_release);
+        if (old != safe.enabled) resetWorld();
     }
-
-    bool Runtime::requested() const noexcept
+    void Runtime::resetWorld() noexcept { epoch_.fetch_add(1, std::memory_order_release); }
+    void Runtime::synchronizeReset() noexcept
     {
-        return enabled_.load(std::memory_order_acquire) &&
-            resourcesReady_.load(std::memory_order_acquire);
-    }
-
-    bool Runtime::ensureCaptureResources(
-        const D3D11_TEXTURE2D_DESC& source) noexcept
-    {
-        if (!device_ || source.Width == 0 || source.Width != source.Height ||
-            source.ArraySize < 6 || source.SampleDesc.Count != 1 ||
-            (source.MiscFlags & D3D11_RESOURCE_MISC_TEXTURECUBE) == 0) {
-            return false;
-        }
-        if (cloudCube_ && cloudView_ && cubeSize_ == source.Width) {
-            return true;
-        }
-
-        D3D11_TEXTURE2D_DESC description{};
-        description.Width = source.Width;
-        description.Height = source.Height;
-        description.MipLevels = 1;
-        description.ArraySize = 6;
-        description.Format = DXGI_FORMAT_R8_UNORM;
-        description.SampleDesc.Count = 1;
-        description.Usage = D3D11_USAGE_DEFAULT;
-        description.BindFlags =
-            D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
-        description.MiscFlags = D3D11_RESOURCE_MISC_TEXTURECUBE;
-
-        Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
-        Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> view;
-        std::array<Microsoft::WRL::ComPtr<ID3D11RenderTargetView>, 6> targets;
-        auto result = device_->CreateTexture2D(
-            &description, nullptr, texture.GetAddressOf());
-        D3D11_SHADER_RESOURCE_VIEW_DESC viewDescription{};
-        viewDescription.Format = description.Format;
-        viewDescription.ViewDimension = D3D11_SRV_DIMENSION_TEXTURECUBE;
-        viewDescription.TextureCube.MostDetailedMip = 0;
-        viewDescription.TextureCube.MipLevels = 1;
-        result = SUCCEEDED(result) ? device_->CreateShaderResourceView(
-            texture.Get(), &viewDescription, view.GetAddressOf()) : result;
-        for (std::uint32_t face = 0; SUCCEEDED(result) && face < 6; ++face) {
-            D3D11_RENDER_TARGET_VIEW_DESC targetDescription{};
-            targetDescription.Format = description.Format;
-            targetDescription.ViewDimension =
-                D3D11_RTV_DIMENSION_TEXTURE2DARRAY;
-            targetDescription.Texture2DArray.MipSlice = 0;
-            targetDescription.Texture2DArray.FirstArraySlice = face;
-            targetDescription.Texture2DArray.ArraySize = 1;
-            result = device_->CreateRenderTargetView(
-                texture.Get(),
-                &targetDescription,
-                targets[face].GetAddressOf());
-        }
-        if (FAILED(result) || !texture || !view ||
-            std::ranges::any_of(targets, [](const auto& target) {
-                return !target;
-            })) {
-            failures_.fetch_add(1, std::memory_order_relaxed);
-            logging::error(
-                "Cloud Shadows cube allocation failed for {}x{} (HRESULT=0x{:08X}).",
-                source.Width, source.Height,
-                static_cast<std::uint32_t>(result));
-            return false;
-        }
-        cloudCube_ = std::move(texture);
-        cloudView_ = std::move(view);
-        cloudTargets_ = std::move(targets);
-        cubeSize_ = source.Width;
+        const auto epoch = epoch_.load(std::memory_order_acquire);
+        if (observedEpoch_ == epoch) return;
+        observedEpoch_ = epoch;
+        captureStarted_ = captureRejected_ = false;
         populatedFaces_.store(0, std::memory_order_relaxed);
-        lastFace_ = 6;
+        mainTarget_.Reset();
+        fieldReset_ = true;
+        fieldFrame_ = ~0ull;
+    }
+    void Runtime::beginFrame() noexcept
+    {
+        synchronizeReset();
+        // Sky follows deferred lighting. Publish only the completed preceding
+        // frame, never a cube still receiving layers. A cloudless frame withdraws it.
+        const bool complete = requested() && captureStarted_ && !captureRejected_;
+        if (complete) std::swap(readIndex_, writeIndex_);
+        populatedFaces_.store(complete ? kAllCubeFaces : 0, std::memory_order_relaxed);
+        captureStarted_ = captureRejected_ = false;
+        mainTarget_.Reset();
+        ++frame_;
+        if (retryFrames_) --retryFrames_;
+    }
+    void Runtime::onDeviceCreated(ID3D11Device* device, ID3D11DeviceContext* context) noexcept
+    {
+        resourcesReady_.store(false, std::memory_order_release);
+        device_ = device; context_ = context;
+        cubes_ = {}; sampler_.Reset(); field_.Reset(); fieldParameters_.Reset();
+        fieldView_.Reset(); fieldOutput_.Reset(); fieldUpdate_.Reset();
+        geometry::ReleaseDeviceResources();
+        resetWorld(); synchronizeReset();
+        startTick_ = GetTickCount64(); retryFrames_ = 0;
+        if (!device || !context) return;
+        D3D11_SAMPLER_DESC desc{};
+        desc.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+        desc.AddressU = desc.AddressV = desc.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
+        desc.MaxLOD = D3D11_FLOAT32_MAX;
+        if (FAILED(device->CreateSamplerState(&desc, &sampler_))) {
+            failures_.fetch_add(1, std::memory_order_relaxed); return;
+        }
+        resourcesReady_.store(true, std::memory_order_release);
+        logging::info("Cloud Shadows main-Sky geometry replay ready; native reflection captures are not required.");
+    }
+    void Runtime::observeMainView(ID3D11DeviceContext* context) noexcept
+    {
+        if (!requested() || context != context_.Get()) return;
+        synchronizeReset();
+        // Called only for the bytecode-authenticated native DFComposite draw.
+        // Its output is the main/main-temp resource subsequently used by Sky.
+        Ptr<ID3D11RenderTargetView> target;
+        context->OMGetRenderTargets(1, &target, nullptr);
+        if (!target) return;
+        D3D11_RENDER_TARGET_VIEW_DESC vd{}; target->GetDesc(&vd);
+        if (vd.ViewDimension != D3D11_RTV_DIMENSION_TEXTURE2D || vd.Texture2D.MipSlice != 0) return;
+        target->GetResource(mainTarget_.ReleaseAndGetAddressOf());
+    }
+    bool Runtime::ensureCaptureResources() noexcept
+    {
+        if (cubes_[0].view && cubes_[1].view && fieldUpdate_) return true;
+        if (retryFrames_) return false;
+        retryFrames_ = 60;
+        InternalScope internal;
+        const auto fail = [this]() {
+            failures_.fetch_add(1, std::memory_order_relaxed);
+            logging::error("Cloud Shadows resource creation failed; capture withdrawn, retry in 60 render frames.");
+            return false;
+        };
+        std::array<Cube,2> next;
+        D3D11_TEXTURE2D_DESC td{};
+        td.Width = td.Height = kCubeSize; td.ArraySize = 6; td.MipLevels = 1;
+        td.Format = DXGI_FORMAT_R16_FLOAT; td.SampleDesc.Count = 1;
+        td.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+        td.MiscFlags = D3D11_RESOURCE_MISC_TEXTURECUBE;
+        for (auto& cube : next) {
+            if (FAILED(device_->CreateTexture2D(&td, nullptr, &cube.texture)) ||
+                FAILED(device_->CreateShaderResourceView(cube.texture.Get(), nullptr, &cube.view))) return fail();
+            for (unsigned face = 0; face < 6; ++face) {
+                D3D11_RENDER_TARGET_VIEW_DESC vd{}; vd.Format = td.Format;
+                vd.ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2DARRAY;
+                vd.Texture2DArray.ArraySize = 1; vd.Texture2DArray.FirstArraySlice = face;
+                if (FAILED(device_->CreateRenderTargetView(cube.texture.Get(), &vd, &cube.targets[face]))) return fail();
+            }
+        }
+        Ptr<ID3DBlob> code, errors;
+        auto result = D3DCompile(kCloudFieldUpdate, sizeof(kCloudFieldUpdate)-1, "CloudFieldUpdate",
+            nullptr, nullptr, "main", "cs_5_0", D3DCOMPILE_OPTIMIZATION_LEVEL3, 0, &code, &errors);
+        if (FAILED(result)) {
+            logging::error("Cloud field shader: {}", errors ? static_cast<char*>(errors->GetBufferPointer()) : "compile failed");
+            return fail();
+        }
+        if (FAILED(device_->CreateComputeShader(code->GetBufferPointer(), code->GetBufferSize(), nullptr,
+                fieldUpdate_.ReleaseAndGetAddressOf()))) return fail();
+        D3D11_BUFFER_DESC bd{}; bd.ByteWidth = 48;
+        bd.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_UNORDERED_ACCESS;
+        if (FAILED(device_->CreateBuffer(&bd, nullptr, field_.ReleaseAndGetAddressOf()))) return fail();
+        D3D11_SHADER_RESOURCE_VIEW_DESC sd{}; sd.Format = DXGI_FORMAT_R32G32B32A32_FLOAT;
+        sd.ViewDimension = D3D11_SRV_DIMENSION_BUFFER; sd.Buffer.NumElements = 3;
+        D3D11_UNORDERED_ACCESS_VIEW_DESC ud{}; ud.Format = sd.Format;
+        ud.ViewDimension = D3D11_UAV_DIMENSION_BUFFER; ud.Buffer.NumElements = 3;
+        if (FAILED(device_->CreateShaderResourceView(field_.Get(), &sd, fieldView_.ReleaseAndGetAddressOf())) ||
+            FAILED(device_->CreateUnorderedAccessView(field_.Get(), &ud, fieldOutput_.ReleaseAndGetAddressOf()))) return fail();
+        bd.ByteWidth = 16; bd.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+        if (FAILED(device_->CreateBuffer(&bd, nullptr, fieldParameters_.ReleaseAndGetAddressOf()))) return fail();
+        cubes_ = std::move(next); retryFrames_ = 0; fieldReset_ = true;
         cubeRebuilds_.fetch_add(1, std::memory_order_relaxed);
         return true;
     }
-
-    bool Runtime::ensureCaptureBlend(ID3D11BlendState* source) noexcept
+    void Runtime::capture(ID3D11DeviceContext* context,
+        linear_lighting::ReplacementShaderBinding binding, void (*submit)(void*), void* user) noexcept
     {
-        if (!device_) {
-            return false;
-        }
-        if (captureBlend_ && sourceBlend_.Get() == source) {
-            return true;
-        }
-        D3D11_BLEND_DESC description{};
-        if (source) {
-            source->GetDesc(&description);
-            if (!description.IndependentBlendEnable) {
-                for (std::size_t index = 1;
-                     index < std::size(description.RenderTarget); ++index) {
-                    description.RenderTarget[index] = description.RenderTarget[0];
-                }
-            }
-        } else {
-            for (auto& target : description.RenderTarget) {
-                target.RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
-            }
-        }
-        description.IndependentBlendEnable = TRUE;
-        auto& cloud = description.RenderTarget[3];
-        cloud.BlendEnable = TRUE;
-        cloud.SrcBlend = D3D11_BLEND_SRC_ALPHA;
-        cloud.DestBlend = D3D11_BLEND_INV_SRC_ALPHA;
-        cloud.BlendOp = D3D11_BLEND_OP_ADD;
-        cloud.SrcBlendAlpha = D3D11_BLEND_SRC_ALPHA;
-        cloud.DestBlendAlpha = D3D11_BLEND_INV_SRC_ALPHA;
-        cloud.BlendOpAlpha = D3D11_BLEND_OP_ADD;
-        cloud.RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_RED;
-
-        Microsoft::WRL::ComPtr<ID3D11BlendState> next;
-        const auto result = device_->CreateBlendState(
-            &description, next.GetAddressOf());
-        if (FAILED(result) || !next) {
-            failures_.fetch_add(1, std::memory_order_relaxed);
-            return false;
-        }
-        sourceBlend_ = source;
-        captureBlend_ = std::move(next);
-        return true;
-    }
-
-    ScopedCloudCapture Runtime::scopeCapture(
-        ID3D11DeviceContext* context,
-        linear_lighting::ReplacementShaderBinding binding) noexcept
-    {
-        if (!requested() || !context || context != context_.Get() ||
-            binding.family !=
-                linear_lighting::ReplacementShaderFamily::sky ||
-            binding.contractPlusOne < 5 || binding.contractPlusOne > 7) {
-            return {};
-        }
-        // Sky contract N stores descriptor N-1. Contracts 5-7 therefore map
-        // exactly to the Clouds, CloudsLerp, and CloudsFade descriptors 4-6.
+        if (!requested() || context != context_.Get() ||
+            binding.family != linear_lighting::ReplacementShaderFamily::sky ||
+            binding.contractPlusOne < 5 || binding.contractPlusOne > 7) return;
+        // Contracts 5-7 therefore map to Clouds, CloudsLerp, and CloudsFade descriptors 4-6.
+        synchronizeReset();
+        if (!mainTarget_ || captureRejected_) return;
+        Ptr<ID3D11RenderTargetView> target; context->OMGetRenderTargets(1, &target, nullptr);
+        Ptr<ID3D11Resource> resource;
+        if (target) target->GetResource(&resource);
+        if (resource.Get() != mainTarget_.Get()) return;
+        Ptr<ID3D11Texture2D> texture;
+        if (FAILED(resource.As(&texture))) return;
+        D3D11_TEXTURE2D_DESC td{}; texture->GetDesc(&td);
+        std::array<D3D11_VIEWPORT,16> viewports{}; UINT count = 16;
+        context->RSGetViewports(&count, viewports.data());
+        const auto& vp = viewports[0];
+        if (count != 1 || (td.Width & 1) || vp.TopLeftX != 0 || vp.TopLeftY != 0 ||
+            vp.Width != float(td.Width) || vp.Height != float(td.Height)) return;
         captureCandidates_.fetch_add(1, std::memory_order_relaxed);
-        const auto reject = [this](const char* reason) noexcept {
+        if (!ensureCaptureResources()) { captureRejected_ = true; populatedFaces_ = 0; return; }
+        InternalScope internal;
+        auto& cube = cubes_[writeIndex_];
+        if (!captureStarted_) {
+            const float clear[4]{};
+            Ptr<ID3D11Predicate> predicate; BOOL predicateValue{};
+            context->GetPredication(&predicate, &predicateValue);
+            context->SetPredication(nullptr, FALSE);
+            for (auto& face : cube.targets) context->ClearRenderTargetView(face.Get(), clear);
+            context->SetPredication(predicate.Get(), predicateValue);
+            captureStarted_ = true;
+        }
+        std::array<ID3D11RenderTargetView*,6> targets{};
+        for (unsigned i = 0; i < 6; ++i) targets[i] = cube.targets[i].Get();
+        geometry::RejectReason reason{};
+        const bool success = geometry::AccumulateOpacity(context, geometry::SkyConstantLayout::kVr,
+            static_cast<geometry::CloudTechnique>(binding.contractPlusOne), kCubeSize, targets,
+            submit, user, &reason);
+        restores_.fetch_add(1, std::memory_order_relaxed);
+        if (!success) {
+            captureRejected_ = true; populatedFaces_ = 0;
             captureRejects_.fetch_add(1, std::memory_order_relaxed);
-            if (!firstCaptureRejectLogged_.exchange(
-                    true, std::memory_order_relaxed)) {
-                logging::warn(
-                    "Cloud Shadows rejected its first qualified Sky capture: {}.",
-                    reason);
-            }
-            return ScopedCloudCapture{};
-        };
-
-        Microsoft::WRL::ComPtr<ID3D11RenderTargetView> target;
-        context->OMGetRenderTargets(1, target.GetAddressOf(), nullptr);
-        if (!target) {
-            return reject("render target 0 is null");
-        }
-        D3D11_RENDER_TARGET_VIEW_DESC targetDescription{};
-        target->GetDesc(&targetDescription);
-        if (targetDescription.ViewDimension !=
-                D3D11_RTV_DIMENSION_TEXTURE2DARRAY ||
-            targetDescription.Texture2DArray.MipSlice != 0 ||
-            targetDescription.Texture2DArray.ArraySize != 1 ||
-            targetDescription.Texture2DArray.FirstArraySlice >= 6) {
-            return reject("render target 0 is not one reflection-cubemap face");
-        }
-        Microsoft::WRL::ComPtr<ID3D11Resource> resource;
-        Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
-        target->GetResource(resource.GetAddressOf());
-        if (!resource || FAILED(resource.As(&texture)) || !texture) {
-            return reject("reflection target resource is not Texture2D");
-        }
-        D3D11_TEXTURE2D_DESC source{};
-        texture->GetDesc(&source);
-        if (!ensureCaptureResources(source)) {
-            return reject("private cloud cube allocation contract failed");
-        }
-
-        Microsoft::WRL::ComPtr<ID3D11BlendState> blend;
-        context->OMGetBlendState(blend.GetAddressOf(), nullptr, nullptr);
-        if (!ensureCaptureBlend(blend.Get())) {
-            return reject("private MRT3 blend-state creation failed");
-        }
-        const auto face = targetDescription.Texture2DArray.FirstArraySlice;
-        if (lastFace_ != face) {
-            constexpr std::array<float, 4> clear{};
-            context->ClearRenderTargetView(
-                cloudTargets_[face].Get(), clear.data());
-            populatedFaces_.fetch_and(
-                ~(1u << face), std::memory_order_relaxed);
-            lastFace_ = face;
+            if (!firstCaptureRejectLogged_.exchange(true))
+                logging::warn("Cloud Shadows main-Sky replay rejected (reason={}); whole frame withdrawn.", unsigned(reason));
+            return;
         }
         capturedDraws_.fetch_add(1, std::memory_order_relaxed);
-        if (!firstCaptureLogged_.exchange(true, std::memory_order_relaxed)) {
-            logging::info(
-                "Cloud Shadows captured its first qualified cloud draw (descriptor={}, face={}, cubeSize={}).",
-                binding.contractPlusOne - 1,
-                face,
-                cubeSize_);
-        }
-        return ScopedCloudCapture(
-            this,
-            context,
-            face,
-            cloudTargets_[face].Get(),
-            captureBlend_.Get());
+        if (!firstCaptureLogged_.exchange(true))
+            logging::info("Cloud Shadows captured live main-Sky opacity into five private faces ({} px, stereo duplicates removed).", kCubeSize);
     }
-
-    void Runtime::markFaceRendered(std::uint32_t face) noexcept
+    bool Runtime::updateField(ID3D11Buffer* camera) noexcept
     {
-        if (face < 6) {
-            const auto populated = populatedFaces_.fetch_or(
-                                       1u << face,
-                                       std::memory_order_relaxed) |
-                (1u << face);
-            if (populated == kAllCubeFaces &&
-                !firstCubeReadyLogged_.exchange(
-                    true, std::memory_order_relaxed)) {
-                logging::info(
-                    "Cloud Shadows populated all six private cubemap faces; directional-light sampling is armed.");
-            }
-        }
-    }
-
-    bool Runtime::prepareLighting(
-        ID3D11DeviceContext* context,
-        ID3D11ShaderResourceView*& cube,
-        ID3D11SamplerState*& sampler,
-        float& opacity) noexcept
-    {
-        cube = nullptr;
-        sampler = nullptr;
-        opacity = 0.0f;
-        const auto populatedFaces =
-            populatedFaces_.load(std::memory_order_relaxed);
-        if (!requested() || !context || context != context_.Get() ||
-            populatedFaces != kAllCubeFaces || !cloudView_ || !sampler_) {
-            lightingRejects_.fetch_add(1, std::memory_order_relaxed);
-            if (!firstLightingRejectLogged_.exchange(
-                    true, std::memory_order_relaxed)) {
-                logging::warn(
-                    "Cloud Shadows rejected its first lighting bind (requested={}, contextMatch={}, faceMask=0x{:02X}, cubeView={}, sampler={}).",
-                    requested(),
-                    context && context == context_.Get(),
-                    populatedFaces,
-                    cloudView_ != nullptr,
-                    sampler_ != nullptr);
-            }
-            return false;
-        }
-        cube = cloudView_.Get();
-        sampler = sampler_.Get();
-        opacity = opacity_.load(std::memory_order_relaxed);
-        lightingBinds_.fetch_add(1, std::memory_order_relaxed);
-        if (!firstLightingBindLogged_.exchange(
-                true, std::memory_order_relaxed)) {
-            logging::info(
-                "Cloud Shadows bound the completed private cube to directional lighting (opacity={:.3f}).",
-                opacity);
-        }
+        if (fieldFrame_ == frame_) return true;
+        if (!camera || !fieldUpdate_) return false;
+        D3D11_BUFFER_DESC bd{}; camera->GetDesc(&bd);
+        if (bd.ByteWidth < 61*16) return false;
+        InternalScope internal;
+        render::ScopedComputeState restore(context_.Get(), {0,0,0,1,0,0,0,13});
+        if (!restore.captured()) return false;
+        const std::array<float,4> params{fieldReset_ ? 1.f : 0.f,
+            float(GetTickCount64()-startTick_)*0.001f,10000.f,4.f};
+        context_->UpdateSubresource(fieldParameters_.Get(),0,nullptr,params.data(),0,0);
+        auto* cb = fieldParameters_.Get(); context_->CSSetConstantBuffers(0,1,&cb);
+        context_->CSSetConstantBuffers(12,1,&camera);
+        auto* output = fieldOutput_.Get(); context_->CSSetUnorderedAccessViews(0,1,&output,nullptr);
+        context_->CSSetShader(fieldUpdate_.Get(),nullptr,0);
+        Ptr<ID3D11Predicate> predicate; BOOL predicateValue{};
+        context_->GetPredication(&predicate, &predicateValue);
+        context_->SetPredication(nullptr, FALSE);
+        context_->Dispatch(1,1,1);
+        context_->SetPredication(predicate.Get(), predicateValue);
+        fieldFrame_ = frame_; fieldReset_ = false;
         return true;
     }
-
+    bool Runtime::prepareLighting(ID3D11DeviceContext* context, ID3D11ShaderResourceView*& cube,
+        ID3D11SamplerState*& sampler, float& opacity, ID3D11Buffer* camera) noexcept
+    {
+        cube = nullptr; sampler = nullptr; opacity = 0;
+        if (!requested() || context != context_.Get()) return false;
+        synchronizeReset();
+        if (populatedFaces_.load(std::memory_order_relaxed) != kAllCubeFaces) {
+            lightingRejects_.fetch_add(1, std::memory_order_relaxed); return false;
+        }
+        Ptr<ID3D11Buffer> nativeCamera;
+        if (!camera) { context->PSGetConstantBuffers(12,1,&nativeCamera); camera = nativeCamera.Get(); }
+        if (!updateField(camera)) return false;
+        cube = cubes_[readIndex_].view.Get(); sampler = sampler_.Get(); opacity = opacity_.load();
+        lightingBinds_.fetch_add(1, std::memory_order_relaxed);
+        if (!firstLightingBindLogged_.exchange(true))
+            logging::info("Cloud Shadows bound completed main-Sky capture to world-anchored directional lighting (opacity={:.3f}).", opacity);
+        return true;
+    }
     RuntimeSnapshot Runtime::snapshot() const noexcept
     {
         return {

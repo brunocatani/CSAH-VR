@@ -1695,6 +1695,7 @@ add_custom_command(
     "${CONTACT_SHADOW_DIAGNOSTIC_SHADER_SOURCE}"
     "${CONTACT_SHADOW_MASK_SHADER_SOURCE}"
     "${CONTACT_SHADOW_DISPATCH_SHADER_SOURCE}"
+    "${ROOT_DIR}/package/Shaders/Community/CloudShadows/CloudProjection.hlsli"
     "${CONTACT_SHADOW_RESOLVE_SHADER_SOURCE}"
     "${ROOT_DIR}/tools/census_linear_lighting_fxp.py"
     "${ROOT_DIR}/tools/dxbc_transform.py"
@@ -1843,6 +1844,7 @@ add_custom_command(
     "${VOLUMETRIC_COMPOSITE_SHADER_SOURCE}"
   DEPENDS
     "${VOLUMETRIC_COMMON_SHADER_SOURCE}"
+    "${ROOT_DIR}/package/Shaders/Community/CloudShadows/CloudProjection.hlsli"
     "${VOLUMETRIC_HOST_SHADER_SOURCE}"
     "${VOLUMETRIC_FULLSCREEN_SHADER_SOURCE}"
     "${VOLUMETRIC_GENERATE_SHADER_SOURCE}"
@@ -2473,6 +2475,7 @@ add_library(${PROJECT_NAME} SHARED
   "${BASIC_WETNESS_SETTINGS_STORE_SOURCE}"
   "${BASIC_WETNESS_SETTINGS_STORE_HEADER}"
   "${CONTACT_SHADOW_WETNESS_SHADER_SOURCE}"
+  "${SOURCE_DIR}/Features/cloud_shadows/CloudGeometryCapture.cpp"
   "${CLOUD_SHADOW_RUNTIME_SOURCE}"
   "${CLOUD_SHADOW_RUNTIME_HEADER}"
   "${CLOUD_SHADOW_SETTINGS_HEADER}"
@@ -3180,6 +3183,17 @@ if(BUILD_CSAH_TESTS)
       "-DNATIVE_SHADOW_PATCH_MODEL=${NATIVE_SHADOW_PATCH_MODEL}"
       "-DPLUGIN_SOURCE=${PLUGIN_SOURCE}"
       -P "${NATIVE_SHADOW_VERIFY_SCRIPT}")
+
+  add_executable(CSAHCloudGeometryCaptureTests "${ROOT_DIR}/tests/CloudGeometryCaptureTests.cpp"
+    "${SOURCE_DIR}/Features/cloud_shadows/CloudGeometryCapture.cpp"
+    "${SOURCE_DIR}/Features/cloud_shadows/CloudShadowRuntime.cpp"
+    "${SOURCE_DIR}/render/ComputeStateScope.cpp")
+  target_compile_features(CSAHCloudGeometryCaptureTests PRIVATE cxx_std_23)
+  target_compile_definitions(CSAHCloudGeometryCaptureTests PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_include_directories(CSAHCloudGeometryCaptureTests PRIVATE "${SOURCE_DIR}" "${SOURCE_DIR}/Features/cloud_shadows")
+  target_precompile_headers(CSAHCloudGeometryCaptureTests PRIVATE "${SOURCE_DIR}/PCH.h")
+  target_link_libraries(CSAHCloudGeometryCaptureTests PRIVATE CommonLibF4::CommonLibF4 d3d11 d3dcompiler spdlog::spdlog)
+  add_test(NAME CSAH.CloudGeometryCapture COMMAND CSAHCloudGeometryCaptureTests "${ROOT_DIR}")
 
   add_executable(CSAHContactShadowTransmissionTests "${ROOT_DIR}/tests/ContactShadowTransmissionTests.cpp")
   target_compile_features(CSAHContactShadowTransmissionTests PRIVATE cxx_std_23)

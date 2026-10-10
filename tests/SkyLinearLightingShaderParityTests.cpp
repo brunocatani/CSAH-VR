@@ -579,8 +579,7 @@ VSOutput VSMain(uint vertexId : SV_VertexID)
                 createPixelShader(device.Get(), replacement / name);
             const auto hasCloudTarget =
                 hasOutputRegister(replacement / name, 3);
-            const auto expectsCloudTarget =
-                descriptor >= 4 && descriptor <= 6;
+            const auto expectsCloudTarget = false;
             if (hasCloudTarget != expectsCloudTarget) {
                 std::cerr << "Sky descriptor " << descriptor
                           << (expectsCloudTarget ? " lost" : " unexpectedly owns")

@@ -48,7 +48,7 @@ namespace csah::contact_shadows
             float reserved2{};
             float cloudEnabled{};
             float cloudOpacity{};
-            float cloudHeightUnits{ 140056.0f };
+            float cloudHeightUnits{ 10000.0f };
             float planetRadiusUnits{ 446148448.0f };
         };
         static_assert(sizeof(GpuSettings) == 64);
@@ -842,7 +842,7 @@ namespace csah::contact_shadows
             context,
             {
                 .firstShaderResource = 0,
-                .shaderResourceCount = 4,
+                .shaderResourceCount = 5,
                 .firstUnorderedAccess = 0,
                 .unorderedAccessCount = 2,
                 .firstSampler = kCloudSamplerSlot,
@@ -970,11 +970,12 @@ namespace csah::contact_shadows
             static_cast<UINT>(noOutputs.size()),
             noOutputs.data(),
             nullptr);
-        const std::array<ID3D11ShaderResourceView*, 4> resolveInputs{
+        const std::array<ID3D11ShaderResourceView*, 5> resolveInputs{
             depthView,
             rawMaskView_.Get(),
             cloud,
             normal.Get(),
+            cloudReady ? cloud_shadows::Runtime::get().fieldView() : nullptr,
         };
         context->CSSetShader(resolveCompute_.Get(), nullptr, 0);
         context->CSSetShaderResources(

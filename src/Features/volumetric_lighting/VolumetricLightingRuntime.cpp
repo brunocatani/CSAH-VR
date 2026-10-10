@@ -64,7 +64,7 @@ namespace csah::volumetric_lighting
         constexpr UINT kHostImageSpaceConstantSlot = 2;
         constexpr UINT kHostImageSpaceConstantSize = 5u * 16u;
         constexpr float kWeatherUnitScale = 0.0001f;
-        constexpr float kCloudHeight = 140056.0f;
+        constexpr float kCloudHeight = 10000.0f;
         constexpr float kPlanetRadius = 446148448.0f;
         constexpr ULONGLONG kWeatherRefreshMilliseconds = 250;
         constexpr float kTeleportDistance = 256.0f;
@@ -1640,7 +1640,7 @@ namespace csah::volumetric_lighting
         ID3D11SamplerState* cloudSampler{};
         float cloudOpacity{};
         const auto cloudActive = cloud_shadows::Runtime::get().prepareLighting(
-            context, cloudCube, cloudSampler, cloudOpacity);
+            context, cloudCube, cloudSampler, cloudOpacity, frame.cameraConstants.Get());
         const auto frameConstants = makeFrameConstants(
             settings,
             camera,
@@ -1684,8 +1684,9 @@ namespace csah::volumetric_lighting
         };
 
         context->CSSetShader(gpu.generateCompute.Get(), nullptr, 0);
-        const std::array<ID3D11ShaderResourceView*, 2> generationSources{
-            frame.shadow.Get(), cloudActive ? cloudCube : nullptr
+        const std::array<ID3D11ShaderResourceView*, 3> generationSources{
+            frame.shadow.Get(), cloudActive ? cloudCube : nullptr,
+            cloudActive ? cloud_shadows::Runtime::get().fieldView() : nullptr
         };
         context->CSSetShaderResources(
             0,

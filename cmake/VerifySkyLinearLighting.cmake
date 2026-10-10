@@ -72,9 +72,6 @@ foreach(required IN ITEMS
     "LinearLightingSkyProducerColor(input.color.xyz)"
     "LinearLightingSkyCloudColor(input.color.xyz)"
     "color *= skyParameters.y;"
-    "#if SKY_TECHNIQUE >= 4 && SKY_TECHNIQUE <= 6"
-    "float4 cloudOcclusion : SV_Target3;"
-    "output.cloudOcclusion = output.color.w;"
     "output.motion = ComputeMotionVector(input);")
   string(FIND "${shaderSource}" "${required}" found)
   if(found EQUAL -1)

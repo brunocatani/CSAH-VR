@@ -2292,6 +2292,7 @@ namespace csah::render
         {
             if (activeWorldCameraComposite && activeWorldCameraContext == context) {
                 dlaa::Runtime::get().onWorldCompositeDraw(context);
+                cloud_shadows::Runtime::get().observeMainView(context);
                 if(activeWorldCompositeDiffuse) screen_space_gi::Runtime::get().captureRadiance(context,activeWorldCompositeTiled,
                     pbr::Runtime::get().requested()?surface_classification::Runtime::get().pbrMaterialShaderResourceView():nullptr);
             }
@@ -2455,9 +2456,11 @@ namespace csah::render
             ID3D11DeviceContext* context,
             Draw&& draw) noexcept
         {
-            const auto capture = cloud_shadows::Runtime::get().scopeCapture(
-                context, activeReplacementBinding);
+            const auto binding = activeReplacementBinding;
             draw();
+            cloud_shadows::Runtime::get().capture(context, binding,
+                [](void* user) { (*static_cast<std::remove_reference_t<Draw>*>(user))(); },
+                &draw);
         }
 
         template <class Draw>
@@ -2639,7 +2642,8 @@ namespace csah::render
             if (!original) {
                 return E_UNEXPECTED;
             }
-            if (volumetric_lighting::Runtime::internalRenderActive()) {
+            if (volumetric_lighting::Runtime::internalRenderActive() ||
+                cloud_shadows::Runtime::internalRenderActive()) {
                 return original(
                     device,
                     bytecode,
@@ -2691,7 +2695,8 @@ namespace csah::render
             if (!original) {
                 return E_UNEXPECTED;
             }
-            if (volumetric_lighting::Runtime::internalRenderActive()) {
+            if (volumetric_lighting::Runtime::internalRenderActive() ||
+                cloud_shadows::Runtime::internalRenderActive()) {
                 return original(
                     device,
                     bytecode,
@@ -2915,7 +2920,8 @@ namespace csah::render
             if (!original) {
                 return E_UNEXPECTED;
             }
-            if (volumetric_lighting::Runtime::internalRenderActive()) {
+            if (volumetric_lighting::Runtime::internalRenderActive() ||
+                cloud_shadows::Runtime::internalRenderActive()) {
                 return original(
                     device,
                     bytecode,
@@ -2966,7 +2972,8 @@ namespace csah::render
             if (!original) {
                 return;
             }
-            if (volumetric_lighting::Runtime::internalRenderActive()) {
+            if (volumetric_lighting::Runtime::internalRenderActive() ||
+                cloud_shadows::Runtime::internalRenderActive()) {
                 original(context, shader, classInstances, classInstanceCount);
                 return;
             }
@@ -2988,7 +2995,8 @@ namespace csah::render
             if (!original) {
                 return;
             }
-            if (volumetric_lighting::Runtime::internalRenderActive()) {
+            if (volumetric_lighting::Runtime::internalRenderActive() ||
+                cloud_shadows::Runtime::internalRenderActive()) {
                 original(
                     context,
                     renderTargetCount,
@@ -3040,7 +3048,8 @@ namespace csah::render
             if (!original) {
                 return;
             }
-            if (volumetric_lighting::Runtime::internalRenderActive()) {
+            if (volumetric_lighting::Runtime::internalRenderActive() ||
+                cloud_shadows::Runtime::internalRenderActive()) {
                 original(
                     context,
                     renderTargetCount,
@@ -3105,7 +3114,8 @@ namespace csah::render
             if (!original) {
                 return;
             }
-            if (volumetric_lighting::Runtime::internalRenderActive()) {
+            if (volumetric_lighting::Runtime::internalRenderActive() ||
+                cloud_shadows::Runtime::internalRenderActive()) {
                 original(context, shader, classInstances, classInstanceCount);
                 return;
             }
@@ -3630,7 +3640,8 @@ namespace csah::render
             UINT startIndexLocation,
             INT baseVertexLocation) noexcept
         {
-            if (volumetric_lighting::Runtime::internalRenderActive()) {
+            if (volumetric_lighting::Runtime::internalRenderActive() ||
+                cloud_shadows::Runtime::internalRenderActive()) {
                 if (originalDrawIndexed) {
                     originalDrawIndexed(
                         context,
@@ -3743,7 +3754,8 @@ namespace csah::render
             UINT vertexCount,
             UINT startVertexLocation) noexcept
         {
-            if (volumetric_lighting::Runtime::internalRenderActive()) {
+            if (volumetric_lighting::Runtime::internalRenderActive() ||
+                cloud_shadows::Runtime::internalRenderActive()) {
                 if (originalDraw) {
                     originalDraw(context, vertexCount, startVertexLocation);
                 }
@@ -3848,7 +3860,8 @@ namespace csah::render
             INT baseVertexLocation,
             UINT startInstanceLocation) noexcept
         {
-            if (volumetric_lighting::Runtime::internalRenderActive()) {
+            if (volumetric_lighting::Runtime::internalRenderActive() ||
+                cloud_shadows::Runtime::internalRenderActive()) {
                 if (originalDrawIndexedInstanced) {
                     originalDrawIndexedInstanced(
                         context,
@@ -3969,7 +3982,8 @@ namespace csah::render
             UINT startVertexLocation,
             UINT startInstanceLocation) noexcept
         {
-            if (volumetric_lighting::Runtime::internalRenderActive()) {
+            if (volumetric_lighting::Runtime::internalRenderActive() ||
+                cloud_shadows::Runtime::internalRenderActive()) {
                 if (originalDrawInstanced) {
                     originalDrawInstanced(
                         context,

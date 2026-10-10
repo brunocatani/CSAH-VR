@@ -6,27 +6,13 @@ SamplerComparisonState ShadowComparison : register(s0);
 SamplerState CloudSampler : register(s1);
 RWTexture3D<float> RawVolume : register(u0);
 
-float CloudVisibility(float3 relativePosition, float3 towardLight)
+Buffer<float4> CloudField : register(t2);
+#include "../CloudShadows/CloudProjection.hlsli"
+float CloudVisibility(float3 viewPosition, float3 towardLight, uint eye)
 {
-    if (WindParams.w <= 0.5f) {
-        return 1.0f;
-    }
-    const float cloudHeight = max(CloudParams.y, 1.0f);
-    const float planetRadius = max(CloudParams.z, cloudHeight);
-    const float shellRadius = planetRadius + cloudHeight;
-    const float3 p =
-        (relativePosition + float3(0.0f, 0.0f, planetRadius)) / shellRadius;
-    const float projected = dot(p, towardLight);
-    const float discriminant = max(
-        projected * projected - dot(p, p) + 1.0f,
-        0.0f);
-    const float travel = -projected + sqrt(discriminant);
-    const float3 sampleDirection =
-        (p + towardLight * travel) * shellRadius -
-        float3(0.0f, 0.0f, planetRadius);
-    const float cloud = CloudOcclusion.SampleLevel(
-        CloudSampler, sampleDirection, 0.0f);
-    return saturate(1.0f - cloud * saturate(CloudParams.x));
+    if (WindParams.w <= 0.5f) return 1.0f;
+    return CapturedCloudVisibility(CloudWorldVector(viewPosition) + EyeOrigin[eye].xyz,
+        towardLight, CloudParams.x, CloudParams.y, CloudParams.z);
 }
 
 float DirectionNoise(float3 direction)
@@ -97,7 +83,7 @@ void main(uint3 dispatchId : SV_DispatchThreadID)
         DirectionalShadow,
         ShadowComparison,
         eye,
-        relativePosition)) * CloudVisibility(relativePosition, towardLight);
+        relativePosition)) * CloudVisibility(relativePosition, towardLight, eye);
     const float density = max(SampleDensity(eye, relativePosition), 0.0f);
     const float opticalWeight = max(
         startTransmittance - endTransmittance,

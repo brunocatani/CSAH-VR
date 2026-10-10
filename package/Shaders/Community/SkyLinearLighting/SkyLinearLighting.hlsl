@@ -51,12 +51,6 @@ struct SkyPixelOutput
 #if SKY_TECHNIQUE != 0
     float4 motion : SV_Target1;
 #endif
-#if SKY_TECHNIQUE >= 4 && SKY_TECHNIQUE <= 6
-    // Cloud techniques write their composed opacity into a private cubemap
-    // MRT owned by Cloud Shadows. The engine's color and motion contracts are
-    // unchanged; when the private RTV is absent this output is discarded.
-    float4 cloudOcclusion : SV_Target3;
-#endif
 };
 
 float3 ApplySkyScale(float3 color)
@@ -169,9 +163,6 @@ SkyPixelOutput PSMain(SkyPixelInput input)
 #error Unsupported SKY_TECHNIQUE value.
 #endif
 
-#if SKY_TECHNIQUE >= 4 && SKY_TECHNIQUE <= 6
-    output.cloudOcclusion = output.color.w;
-#endif
     output.motion = ComputeMotionVector(input);
     return output;
 }

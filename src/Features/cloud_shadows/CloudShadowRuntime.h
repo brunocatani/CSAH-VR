@@ -28,39 +28,6 @@ namespace csah::cloud_shadows
         std::uint64_t failures{};
     };
 
-    class Runtime;
-
-    class ScopedCloudCapture final
-    {
-    public:
-        ScopedCloudCapture() noexcept = default;
-        ~ScopedCloudCapture() noexcept;
-        ScopedCloudCapture(const ScopedCloudCapture&) = delete;
-        ScopedCloudCapture(ScopedCloudCapture&&) = delete;
-        ScopedCloudCapture& operator=(const ScopedCloudCapture&) = delete;
-        ScopedCloudCapture& operator=(ScopedCloudCapture&&) = delete;
-        [[nodiscard]] bool active() const noexcept { return context_ != nullptr; }
-
-    private:
-        friend class Runtime;
-        ScopedCloudCapture(
-            Runtime* owner,
-            ID3D11DeviceContext* context,
-            std::uint32_t face,
-            ID3D11RenderTargetView* cloudTarget,
-            ID3D11BlendState* captureBlend) noexcept;
-
-        Runtime* owner_{};
-        ID3D11DeviceContext* context_{};
-        std::uint32_t face_{};
-        std::array<Microsoft::WRL::ComPtr<ID3D11RenderTargetView>, 8>
-            previousTargets_{};
-        Microsoft::WRL::ComPtr<ID3D11DepthStencilView> previousDepth_;
-        Microsoft::WRL::ComPtr<ID3D11BlendState> previousBlend_;
-        std::array<float, 4> previousBlendFactor_{};
-        UINT previousSampleMask_{};
-    };
-
     class Runtime final
     {
     public:
@@ -70,40 +37,50 @@ namespace csah::cloud_shadows
             ID3D11DeviceContext* context) noexcept;
         void applySettings(const Settings& settings) noexcept;
         [[nodiscard]] bool requested() const noexcept;
-        [[nodiscard]] ScopedCloudCapture scopeCapture(
-            ID3D11DeviceContext* context,
-            linear_lighting::ReplacementShaderBinding binding) noexcept;
+        static bool internalRenderActive() noexcept;
+        void beginFrame() noexcept;
+        void resetWorld() noexcept;
+        void observeMainView(ID3D11DeviceContext* context) noexcept;
+        void capture(ID3D11DeviceContext* context,
+            linear_lighting::ReplacementShaderBinding binding,
+            void (*submit)(void*), void* user) noexcept;
+        [[nodiscard]] ID3D11ShaderResourceView* fieldView() const noexcept { return fieldView_.Get(); }
         [[nodiscard]] bool prepareLighting(
             ID3D11DeviceContext* context,
             ID3D11ShaderResourceView*& cube,
             ID3D11SamplerState*& sampler,
-            float& opacity) noexcept;
+            float& opacity, ID3D11Buffer* camera = nullptr) noexcept;
         [[nodiscard]] RuntimeSnapshot snapshot() const noexcept;
 
     private:
-        friend class ScopedCloudCapture;
         Runtime() = default;
-        [[nodiscard]] bool ensureCaptureResources(
-            const D3D11_TEXTURE2D_DESC& source) noexcept;
-        [[nodiscard]] bool ensureCaptureBlend(
-            ID3D11BlendState* source) noexcept;
-        void markFaceRendered(std::uint32_t face) noexcept;
-
-        Microsoft::WRL::ComPtr<ID3D11Device> device_;
-        Microsoft::WRL::ComPtr<ID3D11DeviceContext> context_;
-        Microsoft::WRL::ComPtr<ID3D11Texture2D> cloudCube_;
-        Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> cloudView_;
-        std::array<Microsoft::WRL::ComPtr<ID3D11RenderTargetView>, 6>
-            cloudTargets_{};
-        Microsoft::WRL::ComPtr<ID3D11SamplerState> sampler_;
-        Microsoft::WRL::ComPtr<ID3D11BlendState> sourceBlend_;
-        Microsoft::WRL::ComPtr<ID3D11BlendState> captureBlend_;
-        std::uint32_t cubeSize_{};
+        bool ensureCaptureResources() noexcept;
+        bool updateField(ID3D11Buffer* camera) noexcept;
+        void synchronizeReset() noexcept;
+        template<class T> using Ptr = Microsoft::WRL::ComPtr<T>;
+        struct Cube {
+            Ptr<ID3D11Texture2D> texture;
+            Ptr<ID3D11ShaderResourceView> view;
+            std::array<Ptr<ID3D11RenderTargetView>, 6> targets;
+        };
+        Ptr<ID3D11Device> device_;
+        Ptr<ID3D11DeviceContext> context_;
+        std::array<Cube,2> cubes_;
+        Ptr<ID3D11Resource> mainTarget_;
+        Ptr<ID3D11SamplerState> sampler_;
+        Ptr<ID3D11Buffer> field_, fieldParameters_;
+        Ptr<ID3D11ShaderResourceView> fieldView_;
+        Ptr<ID3D11UnorderedAccessView> fieldOutput_;
+        Ptr<ID3D11ComputeShader> fieldUpdate_;
+        unsigned readIndex_{}, writeIndex_{1};
+        bool captureStarted_{}, captureRejected_{}, fieldReset_{true};
+        std::uint64_t frame_{}, fieldFrame_{~0ull}, startTick_{};
+        unsigned retryFrames_{};
+        std::atomic_uint64_t epoch_{1};
+        std::uint64_t observedEpoch_{};
         std::atomic_uint32_t populatedFaces_{};
-        std::uint32_t lastFace_{ 6 };
         std::atomic_bool enabled_{ true };
         std::atomic<float> opacity_{ 0.55f };
-        std::atomic_uint64_t settingsRevision_{ 1 };
         std::atomic_bool resourcesReady_{};
         std::atomic_uint64_t captureCandidates_{};
         std::atomic_uint64_t capturedDraws_{};
@@ -115,8 +92,6 @@ namespace csah::cloud_shadows
         std::atomic_uint64_t failures_{};
         std::atomic_bool firstCaptureLogged_{};
         std::atomic_bool firstCaptureRejectLogged_{};
-        std::atomic_bool firstCubeReadyLogged_{};
         std::atomic_bool firstLightingBindLogged_{};
-        std::atomic_bool firstLightingRejectLogged_{};
     };
 }
