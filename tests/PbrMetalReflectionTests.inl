@@ -24,7 +24,7 @@ void metalReflectionTest(GPU& gpu,const std::filesystem::path& root)
  for(auto pair:std::array<std::pair<UINT,ID3D11Buffer*>,5>{{{0,pass.Get()},{2,pass.Get()},{5,params.Get()},{8,eyes.Get()},{12,frame.Get()}}})gpu.context->PSSetConstantBuffers(pair.first,1,&pair.second);
  D3D11_TEXTURE2D_DESC td{};td.Width=2;td.Height=td.ArraySize=td.MipLevels=td.SampleDesc.Count=1;td.Format=DXGI_FORMAT_R32G32B32A32_FLOAT;td.BindFlags=D3D11_BIND_RENDER_TARGET;ComPtr<ID3D11Texture2D> target,staging;ComPtr<ID3D11RenderTargetView> rtv;check(gpu.device->CreateTexture2D(&td,nullptr,&target),"metal target");check(gpu.device->CreateRenderTargetView(target.Get(),nullptr,&rtv),"metal RTV");td.BindFlags=0;td.Usage=D3D11_USAGE_STAGING;td.CPUAccessFlags=D3D11_CPU_ACCESS_READ;check(gpu.device->CreateTexture2D(&td,nullptr,&staging),"metal readback");
  auto* out=rtv.Get();gpu.context->OMSetRenderTargets(1,&out,nullptr);D3D11_VIEWPORT vp{0,0,2,1,0,1};gpu.context->RSSetViewports(1,&vp);gpu.context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);gpu.context->VSSetShader(vertex.Get(),nullptr,0);
- for(const char* name:{"DFComposite_00_05f5cabf.dxbc","DFComposite_01_05fa2982.dxbc","DFComposite_09_3c3cc20b.dxbc","DFComposite_15_618ab40a.dxbc"}) {
+ for(const char* name:{"DFComposite_00_05f5cabf.dxbc","DFComposite_01_05fa2982.dxbc","DFComposite_09_3c3cc20b.dxbc","DFComposite_15_618ab40a.dxbc","DFComposite_14_5a125823.dxbc","DFComposite_18_83191af2.dxbc"}) {
   auto shader=compilePixel(root/"package/Shaders/Community/IBLMaterial"/name);gpu.context->PSSetShader(shader.Get(),nullptr,0);
   F4 precedingNative{};
   for(bool occlusion:{false,true})for(bool authoredMode:{false,true})for(bool enabled:{false,true})for(bool metal:{false,true})for(bool dynamicMode:{false,true}) {
@@ -41,6 +41,35 @@ void metalReflectionTest(GPU& gpu,const std::filesystem::path& root)
    if(enabled&&metal) {if(!(value[0]+value[1]+value[2]>.001f))std::cerr<<name<<" authored="<<authoredMode<<" dynamic="<<dynamicMode<<" metal dark\n";require(value[0]+value[1]+value[2]>.001f,"metal reflections disappeared with zero diffuse lighting");}
    else require(value[0]==0&&value[1]==0&&value[2]==0,"nonmetal or PBR-off native response changed");
   }
+  // Ordinary legacy materials have no authored RMAOS or metal tag. Their
+  // native compositor already applies material reflection strength. Isolate
+  // the reflection by using black albedo and nonzero diffuse illumination.
+  gpu.context->PSSetShaderResources(0,1,black.view.GetAddressOf());
+  gpu.context->PSSetShaderResources(29,1,black.view.GetAddressOf());
+  gpu.context->PSSetShaderResources(5,1,white.view.GetAddressOf());
+  gpu.context->PSSetShaderResources(45,1,black.view.GetAddressOf());
+  parameters[4][3]=0;
+  for(float specular:{.05f,.25f,.75f})for(bool dynamicMode:{false,true}) {
+   std::array<F4,2> pixels{F4{.9f,specular,0,1},F4{.9f,specular,0,1}};
+   gpu.context->UpdateSubresource(shading.texture.Get(),0,nullptr,pixels.data(),32,0);
+   F4 original{};
+   for(bool enabled:{false,true}) {
+    parameters[0][0]=dynamicMode?1.f:0.f;parameters[3][0]=enabled?1.f:0.f;
+    gpu.context->UpdateSubresource(params.Get(),0,nullptr,parameters.data(),0,0);
+    const float clear[4]{};gpu.context->ClearRenderTargetView(rtv.Get(),clear);
+    gpu.context->Draw(3,0);gpu.context->CopyResource(staging.Get(),target.Get());
+    D3D11_MAPPED_SUBRESOURCE mapped{};check(gpu.context->Map(staging.Get(),0,D3D11_MAP_READ,0,&mapped),"legacy reflection map");
+    F4 value{};std::memcpy(value.data(),mapped.pData,16);gpu.context->Unmap(staging.Get(),0);
+    if(!enabled) original=value;
+    else {
+     require(original[0]>.001f,"legacy reflection baseline missing");
+     const float ratio=value[0]/original[0];
+     std::cout<<name<<" legacy specular="<<specular<<" dynamic="<<dynamicMode<<" PBR/native reflection="<<ratio<<'\n';
+     require(std::isfinite(ratio)&&ratio>=.99f,"legacy PBR applies reflection strength a second time");
+    }
+   }
+  }
+  gpu.context->PSSetShaderResources(0,UINT(views.size()),views.data());
  }
  gpu.context->ClearState();gpu.validateMessages();std::cout<<"Authored/legacy metals retain native and correctly directed dynamic cubemaps with zero diffuse, occlusion on/off; dielectrics and PBR-off stay unchanged\n";
 }

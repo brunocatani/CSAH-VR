@@ -399,6 +399,18 @@ PixelOutput PSMain(PixelInput input)
             normalDotView);
         reflectionLobe = f0 * environmentBrdf.x +
             environmentBrdf.y;
+        if (authoredActive < 0.5f)
+        {
+            // Legacy cubemap strength is already applied by DFComposite.
+            // Convert its angular response relative to normal incidence;
+            // multiplying by absolute F0 here applies reflectivity twice.
+            // Complex legacy materials retain their original metal tint.
+            const float2 referenceBrdf = PbrEnvironmentBrdf(pbrRoughness, 1.0f);
+            const float3 referenceLobe = f0 * referenceBrdf.x + referenceBrdf.y;
+            const float3 legacyTint = lerp(1.0f.xxx, baseColour, metalness);
+            reflectionLobe = legacyTint * reflectionLobe /
+                max(referenceLobe, PbrEpsilon.xxx);
+        }
         if (PbrFeatureParams1.w > 0.5f)
         {
 #if PBR_NATIVE_OCCLUSION
