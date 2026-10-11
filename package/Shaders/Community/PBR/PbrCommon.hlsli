@@ -35,9 +35,9 @@ float PbrVisibilitySmithJointApprox(
 {
     const float alpha = roughness * roughness;
     const float visibilityView = normalDotLight *
-        (normalDotView * (1.0f + alpha) + alpha);
+        (normalDotView * (1.0f - alpha) + alpha);
     const float visibilityLight = normalDotView *
-        (normalDotLight * (1.0f + alpha) + alpha);
+        (normalDotLight * (1.0f - alpha) + alpha);
     return 0.5f / max(
         visibilityView + visibilityLight,
         PbrEpsilon);

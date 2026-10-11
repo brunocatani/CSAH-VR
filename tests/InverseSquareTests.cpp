@@ -82,9 +82,9 @@ namespace
         wetData={};pbrData[0].x=1;bindMaterials();
         auto energy=pixelDraw(true);
         for(unsigned i=0;i<64;i++) require(std::abs(energy[i].x-dry[i].x*.84f)<1e-6f,"local PS PBR energy conservation missing");
-        // Normal incidence GGX, independently evaluated for a .5 shininess/.5 specular material.
+        // At normal incidence Smith G is one for every roughness: visibility is 1/4.
         const float rough=std::pow(2.0f/66,.25f),alpha=rough*rough,alpha2=alpha*alpha;
-        const float expectedSpec=(1/(3.141592653589793f*alpha2))*(.25f/(1+2*alpha))*.16f*nativeFalloff;
+        const float expectedSpec=(1/(3.141592653589793f*alpha2))*.25f*.16f*nativeFalloff;
         a=bytes(generated/"PS_00000204_original.dxbc");b=bytes(generated/"PS_00000204_replacement.dxbc");
         check(device->CreatePixelShader(a.data(),a.size(),nullptr,&nativePS),"spec native");check(device->CreatePixelShader(b.data(),b.size(),nullptr,&replacementPS),"spec replacement");
         auto specResult=pixelDraw(true);
@@ -93,13 +93,13 @@ namespace
         lightData[1].x=lightData[2].x=100;context->UpdateSubresource(light.Get(),0,nullptr,lightData.data(),0,0);
         const float nl=1/std::sqrt(2.0f),nh=std::sqrt((1+nl)/2),f=.16f+.84f*std::pow(1-nh,5.0f);
         const float denominator=nh*nh*(alpha2-1)+1;
-        const float tiltedSpec=alpha2/(3.141592653589793f*denominator*denominator)*(.5f/(nl*(1+alpha)+nl*alpha+nl*(1+alpha)+alpha))*f*nl*std::pow(1-20000.0f/(1024*1024),2.2f);
+        const float tiltedSpec=alpha2/(3.141592653589793f*denominator*denominator)*(.5f/(nl+nl*(1-alpha)+alpha))*f*nl*std::pow(1-20000.0f/(1024*1024),2.2f);
         auto tilted=pixelDraw(true);require(std::abs(tilted[73].x-tiltedSpec)<tiltedSpec*.003f,"local GGX light/view vector capture is incorrect");
         lightData[1].x=lightData[2].x=0;context->UpdateSubresource(light.Get(),0,nullptr,lightData.data(),0,0);
         auto authored=texture({.75f,.5f,1,.5f});auto* authoredView=authored.Get();context->PSSetShaderResources(45,1,&authoredView);
         auto authoredResult=pixelDraw(true);auto authoredNative=pixelDraw(false);
         require(std::abs(authoredResult[9].x-authoredNative[9].x*.21f)<1e-6f,"authored local metal diffuse energy missing");
-        const float authoredSpec=1/(3.141592653589793f*.0625f)*(.25f/1.5f)*.58f*nativeFalloff;
+        const float authoredSpec=1/(3.141592653589793f*.0625f)*.25f*.58f*nativeFalloff;
         require(std::abs(authoredResult[73].x-authoredSpec)<authoredSpec*.003f,"authored local roughness/F0 missing");
         authoredView=nullptr;context->PSSetShaderResources(45,1,&authoredView);
         classMask=texture({3.0f/255,0,0,0});bindMaterials();compare(pixelDraw(false),pixelDraw(true),1);
