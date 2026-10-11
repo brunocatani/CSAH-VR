@@ -24,6 +24,19 @@ void metalReflectionTest(GPU& gpu,const std::filesystem::path& root)
  for(auto pair:std::array<std::pair<UINT,ID3D11Buffer*>,5>{{{0,pass.Get()},{2,pass.Get()},{5,params.Get()},{8,eyes.Get()},{12,frame.Get()}}})gpu.context->PSSetConstantBuffers(pair.first,1,&pair.second);
  D3D11_TEXTURE2D_DESC td{};td.Width=2;td.Height=td.ArraySize=td.MipLevels=td.SampleDesc.Count=1;td.Format=DXGI_FORMAT_R32G32B32A32_FLOAT;td.BindFlags=D3D11_BIND_RENDER_TARGET;ComPtr<ID3D11Texture2D> target,staging;ComPtr<ID3D11RenderTargetView> rtv;check(gpu.device->CreateTexture2D(&td,nullptr,&target),"metal target");check(gpu.device->CreateRenderTargetView(target.Get(),nullptr,&rtv),"metal RTV");td.BindFlags=0;td.Usage=D3D11_USAGE_STAGING;td.CPUAccessFlags=D3D11_CPU_ACCESS_READ;check(gpu.device->CreateTexture2D(&td,nullptr,&staging),"metal readback");
  auto* out=rtv.Get();gpu.context->OMSetRenderTargets(1,&out,nullptr);D3D11_VIEWPORT vp{0,0,2,1,0,1};gpu.context->RSSetViewports(1,&vp);gpu.context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);gpu.context->VSSetShader(vertex.Get(),nullptr,0);
+ std::array<F4,32> skyParameters{};
+ for(UINT row:{5u,11u}) {skyParameters[row]={2000,2000,2000,0};skyParameters[row+1]={500,500,500,0};float four;UINT bits=4;std::memcpy(&four,&bits,4);skyParameters[row+3]={four,four,four,0};}
+ skyParameters[18]={.1f,.1f,0,0};
+ D3D11_BUFFER_DESC skyDesc{};skyDesc.ByteWidth=sizeof(skyParameters);skyDesc.BindFlags=D3D11_BIND_SHADER_RESOURCE;
+ ComPtr<ID3D11Buffer> skyBuffer;check(gpu.device->CreateBuffer(&skyDesc,nullptr,&skyBuffer),"sky reflection parameters");
+ D3D11_SHADER_RESOURCE_VIEW_DESC skyViewDesc{};skyViewDesc.Format=DXGI_FORMAT_R32G32B32A32_FLOAT;skyViewDesc.ViewDimension=D3D11_SRV_DIMENSION_BUFFER;skyViewDesc.Buffer.NumElements=32;
+ ComPtr<ID3D11ShaderResourceView> skyView;check(gpu.device->CreateShaderResourceView(skyBuffer.Get(),&skyViewDesc,&skyView),"sky parameter SRV");
+ gpu.context->PSSetShaderResources(52,1,skyView.GetAddressOf());gpu.context->UpdateSubresource(skyBuffer.Get(),0,nullptr,skyParameters.data(),0,0);
+ D3D11_TEXTURE3D_DESC probeDesc{};probeDesc.Width=probeDesc.Height=probeDesc.Depth=4;probeDesc.MipLevels=1;probeDesc.Format=DXGI_FORMAT_R32G32B32A32_FLOAT;probeDesc.BindFlags=D3D11_BIND_SHADER_RESOURCE;
+ std::array<F4,64> zeroProbes{};D3D11_SUBRESOURCE_DATA probeData{zeroProbes.data(),64,256};
+ ComPtr<ID3D11Texture3D> probe;ComPtr<ID3D11ShaderResourceView> probeView;
+ check(gpu.device->CreateTexture3D(&probeDesc,&probeData,&probe),"black sky probes");check(gpu.device->CreateShaderResourceView(probe.Get(),nullptr,&probeView),"sky probe SRV");
+ for(UINT slot:{50u,51u})gpu.context->PSSetShaderResources(slot,1,probeView.GetAddressOf());
  for(const char* name:{"DFComposite_00_05f5cabf.dxbc","DFComposite_01_05fa2982.dxbc","DFComposite_09_3c3cc20b.dxbc","DFComposite_15_618ab40a.dxbc","DFComposite_14_5a125823.dxbc","DFComposite_18_83191af2.dxbc"}) {
   auto shader=compilePixel(root/"package/Shaders/Community/IBLMaterial"/name);gpu.context->PSSetShader(shader.Get(),nullptr,0);
   F4 precedingNative{};
@@ -69,6 +82,27 @@ void metalReflectionTest(GPU& gpu,const std::filesystem::path& root)
     }
    }
   }
+  gpu.context->PSSetShaderResources(0,UINT(views.size()),views.data());
+  std::array<F4,2> metalPixels{F4{.8f/255,.6f/255,.3f/255,1},F4{.8f/255,.6f/255,.3f/255,1}};
+  gpu.context->UpdateSubresource(base.texture.Get(),0,nullptr,metalPixels.data(),32,0);
+  metalPixels.fill({.9f,.5f,0,.5f});gpu.context->UpdateSubresource(shading.texture.Get(),0,nullptr,metalPixels.data(),32,0);
+  gpu.context->PSSetShaderResources(45,1,black.view.GetAddressOf());
+  parameters[0][0]=1;parameters[3][0]=1;parameters[4][3]=0;gpu.context->UpdateSubresource(params.Get(),0,nullptr,parameters.data(),0,0);
+  auto geometryPosition=texture({0,0,0,0},true);
+  gpu.context->PSSetShaderResources(34,1,geometryPosition.view.GetAddressOf());
+  for(float geometryConfidence:{0.f,.5f,1.f}) {
+  const F4 geometryValue{0,0,0,geometryConfidence};
+  for(UINT face=0;face<6;face++)gpu.context->UpdateSubresource(geometryPosition.texture.Get(),face,nullptr,geometryValue.data(),16,0);
+  float reference{};
+  for(bool sky:{false,true}) {
+   skyParameters[18][2]=sky?1.f:0.f;gpu.context->UpdateSubresource(skyBuffer.Get(),0,nullptr,skyParameters.data(),0,0);
+   const float clear[4]{};gpu.context->ClearRenderTargetView(rtv.Get(),clear);gpu.context->Draw(3,0);gpu.context->CopyResource(staging.Get(),target.Get());
+   D3D11_MAPPED_SUBRESOURCE mapped{};check(gpu.context->Map(staging.Get(),0,D3D11_MAP_READ,0,&mapped),"sky metal readback");
+   float red{};std::memcpy(&red,mapped.pData,4);gpu.context->Unmap(staging.Get(),0);
+   if(!sky) reference=red;else {const float expected=reference*(.1f+.9f*geometryConfidence);require(reference>.001f && std::abs(red-expected)<reference*.001f,"Skylighting failed to separate sky and captured geometry reflection");}
+  }
+  }
+  skyParameters[18][2]=0;gpu.context->UpdateSubresource(skyBuffer.Get(),0,nullptr,skyParameters.data(),0,0);
   gpu.context->PSSetShaderResources(0,UINT(views.size()),views.data());
  }
  gpu.context->ClearState();gpu.validateMessages();std::cout<<"Authored/legacy metals retain native and correctly directed dynamic cubemaps with zero diffuse, occlusion on/off; dielectrics and PBR-off stay unchanged\n";

@@ -1247,10 +1247,10 @@ def validate_candidate(
         raise ContractError(f"{name} must declare and sample t32 exactly once")
     if len(re.findall(r"\bt33(?:\b|\.)", candidate_text)) != 2:
         raise ContractError(f"{name} must declare and sample t33 exactly once")
-    if len(re.findall(r"\bt34(?:\b|\.)", candidate_text)) != 2:
-        raise ContractError(f"{name} must declare and sample t34 exactly once")
-    if len(re.findall(r"\bt35(?:\b|\.)", candidate_text)) != 2:
-        raise ContractError(f"{name} must declare and sample t35 exactly once")
+    if len(re.findall(r"\bt34(?:\b|\.)", candidate_text)) != 3:
+        raise ContractError(f"{name} must declare t34 and sample position plus geometry confidence")
+    if len(re.findall(r"\bt35(?:\b|\.)", candidate_text)) != 3:
+        raise ContractError(f"{name} must declare t35 and sample position plus geometry confidence")
     if len(re.findall(r"\bt36(?:\b|\.)", candidate_text)) != 2:
         raise ContractError(f"{name} must declare and sample t36 exactly once")
     if len(re.findall(r"\bt45(?:\b|\.)", candidate_text)) != 2:

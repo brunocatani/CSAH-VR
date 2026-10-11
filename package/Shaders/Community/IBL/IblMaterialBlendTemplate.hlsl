@@ -279,6 +279,7 @@ PixelOutput PSMain(PixelInput input)
             input.ScreenUv,
             receiverWorldPosition,
             viewDirection);
+    float3 reflectedGeometry = 0.0f;
     float4 vanilla = VanillaEnvironment.SampleLevel(
         EnvironmentSampler,
         input.DirectionAndArray,
@@ -308,6 +309,8 @@ PixelOutput PSMain(PixelInput input)
             EnvironmentSampler,
             publishedDirection,
             environmentLod);
+        float geometryConfidence = Response.z > 0.5f ? saturate(
+            PublishedPosition.SampleLevel(EnvironmentSampler, publishedDirection, environmentLod).w) : 0.0f;
         [branch]
         if (PreviousEnvironmentAvailable > 0.5 &&
             EnvironmentTransitionWeight < 1.0)
@@ -330,6 +333,11 @@ PixelOutput PSMain(PixelInput input)
                     EnvironmentSampler,
                     previousDirection,
                     environmentLod);
+            if (Response.z > 0.5f) {
+                const float previousGeometry = saturate(PreviousPublishedPosition.SampleLevel(
+                    EnvironmentSampler, previousDirection, environmentLod).w);
+                geometryConfidence = lerp(previousGeometry, geometryConfidence, saturate(EnvironmentTransitionWeight));
+            }
             published = lerp(
                 previousPublished,
                 published,
@@ -356,6 +364,7 @@ PixelOutput PSMain(PixelInput input)
         const float styleWeight = styleValid && tint.w > -1.5f ? 1.0f : 0.0f;
         float weight = saturate(validity * IblWeight) * styleWeight;
         vanilla.xyz = lerp(vanilla.xyz, published, weight);
+        reflectedGeometry = published * weight * geometryConfidence;
     }
 
     float3 retainedDiffuse = DFLightAlbedo.SampleLevel(
@@ -447,9 +456,13 @@ PixelOutput PSMain(PixelInput input)
     {
         const float3 halfVector = -input.DirectionAndArray.xyz + viewDirection;
         const float normalLength = dot(halfVector, halfVector);
-        if (normalLength > 1.0e-6f)
-            vanilla.xyz *= SkylightingReflectionVisibility(receiverWorldPosition,
+        if (normalLength > 1.0e-6f) {
+            const float skyVisibility = SkylightingReflectionVisibility(receiverWorldPosition,
                 halfVector * rsqrt(normalLength), viewDirection, pbrRoughness);
+            // Captured geometry already contains its local lighting and shadows.
+            // Sky visibility belongs to sky/fallback radiance, not that geometry.
+            vanilla.xyz = vanilla.xyz * skyVisibility + reflectedGeometry * (1.0f - skyVisibility);
+        }
     }
     vanilla.xyz *= max(reflectionLobe, 0.0f);
     output.Reflection = vanilla;
