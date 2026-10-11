@@ -1,5 +1,8 @@
 #ifndef CSAH_SCREEN_SPACE_GI_AMBIENT
 #define CSAH_SCREEN_SPACE_GI_AMBIENT
+#include "../PBR/PbrCommon.hlsli"
+#include "../PBR/PbrIndirectMaterial.hlsli"
+Texture2D<float> ScreenSpaceSurface : register(t64);
 Texture2DArray<float4> ScreenSpaceDiffuse : register(t57);
 Texture2DArray<float4> ScreenSpaceSpecular : register(t58);
 Buffer<float4> ScreenSpaceParameters : register(t59);
@@ -56,11 +59,13 @@ void ScreenSpaceAmbient(float2 pixel,uint eye,out float3 visibility,out float3 d
                 float3 a=2.0404*albedo-.3324,b=-4.7951*albedo+.6417,c=2.7552*albedo+.6903;
                 visibility=max(v,((v*a+b)*v+c)*v);
                 float4 authored=ScreenSpaceAuthoredPbr.Load(int3(nativePixel,0));
-                float metal=authored.x>=.5?saturate(authored.y):0;
-                diffuse=sum/total*(1-metal)/3;
                 float4 material=NativeMaterial.Load(int3(nativePixel,0));
-                float3 f0=lerp(saturate(material.y*.32).xxx,albedo,metal);
-                specular=sumS/total*f0;
+                PbrIndirectMaterial response=DecodePbrIndirectMaterial(material,authored,albedo,
+                    ScreenSpaceSurface.Load(int3(nativePixel,0)),
+                    count>=8?ScreenSpaceParameters[4]:0, count>=8?ScreenSpaceParameters[5]:0,
+                    count>=8?ScreenSpaceParameters[6]:0, count>=8?ScreenSpaceParameters[7]:0);
+                diffuse=sum/total*response.diffuseShare/3;
+                specular=sumS/total*response.f0;
             }
         }
     }

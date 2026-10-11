@@ -84,7 +84,7 @@ void giFilterTest(GPU& gpu,const std::filesystem::path& root,bool hardware) {
  for(unsigned row:{4,8}){camera[row][0]=1;camera[row+1][1]=1;camera[row+2][2]=1;camera[row+3][2]=1;}
  D3D11_BUFFER_DESC bd{};bd.ByteWidth=sizeof(camera);bd.BindFlags=D3D11_BIND_CONSTANT_BUFFER;D3D11_SUBRESOURCE_DATA initial{camera.data(),0,0};ComPtr<ID3D11Buffer> cameraBuffer;
  check(gpu.device->CreateBuffer(&bd,&initial,&cameraBuffer),"GI camera");auto* cb=cameraBuffer.Get();gpu.context->CSSetConstantBuffers(10,1,&cb);gpu.context->CSSetConstantBuffers(12,1,&cb);
- struct Settings {unsigned width{n},height{n},frame{},history{1};float x{},y{},vw{n*2},vh{n};float radius{256},thickness{32},power{2},strength{1};unsigned gi{},spec{},temporal{},tiled{};} settings;
+ struct Settings {unsigned width{n},height{n},frame{},history{1};float x{},y{},vw{n*2},vh{n};float radius{256},thickness{32},power{2},strength{1};unsigned gi{},spec{},temporal{},tiled{};float pbr[16]{};} settings;
  bd.ByteWidth=sizeof(settings);ComPtr<ID3D11Buffer> constants;check(gpu.device->CreateBuffer(&bd,nullptr,&constants),"GI settings");cb=constants.Get();gpu.context->CSSetConstantBuffers(13,1,&cb);
  const auto dispatch=[&](ID3D11ComputeShader* shader,Texture& d,Texture& s){std::array<ID3D11ShaderResourceView*,8> views{};for(unsigned i=0;i<8;i++)views[i]=inputs[i].view.Get();ID3D11UnorderedAccessView* outputs[]{d.output.Get(),s.output.Get()};gpu.context->CSSetShaderResources(0,8,views.data());gpu.context->CSSetUnorderedAccessViews(0,2,outputs,nullptr);gpu.context->CSSetShader(shader,nullptr,0);gpu.context->Dispatch(n/8,n/8,2);outputs[0]=outputs[1]=nullptr;views={};gpu.context->CSSetUnorderedAccessViews(0,2,outputs,nullptr);gpu.context->CSSetShaderResources(0,8,views.data());};
  const auto read=[&](Texture& t){D3D11_TEXTURE2D_DESC td{};t.texture->GetDesc(&td);td.BindFlags=0;td.Usage=D3D11_USAGE_STAGING;td.CPUAccessFlags=D3D11_CPU_ACCESS_READ;ComPtr<ID3D11Texture2D> staging;check(gpu.device->CreateTexture2D(&td,nullptr,&staging),"GI readback texture");gpu.context->CopyResource(staging.Get(),t.texture.Get());std::vector<Float4> pixels(n*n*2);for(unsigned eye=0;eye<2;eye++){D3D11_MAPPED_SUBRESOURCE m{};check(gpu.context->Map(staging.Get(),eye,D3D11_MAP_READ,0,&m),"GI readback");for(unsigned y=0;y<n;y++)std::memcpy(pixels.data()+(eye*n+y)*n,static_cast<char*>(m.pData)+y*m.RowPitch,n*16);gpu.context->Unmap(staging.Get(),eye);}return pixels;};
@@ -129,8 +129,19 @@ void runtimeTest(GPU& gpu) {
  runtime.onDeviceCreated(nullptr,nullptr);gpu.context->ClearState();gpu.validateMessages();
  std::cout<<"Physical glare runtime: live output, cached aperture, eye/channel isolation and restoration passed\n";
 }
+void pbrIntegrationTest(GPU& gpu,const std::filesystem::path& root) {
+ auto directory=root/"tests/fixtures/pbr";
+ auto shader=gpu.shader(directory/"MaterialIntegrationCS.hlsl",directory,false,false,false,true,"main");
+ auto input=gpu.texture(8),output=gpu.texture(8);gpu.dispatch(shader.Get(),input,output,8,nullptr,true);
+ auto values=gpu.read(output,8);const float expected[]{.8f,.8f,.2f,.16f,.16f,.6f,.1f,.4f};
+ for(unsigned y=0;y<8;y++)for(unsigned x=0;x<8;x++) {
+  require(std::abs(values[y*8+x].x-.25f)<1e-6f,"Smith normal-incidence visibility depends on roughness");
+  require(std::abs(values[y*8+x].y-expected[y])<1e-5f,"GI material response lost metalness, settings or authored roughness");
+ }
+ gpu.context->ClearState();gpu.validateMessages();
+}
 void run(const std::filesystem::path& root,bool hardware) {
- GPU gpu(hardware);metalReflectionTest(gpu,root);giFilterTest(gpu,root,hardware);runtimeTest(gpu);auto source=root/"package/Shaders/Community/BloomGlare";auto reference=root/"tests/fixtures/glare";
+ GPU gpu(hardware);pbrIntegrationTest(gpu,root);metalReflectionTest(gpu,root);giFilterTest(gpu,root,hardware);runtimeTest(gpu);auto source=root/"package/Shaders/Community/BloomGlare";auto reference=root/"tests/fixtures/glare";
  auto oldRow=gpu.shader(reference/"ReferenceFft.hlsl",source,true,false),oldCol=gpu.shader(reference/"ReferenceFft.hlsl",source,false,false),oldInvRow=gpu.shader(reference/"ReferenceFft.hlsl",source,true,true),oldInvCol=gpu.shader(reference/"ReferenceFft.hlsl",source,false,true),multiply=gpu.shader(reference/"ReferenceMultiply.hlsl",source,false,false,false,true);
  auto row=gpu.shader(source/"GlareFftCS.hlsl",source,true,false),col=gpu.shader(source/"GlareFftCS.hlsl",source,false,false),convolve=gpu.shader(source/"GlareFftCS.hlsl",source,true,true,true),invCol=gpu.shader(source/"GlareFftCS.hlsl",source,false,true);
  for(unsigned n:{128,256,512}) {

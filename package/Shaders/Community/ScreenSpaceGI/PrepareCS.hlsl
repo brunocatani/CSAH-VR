@@ -1,4 +1,8 @@
 #include "ScreenSpaceGICommon.hlsli"
+#include "../PBR/PbrCommon.hlsli"
+#include "../PBR/PbrIndirectMaterial.hlsli"
+Texture2D<float4> Authored : register(t3);
+Texture2D<float> Surface : register(t4);
 Texture2D<float4> NativeNormal : register(t0);
 Texture2D<float4> NativeDepth : register(t1);
 Texture2D<float4> NativeMaterial : register(t2);
@@ -18,6 +22,6 @@ void main(uint3 id:SV_DispatchThreadID)
     Position[id]=valid?float4(v,Fo4VrFirstPersonDepth(d)?-1:1):0;
     NativeNormal.GetDimensions(w,h);p=clamp(int2(pixel),0,int2(w,h)-1);
     float3 n=DecodeNormal(NativeNormal.Load(int3(p,0)).xy);
-    float gloss=NativeMaterial.Load(int3(p,0)).x;
-    Normal[id]=float4(n,saturate(1-gloss));
+    PbrIndirectMaterial material=DecodePbrIndirectMaterial(NativeMaterial.Load(int3(p,0)),Authored.Load(int3(p,0)),0,Surface.Load(int3(p,0)),PbrFeature0,PbrFeature1,PbrParams0,PbrParams1);
+    Normal[id]=float4(n,material.roughness);
 }

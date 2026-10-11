@@ -1916,6 +1916,8 @@ add_custom_command(
     "${SKYLIGHTING_SHADER_GENERATOR}"
     "${SKYLIGHTING_AMBIENT_SHADER_SOURCE}"
     "${ROOT_DIR}/package/Shaders/Community/ScreenSpaceGI/Ambient.hlsli"
+    "${ROOT_DIR}/package/Shaders/Community/PBR/PbrCommon.hlsli"
+    "${ROOT_DIR}/package/Shaders/Community/PBR/PbrIndirectMaterial.hlsli"
   "${SKYLIGHTING_SAMPLING_SHADER_SOURCE}"
   "${SKYLIGHTING_RECEIVER_SHADER_SOURCE}"
   "${SKYLIGHTING_SUN_SHADER_SOURCE}"
@@ -2338,7 +2340,7 @@ file(GLOB SSGI_SHADER_SOURCES CONFIGURE_DEPENDS "${ROOT_DIR}/package/Shaders/Com
 add_custom_command(OUTPUT "${SSGI_GENERATED_HEADER}"
   COMMAND "${Python3_EXECUTABLE}" "${ROOT_DIR}/tools/generate_screen_space_gi_shaders.py"
     --root "${ROOT_DIR}" --fxc "${CSAH_FXC_EXECUTABLE}" --output "${SSGI_GENERATED_HEADER}"
-  DEPENDS "${ROOT_DIR}/tools/generate_screen_space_gi_shaders.py" ${SSGI_SHADER_SOURCES}
+  DEPENDS "${ROOT_DIR}/tools/generate_screen_space_gi_shaders.py" ${SSGI_SHADER_SOURCES} "${ROOT_DIR}/package/Shaders/Community/PBR/PbrCommon.hlsli" "${ROOT_DIR}/package/Shaders/Community/PBR/PbrIndirectMaterial.hlsli"
     "${ROOT_DIR}/package/Shaders/Community/Common/Fo4VrDepth.hlsli"
   VERBATIM)
 add_custom_target(ScreenSpaceGIShaders DEPENDS "${SSGI_GENERATED_HEADER}")

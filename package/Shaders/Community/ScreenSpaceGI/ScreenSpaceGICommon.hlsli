@@ -7,6 +7,7 @@ cbuffer Settings : register(b13)
     float2 ViewportOrigin; float2 ViewportExtent;
     float Radius; float Thickness; float AOPower; float GIStrength;
     uint EnableGI; uint EnableSpecular; uint EnableTemporal; uint TiledLighting;
+    float4 PbrFeature0, PbrFeature1, PbrParams0, PbrParams1;
 };
 cbuffer NativeCamera : register(b12) {float4 Camera[77];};
 cbuffer PreviousCamera : register(b10) {float4 Previous[77];};

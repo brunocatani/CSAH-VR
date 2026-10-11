@@ -2289,6 +2289,17 @@ namespace csah::render
             }
         }
 
+        [[nodiscard]] screen_space_gi::ScopedBindings scopeGiAmbient(ID3D11DeviceContext* context) noexcept
+        {
+            if (activeReplacementBinding.family != linear_lighting::ReplacementShaderFamily::dFLightAmbient ||
+                !screen_space_gi::Runtime::get().requested()) return {nullptr,{}};
+            const auto active = pbr::Runtime::get().requested();
+            return screen_space_gi::Runtime::get().scopeAmbient(context,true,
+                active ? surface_classification::Runtime::get().pbrMaterialShaderResourceView() : nullptr,
+                pbr::makeFrameData(pbr::Runtime::get().settings(),active),
+                surface_classification::Runtime::get().shaderResourceView());
+        }
+
         [[nodiscard]] water_effects::ScopedReflectionBindings scopeWaterReflections(ID3D11DeviceContext* context,bool water) noexcept
         {
             ibl::SslrEnvironmentView environment;
@@ -3693,9 +3704,7 @@ namespace csah::render
                     activeReplacementBinding.family ==
                         linear_lighting::ReplacementShaderFamily::
                             dFLightAmbient);
-            const auto giBindings=screen_space_gi::Runtime::get().scopeAmbient(context,
-                activeReplacementBinding.family==linear_lighting::ReplacementShaderFamily::dFLightAmbient,
-                pbr::Runtime::get().requested()?surface_classification::Runtime::get().pbrMaterialShaderResourceView():nullptr);
+            const auto giBindings=scopeGiAmbient(context);
             const auto waterReflections=scopeWaterReflections(context,
                 activeReplacementBinding.family==linear_lighting::ReplacementShaderFamily::water);
             const auto waterBindings=water_effects::Runtime::get().scopeDraw(context,
@@ -3803,9 +3812,7 @@ namespace csah::render
                     activeReplacementBinding.family ==
                         linear_lighting::ReplacementShaderFamily::
                             dFLightAmbient);
-            const auto giBindings=screen_space_gi::Runtime::get().scopeAmbient(context,
-                activeReplacementBinding.family==linear_lighting::ReplacementShaderFamily::dFLightAmbient,
-                pbr::Runtime::get().requested()?surface_classification::Runtime::get().pbrMaterialShaderResourceView():nullptr);
+            const auto giBindings=scopeGiAmbient(context);
             const auto waterReflections=scopeWaterReflections(context,
                 activeReplacementBinding.family==linear_lighting::ReplacementShaderFamily::water);
             const auto waterBindings=water_effects::Runtime::get().scopeDraw(context,
@@ -3925,9 +3932,7 @@ namespace csah::render
                     activeReplacementBinding.family ==
                         linear_lighting::ReplacementShaderFamily::
                             dFLightAmbient);
-            const auto giBindings=screen_space_gi::Runtime::get().scopeAmbient(context,
-                activeReplacementBinding.family==linear_lighting::ReplacementShaderFamily::dFLightAmbient,
-                pbr::Runtime::get().requested()?surface_classification::Runtime::get().pbrMaterialShaderResourceView():nullptr);
+            const auto giBindings=scopeGiAmbient(context);
             const auto waterReflections=scopeWaterReflections(context,
                 activeReplacementBinding.family==linear_lighting::ReplacementShaderFamily::water);
             const auto waterBindings=water_effects::Runtime::get().scopeDraw(context,
@@ -4050,9 +4055,7 @@ namespace csah::render
                     activeReplacementBinding.family ==
                         linear_lighting::ReplacementShaderFamily::
                             dFLightAmbient);
-            const auto giBindings=screen_space_gi::Runtime::get().scopeAmbient(context,
-                activeReplacementBinding.family==linear_lighting::ReplacementShaderFamily::dFLightAmbient,
-                pbr::Runtime::get().requested()?surface_classification::Runtime::get().pbrMaterialShaderResourceView():nullptr);
+            const auto giBindings=scopeGiAmbient(context);
             const auto waterReflections=scopeWaterReflections(context,
                 activeReplacementBinding.family==linear_lighting::ReplacementShaderFamily::water);
             const auto waterBindings=water_effects::Runtime::get().scopeDraw(context,

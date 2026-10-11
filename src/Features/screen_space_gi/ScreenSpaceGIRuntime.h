@@ -1,5 +1,6 @@
 #pragma once
 #include "Features/screen_space_gi/ScreenSpaceGISettings.h"
+#include "Features/pbr/PbrSettings.h"
 #include <d3d11.h>
 #include <wrl/client.h>
 #include <array>
@@ -10,13 +11,13 @@ namespace csah::screen_space_gi
     class ScopedBindings final
     {
     public:
-        ScopedBindings(ID3D11DeviceContext* context,const std::array<ID3D11ShaderResourceView*,7>& views) noexcept;
+        ScopedBindings(ID3D11DeviceContext* context,const std::array<ID3D11ShaderResourceView*,8>& views) noexcept;
         ~ScopedBindings();
         ScopedBindings(const ScopedBindings&)=delete;
         ScopedBindings& operator=(const ScopedBindings&)=delete;
     private:
         ID3D11DeviceContext* context_{};
-        std::array<Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>,7> previous_;
+        std::array<Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>,8> previous_;
     };
     class Runtime final
     {
@@ -28,7 +29,7 @@ namespace csah::screen_space_gi
         // Native renderer pre-render callback, on the immediate-context owner.
         void beginFrame() noexcept;
         void resetHistory() noexcept {reset_.store(true,std::memory_order_release);}
-        [[nodiscard]] ScopedBindings scopeAmbient(ID3D11DeviceContext* context,bool ambient,ID3D11ShaderResourceView* authoredPbr=nullptr) noexcept;
+        [[nodiscard]] ScopedBindings scopeAmbient(ID3D11DeviceContext* context,bool ambient,ID3D11ShaderResourceView* authoredPbr=nullptr, const pbr::FrameData& material={}, ID3D11ShaderResourceView* surface=nullptr) noexcept;
         void captureRadiance(ID3D11DeviceContext* context,bool tiled,ID3D11ShaderResourceView* authoredPbr=nullptr) noexcept;
     private:
         Runtime()=default;
@@ -40,11 +41,12 @@ namespace csah::screen_space_gi
             float originX{},originY{},viewportWidth{},viewportHeight{};
             float radius{},thickness{},aoPower{},strength{};
             UINT gi{},specular{},temporal{},tiled{};
+            pbr::FrameData material{};
         };
-        static_assert(sizeof(Constants)==64);
+        static_assert(sizeof(Constants)==128);
         bool failAllocation() noexcept;
         bool ensureResources(UINT width,UINT height) noexcept;
-        bool prepareAmbient(ID3D11DeviceContext* context) noexcept;
+        bool prepareAmbient(ID3D11DeviceContext* context, ID3D11ShaderResourceView* authored, const pbr::FrameData& material, ID3D11ShaderResourceView* surface) noexcept;
         bool createTexture(Texture& texture,DXGI_FORMAT format,UINT width,UINT height) noexcept;
         void dispatch(ID3D11ComputeShader* shader,const std::array<ID3D11ShaderResourceView*,8>& inputs,
             ID3D11UnorderedAccessView* first,ID3D11UnorderedAccessView* second=nullptr) noexcept;

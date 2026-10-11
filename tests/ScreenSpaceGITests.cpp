@@ -25,7 +25,7 @@ namespace
     HRESULT STDMETHODCALLTYPE failTexture(ID3D11Device*,const D3D11_TEXTURE2D_DESC*,const D3D11_SUBRESOURCE_DATA*,ID3D11Texture2D** output)
     {if(output) *output=nullptr;return E_OUTOFMEMORY;}
     constexpr UINT Width=32,Height=16;
-    struct Constants {UINT width{Width},height{Height},frame{},history{1};float x{},y{},vw{Width*4},vh{Height*2};float radius{100},thickness{32},power{2},strength{1};UINT gi{1},specular{1},temporal{},tiled{};};
+    struct Constants {UINT width{Width},height{Height},frame{},history{1};float x{},y{},vw{Width*4},vh{Height*2};float radius{100},thickness{32},power{2},strength{1};UINT gi{1},specular{1},temporal{},tiled{};float pbr[16]{};};
     struct Texture {ComPtr<ID3D11Texture2D> texture;ComPtr<ID3D11ShaderResourceView> view;ComPtr<ID3D11UnorderedAccessView> output;};
     struct Fixture
     {
@@ -247,7 +247,17 @@ namespace
         csah::screen_space_gi::Settings runtimeSettings;runtimeSettings.enabled=true;runtime.applySettings(runtimeSettings);runtime.beginFrame();
         f.context->CSSetShader(f.shader[3].Get(),nullptr,0);
         {
-            auto scope=runtime.scopeAmbient(f.context.Get(),true);
+            csah::pbr::FrameData material{};material.enabled=1;material.legacyMaterials=1;material.environmentFresnel=1;material.roughnessMultiplier=1.7f;material.baseF0Multiplier=.45f;
+            auto scope=runtime.scopeAmbient(f.context.Get(),true,nullptr,material,nativeViews[3].Get());
+            ComPtr<ID3D11ShaderResourceView> parameters;f.context->PSGetShaderResources(59,1,&parameters);
+            D3D11_SHADER_RESOURCE_VIEW_DESC pd{};parameters->GetDesc(&pd);require(pd.Buffer.NumElements==8,"GI lost PBR parameter rows");
+            ComPtr<ID3D11Resource> data;parameters->GetResource(&data);ComPtr<ID3D11Buffer> source;check(data.As(&source),"GI parameter buffer");
+            D3D11_BUFFER_DESC copyDesc{};source->GetDesc(&copyDesc);copyDesc.BindFlags=0;copyDesc.Usage=D3D11_USAGE_STAGING;copyDesc.CPUAccessFlags=D3D11_CPU_ACCESS_READ;
+            ComPtr<ID3D11Buffer> copy;check(f.device->CreateBuffer(&copyDesc,nullptr,&copy),"GI parameter readback");f.context->CopyResource(copy.Get(),source.Get());
+            D3D11_MAPPED_SUBRESOURCE mapped{};check(f.context->Map(copy.Get(),0,D3D11_MAP_READ,0,&mapped),"GI parameter map");
+            csah::pbr::FrameData transferred{};std::memcpy(&transferred,static_cast<const char*>(mapped.pData)+64,sizeof(transferred));f.context->Unmap(copy.Get(),0);
+            require(transferred.enabled==1 && transferred.roughnessMultiplier==1.7f && transferred.baseF0Multiplier==.45f,"GI did not transport live PBR settings");
+            ComPtr<ID3D11ShaderResourceView> surface;f.context->PSGetShaderResources(64,1,&surface);require(surface.Get()==nativeViews[3].Get(),"GI surface classification missing");
             ComPtr<ID3D11ShaderResourceView> selected;f.context->PSGetShaderResources(57,1,&selected);require(selected && selected.Get()!=sentinel,"runtime failed to publish ambient output");
             Texture generated;ComPtr<ID3D11Resource> resource;selected->GetResource(&resource);check(resource.As(&generated.texture),"generated texture");
             auto pixels=f.read(generated);for(auto v:pixels) require(std::isfinite(v.w)&&v.w>.99f && v.x==0 && v.y==0 && v.z==0,"first frame must have neutral plane lighting");

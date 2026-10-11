@@ -5,6 +5,7 @@
 #include "ScreenSpaceGIShaders.h"
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 namespace csah::screen_space_gi
 {
     using Microsoft::WRL::ComPtr;
@@ -21,20 +22,20 @@ namespace csah::screen_space_gi
             return result.ArraySize==1 && result.SampleDesc.Count==1;
         }
     }
-    ScopedBindings::ScopedBindings(ID3D11DeviceContext* context,const std::array<ID3D11ShaderResourceView*,7>& views) noexcept:context_(context)
+    ScopedBindings::ScopedBindings(ID3D11DeviceContext* context,const std::array<ID3D11ShaderResourceView*,8>& views) noexcept:context_(context)
     {
         if(!context_) return;
-        std::array<ID3D11ShaderResourceView*,7> previous{};
-        context_->PSGetShaderResources(57,7,previous.data());
-        for(std::size_t i=0;i<7;i++) previous_[i].Attach(previous[i]);
-        context_->PSSetShaderResources(57,7,views.data());
+        std::array<ID3D11ShaderResourceView*,8> previous{};
+        context_->PSGetShaderResources(57,8,previous.data());
+        for(std::size_t i=0;i<8;i++) previous_[i].Attach(previous[i]);
+        context_->PSSetShaderResources(57,8,views.data());
     }
     ScopedBindings::~ScopedBindings()
     {
         if(!context_) return;
-        std::array<ID3D11ShaderResourceView*,7> previous{};
-        for(std::size_t i=0;i<7;i++) previous[i]=previous_[i].Get();
-        context_->PSSetShaderResources(57,7,previous.data());
+        std::array<ID3D11ShaderResourceView*,8> previous{};
+        for(std::size_t i=0;i<8;i++) previous[i]=previous_[i].Get();
+        context_->PSSetShaderResources(57,8,previous.data());
     }
     Runtime& Runtime::get() noexcept {static Runtime runtime;return runtime;}
     void Runtime::applySettings(const Settings& value) noexcept
@@ -109,7 +110,7 @@ namespace csah::screen_space_gi
         context_->CSSetShader(shader,nullptr,0);context_->Dispatch((width_+7)/8,(height_+7)/8,2);
         context_->CSSetUnorderedAccessViews(0,2,noOutputs.data(),nullptr);context_->CSSetShaderResources(0,8,noInputs.data());
     }
-    bool Runtime::prepareAmbient(ID3D11DeviceContext* context) noexcept
+    bool Runtime::prepareAmbient(ID3D11DeviceContext* context, ID3D11ShaderResourceView* authored, const pbr::FrameData& materialSettings, ID3D11ShaderResourceView* surface) noexcept
     {
         if(preparedFrame_==frame_) return ready_;
         if(frame_<nextRetry_) return false;
@@ -136,8 +137,9 @@ namespace csah::screen_space_gi
             context->CopyResource(previousCamera_.Get(),camera.Get());historyValid_=false;}
         if(uploaded_.originX!=viewport.TopLeftX || uploaded_.originY!=viewport.TopLeftY ||
             uploaded_.viewportWidth!=viewport.Width || uploaded_.viewportHeight!=viewport.Height) historyValid_=false;
+        if(std::memcmp(&uploaded_.material,&materialSettings,sizeof(materialSettings))!=0) historyValid_=false;
         uploaded_={width,height,static_cast<UINT>(frame_),historyValid_?1u:0u,viewport.TopLeftX,viewport.TopLeftY,viewport.Width,viewport.Height,
-            radius_.load(),thickness_.load(),aoPower_.load(),strength_.load(),gi_.load()?1u:0u,specularEnabled_.load()?1u:0u,temporal_.load()?1u:0u,0};
+            radius_.load(),thickness_.load(),aoPower_.load(),strength_.load(),gi_.load()?1u:0u,specularEnabled_.load()?1u:0u,temporal_.load()?1u:0u,0,materialSettings};
         context->UpdateSubresource(constants_.Get(),0,nullptr,&uploaded_,0,0);
         // Separate typed buffer for pixel consumers; never bind a CB as an SRV.
         ComPtr<ID3D11Resource> parameters;
@@ -145,7 +147,7 @@ namespace csah::screen_space_gi
         if(!parameters) {
             D3D11_BUFFER_DESC pd{};pd.ByteWidth=sizeof(Constants);pd.BindFlags=D3D11_BIND_SHADER_RESOURCE;
             ComPtr<ID3D11Buffer> buffer;if(FAILED(device_->CreateBuffer(&pd,nullptr,&buffer))) return failAllocation();
-            D3D11_SHADER_RESOURCE_VIEW_DESC view{};view.Format=DXGI_FORMAT_R32G32B32A32_FLOAT;view.ViewDimension=D3D11_SRV_DIMENSION_BUFFER;view.Buffer.NumElements=4;
+            D3D11_SHADER_RESOURCE_VIEW_DESC view{};view.Format=DXGI_FORMAT_R32G32B32A32_FLOAT;view.ViewDimension=D3D11_SRV_DIMENSION_BUFFER;view.Buffer.NumElements=8;
             if(FAILED(device_->CreateShaderResourceView(buffer.Get(),&view,&parameterView_))) return failAllocation();parameters=buffer;
         }
         context->UpdateSubresource(parameters.Get(),0,nullptr,&uploaded_,0,0);
@@ -154,7 +156,7 @@ namespace csah::screen_space_gi
         ID3D11Buffer* cb=stereo.Get();context->CSSetConstantBuffers(8,1,&cb);
         cb=previousCamera_.Get();context->CSSetConstantBuffers(10,1,&cb);cb=camera.Get();context->CSSetConstantBuffers(12,1,&cb);
         cb=constants_.Get();context->CSSetConstantBuffers(13,1,&cb);
-        dispatch(shaders_[0].Get(),{inputs[0].Get(),inputs[2].Get(),inputs[1].Get()},positions_[current_].output.Get(),normals_[current_].output.Get());
+        dispatch(shaders_[0].Get(),{inputs[0].Get(),inputs[2].Get(),inputs[1].Get(),authored,surface},positions_[current_].output.Get(),normals_[current_].output.Get());
         const auto previous=current_^1;
         dispatch(shaders_[1].Get(),{positions_[current_].view.Get(),normals_[current_].view.Get(),positions_[previous].view.Get(),normals_[previous].view.Get(),radiance_.view.Get()},rawDiffuse_.output.Get(),rawSpecular_.output.Get());
         dispatch(shaders_[2].Get(),{positions_[current_].view.Get(),normals_[current_].view.Get(),positions_[previous].view.Get(),normals_[previous].view.Get(),rawDiffuse_.view.Get(),rawSpecular_.view.Get(),diffuse_[previous].view.Get(),specular_[previous].view.Get()},diffuse_[current_].output.Get(),specular_[current_].output.Get());
@@ -163,12 +165,12 @@ namespace csah::screen_space_gi
         if(!loggedActive_) {loggedActive_=true;logging::info("Screen Space GI active: two isolated {}x{} eye slices, AO={}, indirect={}, experimentalSpecular={}, temporal={}; current geometry and prior-frame surface lighting.",width_,height_,uploaded_.aoPower,uploaded_.gi!=0,uploaded_.specular!=0,uploaded_.temporal!=0);}
         return true;
     }
-    ScopedBindings Runtime::scopeAmbient(ID3D11DeviceContext* context,bool ambient,ID3D11ShaderResourceView* authored) noexcept
+    ScopedBindings Runtime::scopeAmbient(ID3D11DeviceContext* context,bool ambient,ID3D11ShaderResourceView* authored, const pbr::FrameData& material, ID3D11ShaderResourceView* surface) noexcept
     {
         if(!ambient || context!=context_.Get()) return {nullptr,{}};
-        if(!requested() || !prepareAmbient(context)) return {context,{}};
+        if(!requested() || !prepareAmbient(context,authored,material,surface)) return {context,{}};
         ComPtr<ID3D11ShaderResourceView> albedo;context->PSGetShaderResources(0,1,&albedo);
-        return {context,{diffuse_[current_].view.Get(),specular_[current_].view.Get(),parameterView_.Get(),albedo.Get(),authored,positions_[current_].view.Get(),normals_[current_].view.Get()}};
+        return {context,{diffuse_[current_].view.Get(),specular_[current_].view.Get(),parameterView_.Get(),albedo.Get(),authored,positions_[current_].view.Get(),normals_[current_].view.Get(),surface}};
     }
     void Runtime::captureRadiance(ID3D11DeviceContext* context,bool tiledActive,ID3D11ShaderResourceView* authored) noexcept
     {
