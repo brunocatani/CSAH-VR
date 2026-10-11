@@ -176,15 +176,11 @@ bool reconstructScenePosition(
     return all(isfinite(position));
 }
 
-bool projectPosition(
-    float3 position,
+bool projectWaterClip(
+    float4 clip,
     bool rightEye,
     out float2 packed)
 {
-    const uint eyeOffset = rightEye ? 4u : 0u;
-    const float4 clip = multiplyRows(
-        eyeOffset + 4u,
-        float4(position, 1.0f));
     if (!all(isfinite(clip)) || clip.w <= 1.0e-6f) {
         packed = 0.0f;
         return false;
@@ -226,8 +222,9 @@ bool projectMidpointWorld(
     bool rightEye,
     out float2 packed)
 {
-    return projectPosition(
-        midpointWorldToView(position, rightEye),
+    return projectWaterClip(
+        multiplyRows(rightEye ? 8u : 4u,
+            float4(midpointWorldToView(position, rightEye), 1.0f)),
         rightEye,
         packed);
 }
@@ -249,6 +246,8 @@ bool reconstructSceneMidpointWorld(
 bool sharedDepthGap(
     float3 rayPosition,
     float3 rayDirection,
+    float4 leftClip,
+    float4 rightClip,
     out float gap,
     out float3 scenePosition)
 {
@@ -257,10 +256,10 @@ bool sharedDepthGap(
     float3 leftScene;
     float3 rightScene;
     const bool leftValid =
-        projectMidpointWorld(rayPosition, false, leftUv) &&
+        projectWaterClip(leftClip, false, leftUv) &&
         reconstructSceneMidpointWorld(leftUv, false, leftScene);
     const bool rightValid =
-        projectMidpointWorld(rayPosition, true, rightUv) &&
+        projectWaterClip(rightClip, true, rightUv) &&
         reconstructSceneMidpointWorld(rightUv, true, rightScene);
     if (!leftValid && !rightValid) {
         gap = -1.0e20f;
@@ -282,6 +281,43 @@ bool sharedDepthGap(
     return isfinite(gap) && gap > -1.0e19f;
 }
 
+bool clipWaterTravel(float origin, float slope, inout float lower, inout float upper)
+{
+    // Expand the projected frustum slightly; clipping is only an optimization.
+    // The original per-sample projection remains the visibility authority.
+    origin += 1.0e-4f * max(abs(origin), 1.0f);
+    if (abs(slope) < 1.0e-12f) return origin >= 0.0f;
+    const float crossing = -origin / slope;
+    if (slope > 0.0f) lower = max(lower, crossing);
+    else upper = min(upper, crossing);
+    return lower <= upper;
+}
+
+float2 visibleWaterTravel(float4 origin, float4 direction,
+    float minimumTravel, float maximumTravel)
+{
+    float lower = minimumTravel, upper = maximumTravel;
+    if (!all(isfinite(origin)) || !all(isfinite(direction)))
+        return float2(lower, upper);
+    // Projection of a straight ray intersects each eye's convex frustum in
+    // one interval. No geometry can be hit after both intervals have ended.
+    if (!clipWaterTravel(origin.w - 1.0e-6f, direction.w, lower, upper) ||
+        !clipWaterTravel(origin.w + origin.x, direction.w + direction.x, lower, upper) ||
+        !clipWaterTravel(origin.w - origin.x, direction.w - direction.x, lower, upper) ||
+        !clipWaterTravel(origin.w + origin.y, direction.w + direction.y, lower, upper) ||
+        !clipWaterTravel(origin.w - origin.y, direction.w - direction.y, lower, upper))
+        return float2(maximumTravel + 1.0f, minimumTravel - 1.0f);
+    return float2(lower, upper);
+}
+
+float waterOwnEyeConfidence(float disagreement, float thickness)
+{
+    // Fade to the existing fallback before the own-eye rejection boundary.
+    // A binary visibility switch otherwise pops as depth texels change with
+    // head movement, even when the ray's other confidence terms remain high.
+    return 1.0f - smoothstep(thickness * 0.75f, thickness, disagreement);
+}
+
 float4 TraceScreenWaterReflection(WaterRaytraceInput input)
 {
     const bool rightEye = input.eyeIndex != 0u;
@@ -300,6 +336,21 @@ float4 TraceScreenWaterReflection(WaterRaytraceInput input)
     static const uint refinementSteps = 5u;
     static const float minimumTravel = 2.0f;
     static const float maximumTravel = 1000.0f;
+    // Project each ray once. Homogeneous projection is linear in travel;
+    // repeated search/refinement steps need only multiply-adds before divide.
+    const float4 leftOrigin = multiplyRows(4u,
+        float4(midpointWorldToView(receiver, false), 1.0f));
+    const float4 rightOrigin = multiplyRows(8u,
+        float4(midpointWorldToView(receiver, true), 1.0f));
+    const float4 viewDirection = float4(transformRows(0u, reflection), 0.0f);
+    const float4 leftDirection = multiplyRows(4u, viewDirection);
+    const float4 rightDirection = multiplyRows(8u, viewDirection);
+    const float2 leftTravel = visibleWaterTravel(leftOrigin, leftDirection,
+        minimumTravel, maximumTravel);
+    const float2 rightTravel = visibleWaterTravel(rightOrigin, rightDirection,
+        minimumTravel, maximumTravel);
+    const float firstVisible = min(leftTravel.x, rightTravel.x);
+    const float lastVisible = max(leftTravel.y, rightTravel.y);
     float previousTravel = minimumTravel;
     float previousGap = 0.0f;
     bool previousValid = false;
@@ -312,12 +363,16 @@ float4 TraceScreenWaterReflection(WaterRaytraceInput input)
             minimumTravel,
             maximumTravel,
             normalizedStep * normalizedStep);
+        if (travel > lastVisible) break;
+        if (travel < firstVisible) continue;
         const float3 rayPosition = receiver + reflection * travel;
         float3 scenePosition;
         float gap;
         if (!sharedDepthGap(
             rayPosition,
             reflection,
+            leftOrigin + leftDirection * travel,
+            rightOrigin + rightDirection * travel,
             gap,
             scenePosition)) {
             previousValid = false;
@@ -338,6 +393,8 @@ float4 TraceScreenWaterReflection(WaterRaytraceInput input)
                 if (!sharedDepthGap(
                     candidateRay,
                     reflection,
+                    leftOrigin + leftDirection * candidateTravel,
+                    rightOrigin + rightDirection * candidateTravel,
                     candidateGap,
                     candidateScene)) {
                     lower = candidateTravel;
@@ -375,6 +432,8 @@ float4 TraceScreenWaterReflection(WaterRaytraceInput input)
                     length(ownEyeScene - hitScene) > thickness) {
                     return worldReflection;
                 }
+                const float visibilityFade = waterOwnEyeConfidence(
+                    length(ownEyeScene - hitScene), thickness);
                 const float2 localHit = eyeLocalUv(hitUv, rightEye);
                 const float edge = min(
                     min(localHit.x, 1.0f - localHit.x),
@@ -393,7 +452,7 @@ float4 TraceScreenWaterReflection(WaterRaytraceInput input)
                 const float separationFade =
                     1.0f - saturate(separation / thickness);
                 const float confidence =
-                    edgeFade * travelFade * selfFade * separationFade;
+                    edgeFade * travelFade * selfFade * separationFade * visibilityFade;
                 // A clamp sampler clamps the full packed image, not its eye
                 // halves. Keep the linear filter footprint inside this eye.
                 uint colorWidth, colorHeight;
