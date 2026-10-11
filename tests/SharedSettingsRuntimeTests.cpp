@@ -24,7 +24,6 @@ int main(int argumentCount, char** arguments)
 
     const Snapshot baseline{};
     require(!baseline.diagnostics.measureStereoSharing,"stereo measurement must default off");
-    require(!baseline.diagnostics.captureFrame, "manual capture must default off");
     if (argumentCount == 2) {
         const auto directory = std::filesystem::absolute(arguments[1]);
         std::filesystem::create_directories(directory);
@@ -34,8 +33,9 @@ int main(int argumentCount, char** arguments)
             output << "[Diagnostics]\niGpuProfilingMode=4\nbMeasureStereoSharing=1\nbCaptureFrame=1\nsCaptureDirectory=F:/fixture/captures\n";
         }
         auto loaded = csah::diagnostics_settings::load(file);
-        require(loaded.measureStereoSharing && loaded.gpuProfilingGroups == 4 && loaded.captureFrame, "IBL profiling or manual capture request was lost");
-        require(std::wstring_view(loaded.captureDirectory.data()) == L"F:/fixture/captures", "capture path changed");
+        require(loaded.measureStereoSharing && loaded.gpuProfilingGroups == 4, "IBL profiling was lost");
+        require(WritePrivateProfileStringW(L"Diagnostics", L"bCaptureFrame", L"0", file.c_str()), "legacy capture setting write failed");
+        require(csah::diagnostics_settings::load(file)==loaded,"retired INI capture key still changes runtime settings");
         require(WritePrivateProfileStringW(L"Diagnostics", L"iGpuProfilingMode", L"7", file.c_str()), "test settings write failed");
         require(csah::diagnostics_settings::load(file).gpuProfilingGroups == 7, "all-feature profiling unavailable");
         require(WritePrivateProfileStringW(L"Diagnostics", L"iGpuProfilingMode", L"99", file.c_str()), "test invalid settings write failed");

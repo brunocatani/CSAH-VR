@@ -49,6 +49,7 @@
 #include "Features/wrapped_grass/WrappedGrassRuntime.h"
 #include "Features/wrapped_grass/WrappedGrassSettingsStore.h"
 #include "diagnostics/HdrOutputProbe.h"
+#include "diagnostics/RenderDocCapture.h"
 #include "diagnostics/LinearLightingQualification.h"
 #include "render/BSDFPrePassShaderHook.h"
 #include "render/BSLightingGeometryHook.h"
@@ -114,6 +115,7 @@ namespace
         switch (message->type) {
         case F4SE::MessagingInterface::kPostPostLoad:
         {
+            csah::diagnostics::registerDeveloperCapture();
             const auto d3d = csah::render::d3d11HookSnapshot();
             const auto dlaa = csah::dlaa::Runtime::get().snapshot();
             csah::logging::info(
@@ -500,6 +502,7 @@ extern "C" __declspec(dllexport) bool F4SEAPI F4SEPlugin_Load(
             csah::logging::warn(
                 "Vanilla Fixes engine-gate contract was rejected; shader fixes remain available, but engine-gate ownership stays fail-closed.");
         }
+        csah::diagnostics::initializeDeveloperCapture(iniPath.c_str());
         if (!csah::render::installEarlyD3D11Hooks()) {
             csah::logging::warn(
                 "Verified D3D11 bootstrap was not installed; plugin remains loaded but all rendering stays vanilla.");

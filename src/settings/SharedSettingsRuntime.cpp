@@ -138,21 +138,12 @@ namespace csah::shared_settings
 
         void applyLiveChanges(
             const ChangeSet& changes,
-            Snapshot& next,
-            const Snapshot& previous,
-            const std::filesystem::path& configPath) noexcept
+            const Snapshot& next) noexcept
         {
             if (changes.diagnostics) {
                 render::GpuTimingProfiler::setOnDemandGroups(
                     next.diagnostics.gpuProfilingGroups | (next.diagnostics.measureStereoSharing ? 8u : 0u));
                 diagnostics::stereo_measurement::Runtime::get().setEnabled(next.diagnostics.measureStereoSharing);
-                if (next.diagnostics.captureFrame && !previous.diagnostics.captureFrame) {
-                    (void)diagnostics::requestRenderDocCapture(next.diagnostics.captureDirectory.data());
-                    if (WritePrivateProfileStringW(L"Diagnostics", L"bCaptureFrame", L"0", configPath.c_str()))
-                        next.diagnostics.captureFrame = false;
-                    else
-                        logging::warn("RenderDoc request was consumed, but bCaptureFrame could not be cleared in the INI.");
-                }
             }
             if (changes.linearLighting) {
                 linear_lighting::Runtime::get().queueSettings(
@@ -257,13 +248,6 @@ namespace csah::shared_settings
                 render::GpuTimingProfiler::setOnDemandGroups(
                     active_.diagnostics.gpuProfilingGroups | (active_.diagnostics.measureStereoSharing ? 8u : 0u));
                 diagnostics::stereo_measurement::Runtime::get().setEnabled(active_.diagnostics.measureStereoSharing);
-                if (active_.diagnostics.captureFrame) {
-                    (void)diagnostics::requestRenderDocCapture(active_.diagnostics.captureDirectory.data());
-                    if (WritePrivateProfileStringW(L"Diagnostics", L"bCaptureFrame", L"0", configPath_.c_str()))
-                        active_.diagnostics.captureFrame = false;
-                    else
-                        logging::warn("RenderDoc startup request was consumed, but bCaptureFrame could not be cleared in the INI.");
-                }
                 accepted_ = readSignature(configPath_);
 
                 try {
@@ -307,6 +291,7 @@ namespace csah::shared_settings
                     }
                     lock.unlock();
                     reloadIfStable();
+                    diagnostics::serviceDeveloperCapture(configPath_.c_str());
                     lock.lock();
                 }
             }
@@ -353,7 +338,7 @@ namespace csah::shared_settings
 
                     const bool activeVanillaFixesGate =
                         active_.vanillaFixes.enabled;
-                    applyLiveChanges(changes, next, active_, configPath_);
+                    applyLiveChanges(changes, next);
                     active_ = next;
                     if (changes.vanillaFixesGate) {
                         // Keep the process-effective startup gate as the

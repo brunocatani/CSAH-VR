@@ -94,9 +94,9 @@ foreach(tabIndex RANGE 0 ${lastTab})
   endforeach()
 endforeach()
 
-if(NOT controlCount EQUAL 183)
+if(NOT controlCount EQUAL 182)
   message(FATAL_ERROR
-    "CSAH PALM settings coverage changed: expected 183 controls, found ${controlCount}")
+    "CSAH PALM settings coverage changed: expected 182 controls, found ${controlCount}")
 endif()
 
 foreach(required IN ITEMS

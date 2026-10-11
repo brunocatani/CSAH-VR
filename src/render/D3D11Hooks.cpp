@@ -35,6 +35,7 @@
 #include "Features/volumetric_lighting/VolumetricLightingRuntime.h"
 #include "Features/wrapped_grass/WrappedGrassRuntime.h"
 #include "diagnostics/HdrOutputProbe.h"
+#include "diagnostics/RenderDocCapture.h"
 #include "support/Logger.h"
 
 #include <MinHook.h>
@@ -5022,18 +5023,20 @@ namespace csah::render
             const auto exported = d3d11 ? GetProcAddress(
                 d3d11,
                 "D3D11CreateDeviceAndSwapChain") : nullptr;
-            if (!import || !exported || *import != exported ||
-                !isExecutableAddress(exported)) {
+            const auto predecessor = import ? *import : nullptr;
+            const bool captureHook = diagnostics::isRenderDocCreationHook(predecessor);
+            if (!import || !exported || (predecessor != exported && !captureHook) ||
+                !isExecutableAddress(predecessor)) {
                 logging::error(
                     "Fallout4VR D3D11 creation import identity gate failed; rendering remains vanilla.");
                 return false;
             }
 
             originalCreateDeviceAndSwapChain =
-                reinterpret_cast<D3D11CreateDeviceAndSwapChainFunction>(exported);
+                reinterpret_cast<D3D11CreateDeviceAndSwapChainFunction>(predecessor);
             if (!patchPointer(
                     import,
-                    exported,
+                    predecessor,
                     reinterpret_cast<void*>(&hookCreateDeviceAndSwapChain))) {
                 originalCreateDeviceAndSwapChain = nullptr;
                 logging::error(
@@ -5042,6 +5045,7 @@ namespace csah::render
             }
             deviceCreationImportCell = import;
             deviceCreationImportInstalled.store(true, std::memory_order_release);
+            if (captureHook) logging::info("Preserved verified RenderDoc D3D creation predecessor for manual GPU data captures.");
             logging::info(
                 "Installed exact D3D11CreateDeviceAndSwapChain import hook.");
             return true;
