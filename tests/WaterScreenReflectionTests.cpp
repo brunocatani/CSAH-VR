@@ -56,8 +56,8 @@ namespace
         D3D11_RASTERIZER_DESC rd{};rd.FillMode=D3D11_FILL_SOLID;rd.CullMode=D3D11_CULL_NONE;rd.DepthClipEnable=TRUE;ComPtr<ID3D11RasterizerState> raster;check(device->CreateRasterizerState(&rd,&raster),"raster");context->RSSetState(raster.Get());
         auto& runtime=csah::water_effects::Runtime::get();runtime.onDeviceCreated(device.Get(),context.Get());csah::water_effects::Settings settings;settings.enabled=true;settings.reflections=false;settings.screenReflections=true;runtime.applySettings(settings);
         csah::ibl::SslrEnvironmentView environment;
-        require(!csah::water_effects::Settings{}.reflections && !csah::water_effects::Settings{}.screenReflections,
-            "water reflections must be independent opt-ins");
+        require(!csah::water_effects::Settings{}.reflections && !csah::water_effects::Settings{}.screenReflections && csah::water_effects::Settings{}.reflectionDistance==0,
+            "water reflections must be independent opt-ins without a hidden sea-distance cutoff");
         // A global cube can be available throughout all four water modes.
         ComPtr<ID3D11Texture2D> cube;ComPtr<ID3D11ShaderResourceView> cubeView;
         D3D11_TEXTURE2D_DESC cubeDesc{};cubeDesc.Width=cubeDesc.Height=cubeDesc.MipLevels=cubeDesc.SampleDesc.Count=1;

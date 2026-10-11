@@ -59,6 +59,8 @@ namespace csah::water_effects
         reflections_.store(s.reflections);reflectionStrength_.store(s.reflectionStrength);reflectionDistance_.store(s.reflectionDistance);
         enabled_.store(s.enabled,std::memory_order_release);settingsRevision_.fetch_add(1,std::memory_order_release);
         if(!s.enabled || !s.caustics) world_.invalidate();
+        logging::info("Water reflection settings: water={}, dynamicCube={}, FX={}, strength={}, cubeFadeDistance={} (0=unlimited).",
+            s.enabled,s.reflections,s.screenReflections,s.reflectionStrength,s.reflectionDistance);
     }
     void Runtime::onDeviceCreated(ID3D11Device* device,ID3D11DeviceContext* context) noexcept
     {

@@ -87,7 +87,7 @@ namespace csah::water_effects
         std::atomic<float> reflectionFlatness_{},reflectionRoughness_{};
         std::atomic<float> scale_{1};
         std::atomic<float> causticStrength_{1};
-        std::atomic<float> reflectionStrength_{1},reflectionDistance_{1024};
+        std::atomic<float> reflectionStrength_{1},reflectionDistance_{};
         std::atomic_uint64_t settingsRevision_{1};
         UINT missingDraws_{};
         UINT missingCausticDraws_{};

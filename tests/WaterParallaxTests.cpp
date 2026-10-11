@@ -36,7 +36,8 @@ Out main(uint vertex:SV_VertexID,uint eye:SV_InstanceID){Out o;float2 uv=float2(
         ComPtr<ID3D11VertexShader> vs;check(device->CreateVertexShader(code->GetBufferPointer(),code->GetBufferSize(),nullptr,&vs),"fixture VS");context->VSSetShader(vs.Get(),nullptr,0);
         context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
         auto buffer=[&](const void* data,UINT size) {D3D11_BUFFER_DESC d{};d.ByteWidth=size;d.BindFlags=D3D11_BIND_CONSTANT_BUFFER;D3D11_SUBRESOURCE_DATA initial{data,0,0};ComPtr<ID3D11Buffer> result;check(device->CreateBuffer(&d,&initial,&result),"constants");return result;};
-        std::array<V,77> frame{};frame[0]={1,0,0,0};frame[1]={0,1,0,0};frame[2]={0,0,1,0};frame[3]={0,0,0,1};frame[20]=frame[0];frame[21]=frame[1];frame[22]=frame[2];
+        // View and inverse-view look down toward the water, matching eye.z < 0.
+        std::array<V,77> frame{};frame[0]={1,0,0,0};frame[1]={0,-1,0,0};frame[2]={0,0,-1,0};frame[3]={0,0,0,1};frame[20]=frame[0];frame[21]=frame[1];frame[22]=frame[2];
         for(UINT row:std::array<UINT,4>{32,36,40,44}) {frame[row]={1,0,0,0};frame[row+1]={0,1,0,0};frame[row+2]={0,0,0,1};frame[row+3]={0,0,.01f,0};}
         frame[71]={.0001f,0,0,0};frame[72]={.05f,.06f,.07f,1};frame[73]={.05f,.06f,.07f,1};frame[74]=frame[72];frame[75]=frame[73];
         std::array<V,3> geometry{};geometry[0]={1.0f/32,1.0f/16,1,1};geometry[1]={.2f,.1f,1,1};geometry[2]={1,1,1,1};
@@ -112,22 +113,57 @@ Out main(uint vertex:SV_VertexID,uint eye:SV_InstanceID){Out o;float2 uv=float2(
         for(UINT i=0;i<transition.size();i++) require(std::abs(transition[i].y-(oldReflection[i].y+reflected[i].y)*.5f)<1e-4f && std::abs(transition[i].z-(oldReflection[i].z+reflected[i].z)*.5f)<1e-4f,"water environment transition is not coherent");
         settings.reflectionDistance=64;runtime.applySettings(settings);compare(render(patched.Get()),heightBaseline,"distant reflection did not preserve native water");
         settings.reflectionDistance=4096;settings.reflections=false;runtime.applySettings(settings);compare(render(patched.Get()),heightBaseline,"disabled reflection did not preserve native water");
-        settings.reflections=true;settings.screenReflections=true;environment.previousAvailable=false;environment.transitionWeight=1;runtime.applySettings(settings);
+        settings.reflections=true;settings.screenReflections=true;settings.reflectionDistance=0;environment.previousAvailable=false;environment.transitionWeight=1;runtime.applySettings(settings);
         const auto fxCubeFallback=render(patched.Get());
         float fxDifference=0;for(UINT i=0;i<fxCubeFallback.size();i++) {require(std::isfinite(fxCubeFallback[i].x) && fxCubeFallback[i].w==heightBaseline[i].w,"FX fallback changed native alpha");fxDifference+=std::abs(fxCubeFallback[i].x-heightBaseline[i].x);}
         require(fxDifference>.1f,"FX miss lost the world cubemap fallback");
         settings.reflections=false;runtime.applySettings(settings);compare(render(patched.Get()),heightBaseline,"FX miss without cube did not preserve native base water");
-        settings.reflections=true;settings.reflectionDistance=64;runtime.applySettings(settings);compare(render(patched.Get()),fxCubeFallback,"FX distant water lost its world fallback");settings.reflectionDistance=4096;runtime.applySettings(settings);
+        settings.reflections=true;settings.screenReflections=false;settings.reflectionDistance=0;runtime.applySettings(settings);
+        compare(render(patched.Get()),fxCubeFallback,"disabling FX changed cubemap-only water on a screen-space miss");
+        settings.screenReflections=true;settings.reflectionDistance=64;runtime.applySettings(settings);
+        compare(render(patched.Get()),heightBaseline,"FX toggle bypassed the explicit cubemap fade distance");
+        settings.reflectionDistance=0;runtime.applySettings(settings);
         auto legacyColour=views[0].Get();auto* legacySampler=sampler.Get();
         context->PSSetShaderResources(9,1,&legacyColour);context->PSSetShaderResources(10,1,&legacyColour);
         context->PSSetSamplers(9,1,&legacySampler);context->PSSetSamplers(10,1,&legacySampler);
+        unsigned activeNativePackets=0;
         for(const auto& names:std::array<std::array<const char*,2>,3>{{{"WaterColor_0000001C.dxbc","WaterColor_0000021C.dxbc"},{"WaterColor_0000009F.dxbc","WaterColor_0000029F.dxbc"},{"WaterColor_000000BF.dxbc","WaterColor_000002BF.dxbc"}}}) {
             auto plainCode=bytes(root/"package/Shaders/Community/WaterLinearLighting"/names[0]);auto legacyCode=bytes(root/"package/Shaders/Community/WaterLinearLighting"/names[1]);
             ComPtr<ID3D11PixelShader> plain,legacy;check(device->CreatePixelShader(plainCode.data(),plainCode.size(),nullptr,&plain),"FX plain variant");check(device->CreatePixelShader(legacyCode.data(),legacyCode.size(),nullptr,&legacy),"FX legacy variant");
-            compare(render(plain.Get()),render(legacy.Get()),"opaque-receiver SSR leaked into FX water reflection");
+            settings.reflections=false;settings.screenReflections=false;runtime.applySettings(settings);
+            const auto nativeReflection=render(legacy.Get());const auto skyOnly=render(plain.Get());float nativeDifference=0;
+            for(UINT i=0;i<nativeReflection.size();i++) nativeDifference+=std::abs(nativeReflection[i].x-skyOnly[i].x)+std::abs(nativeReflection[i].y-skyOnly[i].y)+std::abs(nativeReflection[i].z-skyOnly[i].z);
+            activeNativePackets+=nativeDifference>.01f;
+            settings.screenReflections=true;runtime.applySettings(settings);
+            compare(render(legacy.Get()),nativeReflection,"FX-only ray miss erased native sea-water reflection");
+            settings.reflections=true;runtime.applySettings(settings);
+            compare(render(plain.Get()),render(legacy.Get()),"full cubemap replacement retained an extra native SSR layer");
+            fillCube(1,false);compare(render(legacy.Get()),nativeReflection,"missing dynamic coverage erased native water reflection");fillCube(1,true);
+        }
+        require(activeNativePackets>0,"native SSR fallback fixture is inactive");
+        // Put the water beyond the old 1024-unit cutoff (and the tuning slider's
+        // finite range). Disable fixture fog so it cannot hide a missing reflection.
+        std::string distantVertex=vsSource;
+        auto eyeText=distantVertex.find("float4(30,20,-100,1000)");require(eyeText!=std::string::npos,"distant fixture eye vector");
+        distantVertex.replace(eyeText,std::strlen("float4(30,20,-100,1000)"),"float4(12000,8000,-40000,50000)");
+        auto viewText=distantVertex.find("float3(30,20,100)");require(viewText!=std::string::npos,"distant fixture view vector");
+        distantVertex.replace(viewText,std::strlen("float3(30,20,100)"),"float3(12000,8000,40000)");
+        check(D3DCompile(distantVertex.data(),distantVertex.size(),nullptr,nullptr,nullptr,"main","vs_5_0",D3DCOMPILE_OPTIMIZATION_LEVEL3,0,code.ReleaseAndGetAddressOf(),error.ReleaseAndGetAddressOf()),"distant sea vertex compile");
+        ComPtr<ID3D11VertexShader> distantVs;check(device->CreateVertexShader(code->GetBufferPointer(),code->GetBufferSize(),nullptr,&distantVs),"distant sea vertex");
+        context->VSSetShader(distantVs.Get(),nullptr,0);frame[71].x=0;context->UpdateSubresource(psBuffers[4].Get(),0,nullptr,frame.data(),0,0);
+
+        for(const char* name:{"WaterColor_00010000.dxbc"}) {
+            auto farCode=bytes(root/"package/Shaders/Community/WaterLinearLighting"/name);ComPtr<ID3D11PixelShader> farShader;
+            check(device->CreatePixelShader(farCode.data(),farCode.size(),nullptr,&farShader),"far sea shader");
+            settings.reflections=false;settings.screenReflections=false;runtime.applySettings(settings);const auto farNative=render(farShader.Get());
+            settings.reflections=true;runtime.applySettings(settings);const auto farCube=render(farShader.Get());
+            settings.screenReflections=true;runtime.applySettings(settings);compare(render(farShader.Get()),farCube,"far sea cube depends on FX toggle");
+            settings.reflections=false;runtime.applySettings(settings);compare(render(farShader.Get()),farNative,"FX-only far sea lost native reflection");
+            float difference=0;for(UINT i=0;i<farCube.size();i++) difference+=std::abs(farCube[i].x-farNative[i].x)+std::abs(farCube[i].y-farNative[i].y)+std::abs(farCube[i].z-farNative[i].z);
+            require(difference>.01f,"far sea cube fixture is inactive");
         }
         runtime.onDeviceCreated(nullptr,nullptr);context->ClearState();
-        std::cout<<(driver==D3D_DRIVER_TYPE_WARP?"WARP":"Hardware")<<": native water variants, parallax, stereo, outgoing reflections, missing coverage, history transition, distance fade and disable passed\n";
+        std::cout<<(driver==D3D_DRIVER_TYPE_WARP?"WARP":"Hardware")<<": native water variants, parallax, stereo, outgoing reflections, missing coverage, history transition, independent near/far toggles, long-distance sea and native SSR miss fallback passed\n";
     }
 }
 int main(int argc,char** argv)

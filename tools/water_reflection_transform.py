@@ -1,4 +1,4 @@
-"""Replace the native water sky-gradient value before tint, Fresnel and SSLR.
+"""Blend over the complete native water reflection before tint and Fresnel.
 
 Only contracts with an existing stereo origin and a verified reflection-normal
 producer participate. All later native blending and output channels are kept.
@@ -11,7 +11,7 @@ from dxbc_transform import (
 )
 from water_parallax_transform import require,signature,instruction
 
-def apply(original,template,flagTemplate,farFlagTemplate):
+def apply(original,template):
     version,chunks,index,words=shader_words(original)
     temps,start,body=shader_declarations_and_body(words)
     sig=signature(chunks)
@@ -83,8 +83,23 @@ def apply(original,template,flagTemplate,farFlagTemplate):
     normalOperand=normalOperands[0];normalWords=row(dot)[normalOperand.start:normalOperand.end]
     require(temp(doubleOps[1])==temp(dotOps[0]) and temp(doubleOps[2])==temp(dotOps[0]) and
         temp(reflectionOps[2])==temp(doubleOps[0]),'water reflection projection data flow changed')
+    # The sky gradient can be followed by native reflection packets loaded
+    # earlier or later in the shader. Blend only after that composition, at
+    # the verified water reflection-tint boundary, so misses retain it intact.
+    tintSites=[]
+    for i in range(lastMad+1,len(body)-1):
+        ops=operands(i);following=operands(i+1)
+        if row(i)[0]&2047==0 and len(ops)==3 and any(cb(op,2) for op in ops[1:]) and \
+            row(i+1)[0]&2047==0x32 and len(following)==4 and cb(following[1],2) and cb(following[3],2) and \
+            temp(following[2])==temp(ops[0]):
+            tintSites.append(i)
+    require(len(tintSites)==1,'water reflection tint boundary changed')
+    tintSite=tintSites[0]
+    nativeColours=[temp(op) for op in operands(tintSite)[1:] if not cb(op,2)]
+    require(len(nativeColours)==1 and nativeColours[0] is not None,'native water reflection unavailable')
+    colour=nativeColours[0]
     _,tc,_,tw=shader_words(template);tt,ts,tb=shader_declarations_and_body(tw);templateSig=signature(tc)
-    normalScratch=words[temps[0]+1];screenScratch=normalScratch+1;fxScratch=normalScratch+2;first=normalScratch+3;templateCount=tw[tt[0]+1]
+    normalScratch=words[temps[0]+1];screenScratch=normalScratch+1;first=normalScratch+2;templateCount=tw[tt[0]+1]
     remappedInputs={}
     for key,value in templateSig.items():
         if key==('TEXCOORD',7): remappedInputs[value.register]=('temp',screenScratch)
@@ -93,8 +108,7 @@ def apply(original,template,flagTemplate,farFlagTemplate):
         else:
             require(key in sig,'water reflection input missing')
             remappedInputs[value.register]=('input',sig[key].register)
-    _,_,_,fw=shader_words(flagTemplate if sceneAvailable else farFlagTemplate);ft,fs,fb=shader_declarations_and_body(fw)
-    def remap(ins,base=first,flag=False):
+    def remap(ins,base=first):
         def operand(op):
             if op.operand_type in (OPERAND_TEMP,OPERAND_INPUT,OPERAND_OUTPUT):
                 require(len(op.immediate_indices)==1 and op.immediate_indices[0] is not None,'indirect water reflection temporary')
@@ -105,11 +119,8 @@ def apply(original,template,flagTemplate,farFlagTemplate):
                         result=list(ins[op.start:op.end]);result[-1]=value;return result
                     return replace_operand_with_temp(ins,op,value)
                 if op.operand_type==OPERAND_OUTPUT:
-                    if flag:
-                        require(n==0 and ((ins[op.start]>>4)&15)==1,"FX flag output changed")
-                        return replace_operand_with_temp(ins,op,fxScratch)
-                    require((n==0 and ((ins[op.start]>>4)&15)==7) or (n==1 and ((ins[op.start]>>4)&15)==1),'water reflection output contract changed')
-                    return replace_operand_with_temp(ins,op,colour if n==0 else fxScratch)
+                    require(n==0 and ((ins[op.start]>>4)&15)==7,'water reflection output contract changed')
+                    return replace_operand_with_temp(ins,op,colour)
                 return replace_operand_with_temp(ins,op,base+n)
             result=[];cursor=op.start
             for child in op.relative_operands:
@@ -133,31 +144,18 @@ def apply(original,template,flagTemplate,farFlagTemplate):
             indices=executable_operands(tw,a,b)[0].immediate_indices
             require(indices in ((12,61),(0,1)) and constants.get(indices[0],0)>=indices[1],'water reflection camera/viewport footprint changed')
     require(private==privateResources,'water reflection inputs incomplete')
-    prefix+=instruction(OPCODE_DCL_TEMPS,[first+templateCount+fw[ft[0]+1]])+words[temps[1]:start]
+    prefix+=instruction(OPCODE_DCL_TEMPS,[first+templateCount])+words[temps[1]:start]
     transformed=[]
     for a,b in tb:
         if tw[a]&2047==OPCODE_RET: require(b==len(tw),'water reflection template early return')
         else: transformed+=remap(tw[a:b])
-    for a,b in fb:
-        if fw[a]&2047==OPCODE_RET: require(b==len(fw),"FX flag early return")
-        else: prefix+=remap(fw[a:b],first+templateCount,True)
-    capture=body[dot][0];inject=body[lastMad][0]
+    capture=body[dot][0];inject=body[tintSite][0]
     for a,b in body:
         if a==capture:
             prefix+=instruction(0x36,[0x001000f2,screenScratch],[0x00004002,0,0,0x3f800000 if sceneAvailable else 0,0])
             if sceneAvailable: prefix+=instruction(0x36,[0x00100032,screenScratch],[0x00101e46,position.register])
         if a==capture: prefix+=instruction(0x36,[0x00100072,normalScratch],normalWords)
-        prefix+=words[a:b]
         if a==inject: prefix+=transformed
-        # The native t9/t10 packet describes the opaque receiver behind water.
-        # FX mode owns its own water ray; a miss falls back to the base/cube,
-        # rather than reintroducing an unrelated opaque reflection.
-        opcode=words[a]&2047
-        if opcode in (0x45,0x48):
-            operands=executable_operands(words,a,b)
-            nativeReflection=any(op.operand_type==OPERAND_RESOURCE and op.immediate_indices in ((9,),(10,)) for op in operands)
-            if nativeReflection:
-                dest=operands[0];require(dest.operand_type==OPERAND_TEMP,'native water reflection destination changed')
-                prefix+=instruction(0x37,words[dest.start:dest.end],[0x0010000a,fxScratch],[0x00004001,0],[0x00100e46,dest.immediate_indices[0]])
+        prefix+=words[a:b]
     prefix[1]=len(prefix);out=list(chunks);out[index]=DxbcChunk(chunks[index].tag,pack_words(prefix))
     return build_dxbc(version,out)

@@ -14,7 +14,7 @@ namespace csah::water_effects
         float parallaxScale{1};
         float causticStrength{1};
         float reflectionStrength{1};
-        float reflectionDistance{1024};
+        float reflectionDistance{}; // Zero retains reflections at every distance.
         bool screenReflections{};
         float reflectionFlatness{};
         float reflectionRoughness{};
@@ -25,7 +25,7 @@ namespace csah::water_effects
         s.parallaxScale=std::isfinite(s.parallaxScale)?std::clamp(s.parallaxScale,0.0f,2.0f):1;
         s.causticStrength=std::isfinite(s.causticStrength)?std::clamp(s.causticStrength,0.0f,1.0f):1;
         s.reflectionStrength=std::isfinite(s.reflectionStrength)?std::clamp(s.reflectionStrength,0.0f,1.0f):1;
-        s.reflectionDistance=std::isfinite(s.reflectionDistance)?std::clamp(s.reflectionDistance,64.0f,16384.0f):1024;
+        s.reflectionDistance=std::isfinite(s.reflectionDistance)?std::clamp(s.reflectionDistance,0.0f,16384.0f):0;
         s.reflectionFlatness=std::isfinite(s.reflectionFlatness)?std::clamp(s.reflectionFlatness,0.0f,1.0f):0;
         s.reflectionRoughness=std::isfinite(s.reflectionRoughness)?std::clamp(s.reflectionRoughness,0.0f,1.0f):0;return s;
     }
