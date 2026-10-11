@@ -93,7 +93,10 @@ void CSMain(uint3 dispatchThread : SV_DispatchThreadID)
         }
     }
 
-    if (Response.z > 0.5f &&
+    // Outside the captured frustum is unknown, not an occlusion sample.
+    if (Response.z > 0.5f && projected.w > 1.0e-7f &&
+        all(isfinite(occlusionPosition)) &&
+        occlusionPosition.z >= 0.0f && occlusionPosition.z <= 1.0f &&
         all(occlusionUv > 0.0f) && all(occlusionUv < 1.0f)) {
         if (diagnosticSample) {
             DiagnosticStats.InterlockedAdd(8u, 1u, ignored);

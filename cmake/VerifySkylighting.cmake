@@ -21,6 +21,9 @@ endforeach()
 
 file(READ "${SKYLIGHTING_RUNTIME_SOURCE}" runtime)
 file(READ "${SKYLIGHTING_RUNTIME_HEADER}" runtimeHeader)
+get_filename_component(skylightingRuntimeDirectory "${SKYLIGHTING_RUNTIME_HEADER}" DIRECTORY)
+file(READ "${skylightingRuntimeDirectory}/SkylightingDepthRead.h" depthReadHeader)
+string(APPEND runtimeHeader "\n${depthReadHeader}")
 file(READ "${SKYLIGHTING_NATIVE_HOOK_SOURCE}" nativeHook)
 file(READ "${SKYLIGHTING_SETTINGS_HEADER}" settingsHeader)
 file(READ "${SKYLIGHTING_SETTINGS_STORE_SOURCE}" settingsStore)
@@ -176,7 +179,11 @@ foreach(required IN ITEMS
     "sizeof(Fo4VrDepthStencilTarget) == 0x98"
     "ScopedNativeDepthTarget"
     "ScopedOcclusionPassProduction"
-    "D3D11_COMPARISON_GREATER_EQUAL"
+    "D3D11_COMPARISON_LESS_EQUAL"
+    "samplerDescription.ComparisonFunc = kOcclusionComparison"
+    "ScopedDepthRead depthRead"
+    "D3D11_KEEP_UNORDERED_ACCESS_VIEWS"
+    "boundDepth.Get()!=resource"
     "kPrivateDepthClearValue = 1.0f"
     "D3D11_CLEAR_DEPTH,"
     "kPrivateDepthClearValue,"

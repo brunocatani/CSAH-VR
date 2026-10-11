@@ -22,6 +22,7 @@
 #pragma pop_macro("MEM_RELEASE")
 
 #include "Features/skylighting/SkylightingRuntime.h"
+#include "Features/skylighting/SkylightingDepthRead.h"
 
 #include "Features/skylighting/SkylightingNativeHooks.h"
 #include "UpdateProbesCS.h"
@@ -882,8 +883,7 @@ namespace csah::skylighting
         samplerDescription.AddressU = D3D11_TEXTURE_ADDRESS_CLAMP;
         samplerDescription.AddressV = D3D11_TEXTURE_ADDRESS_CLAMP;
         samplerDescription.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
-        samplerDescription.ComparisonFunc =
-            D3D11_COMPARISON_GREATER_EQUAL;
+        samplerDescription.ComparisonFunc = kOcclusionComparison;
         samplerDescription.MinLOD = 0.0f;
         samplerDescription.MaxLOD = D3D11_FLOAT32_MAX;
         ComPtr<ID3D11SamplerState> comparisonSampler;
@@ -1300,6 +1300,10 @@ namespace csah::skylighting
                 0);
         }
         {
+            // The native capture can leave its writable DSV bound. D3D11
+            // otherwise replaces this same texture's compute SRV with null.
+            // Restore compute SRVs before restoring the output depth binding.
+            ScopedDepthRead depthRead(context_.Get(),privateDepthTexture_.Get());
             render::ScopedComputeState state(
                 context_.Get(),
                 {
@@ -1324,6 +1328,16 @@ namespace csah::skylighting
             ID3D11SamplerState* sampler = comparisonSampler_.Get();
             ID3D11Buffer* constants = constantsBuffer_.Get();
             context_->CSSetShaderResources(0, 1, &resource);
+            ComPtr<ID3D11ShaderResourceView> boundDepth;
+            context_->CSGetShaderResources(0,1,&boundDepth);
+            if (boundDepth.Get()!=resource) {
+                rejectedCaptures_.fetch_add(1,std::memory_order_relaxed);
+                if (!depthReadFailureLogged_) {
+                    depthReadFailureLogged_=true;
+                    logging::error("Skylighting depth SRV binding failed; the rejected capture will not alter visibility probes.");
+                }
+                return;
+            }
             context_->CSSetUnorderedAccessViews(
                 0,
                 static_cast<UINT>(outputs.size()),

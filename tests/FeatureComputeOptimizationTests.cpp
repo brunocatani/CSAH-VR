@@ -1,4 +1,5 @@
 #include "Features/bloom_glare/BloomGlareRuntime.h"
+#include "Features/skylighting/SkylightingDepthRead.h"
 #include "Features/filmic_tonemapping/FilmicTonemappingRuntime.h"
 #include <DirectXPackedVector.h>
 #include <Windows.h>
@@ -66,6 +67,7 @@ struct GPU {
 };
 
 #include "PbrMetalReflectionTests.inl"
+#include "SkylightingDepthTests.inl"
 
 void giFilterTest(GPU& gpu,const std::filesystem::path& root,bool hardware) {
  auto dir=root/"package/Shaders/Community/ScreenSpaceGI";
@@ -141,7 +143,7 @@ void pbrIntegrationTest(GPU& gpu,const std::filesystem::path& root) {
  gpu.context->ClearState();gpu.validateMessages();
 }
 void run(const std::filesystem::path& root,bool hardware) {
- GPU gpu(hardware);pbrIntegrationTest(gpu,root);metalReflectionTest(gpu,root);giFilterTest(gpu,root,hardware);runtimeTest(gpu);auto source=root/"package/Shaders/Community/BloomGlare";auto reference=root/"tests/fixtures/glare";
+ GPU gpu(hardware);skylightingDepthTest(gpu,root);pbrIntegrationTest(gpu,root);metalReflectionTest(gpu,root);giFilterTest(gpu,root,hardware);runtimeTest(gpu);auto source=root/"package/Shaders/Community/BloomGlare";auto reference=root/"tests/fixtures/glare";
  auto oldRow=gpu.shader(reference/"ReferenceFft.hlsl",source,true,false),oldCol=gpu.shader(reference/"ReferenceFft.hlsl",source,false,false),oldInvRow=gpu.shader(reference/"ReferenceFft.hlsl",source,true,true),oldInvCol=gpu.shader(reference/"ReferenceFft.hlsl",source,false,true),multiply=gpu.shader(reference/"ReferenceMultiply.hlsl",source,false,false,false,true);
  auto row=gpu.shader(source/"GlareFftCS.hlsl",source,true,false),col=gpu.shader(source/"GlareFftCS.hlsl",source,false,false),convolve=gpu.shader(source/"GlareFftCS.hlsl",source,true,true,true),invCol=gpu.shader(source/"GlareFftCS.hlsl",source,false,true);
  for(unsigned n:{128,256,512}) {

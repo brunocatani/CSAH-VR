@@ -245,6 +245,7 @@ namespace csah::skylighting
         Microsoft::WRL::ComPtr<ID3D11Device> device_;
         Microsoft::WRL::ComPtr<ID3D11DeviceContext> context_;
         Microsoft::WRL::ComPtr<ID3D11Texture2D> privateDepthTexture_;
+        bool depthReadFailureLogged_{};
         Microsoft::WRL::ComPtr<ID3D11DepthStencilView> privateDepthView_;
         Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> privateDepthResource_;
         Microsoft::WRL::ComPtr<ID3D11Buffer> diagnosticBuffer_;
