@@ -18,6 +18,19 @@ namespace csah::native_shadows::patch_model
     constexpr std::uintptr_t kCascadeCountRva = 0x03924818;
     constexpr std::uintptr_t kCascadeDistanceRva = 0x03924808;
     constexpr std::uintptr_t kRendererDistanceRva = 0x068788F0;
+    // FO4VR 14284E9E0 selects masks containing cascades 2/3 when
+    // cascadeDistance < rendererDistance. 14290DBD0 also clamps the two-
+    // cascade frustum to cascadeDistance. Keep both distances coordinated,
+    // including when four-cascade allocation patches are disabled.
+    template<class Writer>
+    [[nodiscard]] bool writeFixedDistances(float distance, float rendererDistance, Writer&& write)
+    {
+        const float guardDistance = distance > rendererDistance ? distance : rendererDistance;
+        if (!write(kCascadeDistanceRva, guardDistance) ||
+            !write(kRendererDistanceRva, distance)) return false;
+        return guardDistance == distance || write(kCascadeDistanceRva, distance);
+    }
+
     constexpr std::uintptr_t kShadowResolutionRva = 0x039266F0;
     constexpr std::uintptr_t kShadowRendererStateRva = 0x068787F0;
     constexpr std::size_t kCachedCascadeBlendOffset = 0x114;

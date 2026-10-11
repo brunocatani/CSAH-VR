@@ -1,4 +1,5 @@
 #include "Features/native_shadows/NativeShadowSettingsStore.h"
+#include "Features/native_shadows/NativeShadowPatchModel.h"
 
 #include <chrono>
 #include <cstdlib>
@@ -54,6 +55,26 @@ namespace
 
 int main()
 {
+    // Model the independently verified native selector: the unsafe branch
+    // selects masks with bits 2/3 when renderer range exceeds cascade range.
+    for(float initial : {3000.0f,12000.0f}) for(float requested : {3000.0f,12000.0f}) {
+        for(int failAt : {-1,0,1,2}) {
+            float renderer=initial, cascade=initial;
+            int calls=0;
+            const bool applied=csah::native_shadows::patch_model::writeFixedDistances(requested,renderer,
+                [&](std::uintptr_t rva,float value) {
+                    if(calls++==failAt) return false;
+                    if(rva==csah::native_shadows::patch_model::kCascadeDistanceRva) cascade=value;
+                    else {require(rva==csah::native_shadows::patch_model::kRendererDistanceRva,"unknown distance target");renderer=value;}
+                    const unsigned nativeMask=cascade<renderer?15u:3u;
+                    require((nativeMask & ~3u)==0,"distance update selected unallocated cascades");
+                    return true;
+                });
+            if(applied) require(renderer==requested && cascade==requested,"far shadow range differs between culling and split setup");
+            else require(cascade>=renderer,"failed distance write left an unsafe native mask");
+        }
+    }
+
     using csah::native_shadows::Settings;
     using csah::native_shadows::loadSettings;
     using csah::native_shadows::saveSettings;

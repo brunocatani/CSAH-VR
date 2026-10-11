@@ -890,18 +890,17 @@ namespace csah::native_shadows
             if (!g_state.settings.enabled) {
                 return true;
             }
-            auto success = writeValue(
-                base + patch_model::kRendererDistanceRva,
-                g_state.settings.directionalShadowDistance,
-                "fixed renderer shadow distance");
-            if (g_state.settings.extendedDirectionalCascades) {
-                success = writeValue(
-                              base + patch_model::kCascadeDistanceRva,
-                              g_state.settings.directionalShadowDistance,
-                              "fixed cascade split distance") &&
-                    success;
+            float rendererDistance{};
+            if (!readValue(base + patch_model::kRendererDistanceRva, rendererDistance) ||
+                !std::isfinite(rendererDistance) || rendererDistance <= 0.0f) {
+                logging::error("Native Shadows could not read a valid renderer distance; paired distance update rejected.");
+                return false;
             }
-            return success;
+            return patch_model::writeFixedDistances(
+                g_state.settings.directionalShadowDistance, rendererDistance,
+                [base](std::uintptr_t rva, float value) noexcept {
+                    return writeValue(base + rva, value, "fixed paired shadow distance");
+                });
         }
 
         [[nodiscard]] bool forceTiledSetting() noexcept
