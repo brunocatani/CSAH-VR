@@ -11,7 +11,7 @@ from generate_contact_shadow_shader import remap_pbr_instruction, remap_sun_inst
 source = [0x08000036, 0x001000F2, 2,
           0x00208E46 | (3 << 25), 12, 32, 0x0010000A, 0]
 transforms = (
-    lambda words: remap_template_instruction(words, [], [], 0, [], 100, 3, 103, 104),
+    lambda words: remap_template_instruction(words, 0, 1, 100, 3, 103, 104),
     lambda words: remap_transform_instruction(words, 100, 3, 103),
     lambda words: remap_pbr_instruction(words, 100, 3, 103),
     lambda words: remap_sun_instruction(words, 100, 104, 105, 106, 107, 108),
