@@ -36,6 +36,7 @@
 #include "Features/wrapped_grass/WrappedGrassRuntime.h"
 #include "diagnostics/HdrOutputProbe.h"
 #include "diagnostics/RenderDocCapture.h"
+#include "render/D3D11MethodOwner.h"
 #include "support/Logger.h"
 
 #include <MinHook.h>
@@ -1172,13 +1173,6 @@ namespace csah::render
                 return nullptr;
             }
             return module;
-        }
-
-        [[nodiscard]] bool addressBelongsToModule(
-            const void* address,
-            HMODULE expectedModule) noexcept
-        {
-            return expectedModule && moduleForAddress(address) == expectedModule;
         }
 
         [[nodiscard]] std::array<char, MAX_PATH> modulePathForAddress(
@@ -4159,8 +4153,7 @@ namespace csah::render
             // ID3D11DeviceContext SDK methods 41/42, not private engine slots.
             if(!isReadableRange(table,43*sizeof(void*))) {logging::error("Inverse-square Dispatch table is unreadable; native attenuation retained.");return;}
             inverseDispatchTargets={table[41],table[42]};
-            const auto module=GetModuleHandleW(L"d3d11.dll");
-            for(auto* target:inverseDispatchTargets) if(!isExecutableAddress(target) || !addressBelongsToModule(target,module)) {
+            for(auto* target:inverseDispatchTargets) if(!isSupportedD3D11Method(target)) {
                 logging::error("Inverse-square Dispatch methods failed D3D11 ownership validation.");return;
             }
             const std::array<void*,2> hooks{reinterpret_cast<void*>(&hookInverseDispatch),reinterpret_cast<void*>(&hookInverseDispatchIndirect)};
@@ -4202,7 +4195,6 @@ namespace csah::render
             drawIndexedInstancedTarget =
                 contextVtable[kDrawIndexedInstancedVtableIndex];
             drawInstancedTarget = contextVtable[kDrawInstancedVtableIndex];
-            const auto d3d11 = GetModuleHandleW(L"d3d11.dll");
             const std::array<void*, 4> targets{
                 drawIndexedTarget,
                 drawTarget,
@@ -4210,8 +4202,7 @@ namespace csah::render
                 drawInstancedTarget,
             };
             for (const auto* target : targets) {
-                if (!isExecutableAddress(target) ||
-                    !addressBelongsToModule(target, d3d11)) {
+                if (!isSupportedD3D11Method(target)) {
                     logging::error(
                         "D3D11 qualification draw-method identity gate failed for target={}.",
                         target);
@@ -4369,24 +4360,13 @@ namespace csah::render
                 contextVtable[kOMSetRenderTargetsVtableIndex];
             renderTargetAndUnorderedAccessBindTarget = contextVtable[
                 kOMSetRenderTargetsAndUnorderedAccessViewsVtableIndex];
-            const auto d3d11 = GetModuleHandleW(L"d3d11.dll");
-            if (!isExecutableAddress(createVertexShaderTarget) ||
-                !isExecutableAddress(createPixelShaderTarget) ||
-                !isExecutableAddress(createComputeShaderTarget) ||
-                !isExecutableAddress(vertexShaderBindTarget) ||
-                !isExecutableAddress(pixelShaderBindTarget) ||
-                !isExecutableAddress(renderTargetBindTarget) ||
-                !isExecutableAddress(
-                    renderTargetAndUnorderedAccessBindTarget) ||
-                !addressBelongsToModule(createVertexShaderTarget, d3d11) ||
-                !addressBelongsToModule(createPixelShaderTarget, d3d11) ||
-                !addressBelongsToModule(createComputeShaderTarget, d3d11) ||
-                !addressBelongsToModule(vertexShaderBindTarget, d3d11) ||
-                !addressBelongsToModule(pixelShaderBindTarget, d3d11) ||
-                !addressBelongsToModule(renderTargetBindTarget, d3d11) ||
-                !addressBelongsToModule(
-                    renderTargetAndUnorderedAccessBindTarget,
-                    d3d11)) {
+            if (!isSupportedD3D11Method(createVertexShaderTarget) ||
+                !isSupportedD3D11Method(createPixelShaderTarget) ||
+                !isSupportedD3D11Method(createComputeShaderTarget) ||
+                !isSupportedD3D11Method(vertexShaderBindTarget) ||
+                !isSupportedD3D11Method(pixelShaderBindTarget) ||
+                !isSupportedD3D11Method(renderTargetBindTarget) ||
+                !isSupportedD3D11Method(renderTargetAndUnorderedAccessBindTarget)) {
                 const auto createVertexPath =
                     modulePathForAddress(createVertexShaderTarget);
                 const auto createPath =
@@ -4754,7 +4734,7 @@ namespace csah::render
                     "Vanilla Fixes focus-shadow map ownership is unavailable; other Vanilla Fixes remain active.");
             }
             logging::info(
-                "Installed validated d3d11.dll method detours (CreateVertexShader target={}, CreatePixelShader target={}, CreateComputeShader target={}, VSSetShader target={}, PSSetShader target={}, OMSetRenderTargets target={}, OMSetRenderTargetsAndUnorderedAccessViews target={}); complete native COM vtables remain untouched.",
+                "Installed validated D3D11 method detours (CreateVertexShader target={}, CreatePixelShader target={}, CreateComputeShader target={}, VSSetShader target={}, PSSetShader target={}, OMSetRenderTargets target={}, OMSetRenderTargetsAndUnorderedAccessViews target={}); complete native COM vtables remain untouched.",
                 createVertexShaderTarget,
                 createPixelShaderTarget,
                 createComputeShaderTarget,

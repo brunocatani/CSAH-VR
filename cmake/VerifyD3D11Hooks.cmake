@@ -7,7 +7,7 @@ file(READ "${D3D11_HOOK_SOURCE}" source)
 
 foreach(required IN ITEMS
     "#include <MinHook.h>"
-    "addressBelongsToModule"
+    "isSupportedD3D11Method"
     "GetModuleHandleW(L\"d3d11.dll\")"
     "MH_QueueEnableHook"
     "MH_ApplyQueued"

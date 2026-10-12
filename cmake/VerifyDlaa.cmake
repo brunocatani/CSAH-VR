@@ -75,7 +75,7 @@ endforeach()
 foreach(required IN ITEMS
     "kMapVtableIndex = 14"
     "kUnmapVtableIndex = 15"
-    "addressBelongsToD3D11"
+    "render::isSupportedD3D11Method"
     "capturePatch(mapTarget, mapPatch)"
     "capturePatch(unmapTarget, unmapPatch)"
     "Runtime::get().onMapSucceeded"

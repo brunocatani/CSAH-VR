@@ -3686,7 +3686,7 @@ if(BUILD_CSAH_TESTS)
   target_include_directories(CSAHRenderDocCaptureTests PRIVATE "${SOURCE_DIR}" "${ROOT_DIR}/extern/RenderDoc")
   target_include_directories(CSAHRenderDocCaptureTests PRIVATE "${PALM_DEVELOPER_SDK}")
   target_precompile_headers(CSAHRenderDocCaptureTests PRIVATE "${SOURCE_DIR}/PCH.h")
-  target_link_libraries(CSAHRenderDocCaptureTests PRIVATE CommonLibF4::CommonLibF4 d3d11 dxguid shell32 spdlog::spdlog)
+  target_link_libraries(CSAHRenderDocCaptureTests PRIVATE CommonLibF4::CommonLibF4 d3d11 d3dcompiler dxguid shell32 spdlog::spdlog minhook::minhook)
   if(EXISTS "$ENV{ProgramFiles}/RenderDoc/renderdoc.dll")
     add_test(NAME CSAH.RenderDocCapture COMMAND CSAHRenderDocCaptureTests
       "${CMAKE_BINARY_DIR}/test-output/renderdoc" "$ENV{ProgramFiles}/RenderDoc/renderdoc.dll")

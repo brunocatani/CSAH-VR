@@ -2,6 +2,7 @@
 
 #include "Features/dlaa/DlaaRuntime.h"
 #include "support/Logger.h"
+#include "render/D3D11MethodOwner.h"
 
 #include <MinHook.h>
 #include <Windows.h>
@@ -97,30 +98,6 @@ namespace csah::dlaa
             constexpr DWORD executable = PAGE_EXECUTE | PAGE_EXECUTE_READ |
                 PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY;
             return (information.Protect & executable) != 0;
-        }
-
-        [[nodiscard]] bool addressBelongsToD3D11(const void* address) noexcept
-        {
-            auto* module = reinterpret_cast<std::byte*>(
-                GetModuleHandleW(L"d3d11.dll"));
-            if (!module || !isReadableRange(module, sizeof(IMAGE_DOS_HEADER))) {
-                return false;
-            }
-            const auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(module);
-            if (dos->e_magic != IMAGE_DOS_SIGNATURE || dos->e_lfanew <= 0) {
-                return false;
-            }
-            const auto* nt = reinterpret_cast<const IMAGE_NT_HEADERS64*>(
-                module + dos->e_lfanew);
-            if (!isReadableRange(nt, sizeof(*nt)) ||
-                nt->Signature != IMAGE_NT_SIGNATURE) {
-                return false;
-            }
-            const auto start = reinterpret_cast<std::uintptr_t>(module);
-            const auto candidate = reinterpret_cast<std::uintptr_t>(address);
-            const auto size = static_cast<std::uintptr_t>(
-                nt->OptionalHeader.SizeOfImage);
-            return candidate >= start && candidate - start < size;
         }
 
         [[nodiscard]] bool addRelativeDisplacement(
@@ -294,10 +271,10 @@ namespace csah::dlaa
         unmapTarget = vtable[kUnmapVtableIndex];
         if (!isExecutableAddress(mapTarget) ||
             !isExecutableAddress(unmapTarget) ||
-            !addressBelongsToD3D11(mapTarget) ||
-            !addressBelongsToD3D11(unmapTarget)) {
+            !render::isSupportedD3D11Method(mapTarget) ||
+            !render::isSupportedD3D11Method(unmapTarget)) {
             logging::error(
-                "DLAA rejected non-native D3D11 Map/Unmap method identities.");
+                "DLAA rejected unsupported D3D11 Map/Unmap method identities.");
             mapTarget = nullptr;
             unmapTarget = nullptr;
             return false;
