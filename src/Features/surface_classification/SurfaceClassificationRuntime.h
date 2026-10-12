@@ -21,9 +21,6 @@ namespace csah::surface_classification
 
     enum class Consumer : std::uint32_t
     {
-        wrappedGrass = 1u << 0,
-        hairSpecular = 1u << 1,
-        subsurfaceScattering = 1u << 2,
         terrainBlending = 1u << 3,
         basicWetness = 1u << 4,
         pbr = 1u << 5,

@@ -1,7 +1,6 @@
 #pragma once
 #include "Features/pbr/PbrRuntime.h"
 #include "Features/basic_wetness/BasicWetnessRuntime.h"
-#include "Features/hair_specular/HairSpecularRuntime.h"
 #include "Features/surface_classification/SurfaceClassificationRuntime.h"
 #include <array>
 
@@ -15,10 +14,9 @@ namespace csah::local_lighting
         ScopedMaterials(ID3D11DeviceContext* context, bool compute, bool enabled) noexcept :
             context_(enabled ? context : nullptr), compute_(compute),
             wetness_(basic_wetness::Runtime::get().scopeDraw(context_, enabled && basic_wetness::Runtime::get().requested())),
-            hair_(hair_specular::Runtime::get().scopeDraw(context_, enabled && hair_specular::Runtime::get().requested())),
             pbr_(pbr::Runtime::get().scopeDraw(context_, enabled && pbr::Runtime::get().requested()))
         {
-            if (!context_ || !wetness_.active() || !hair_.active() || !pbr_.active()) return;
+            if (!context_ || !wetness_.active() || !pbr_.active()) return;
             auto* surface = surface_classification::Runtime::get().shaderResourceView();
             if (!surface) return;
             std::array<Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>,2> gbuffer;
@@ -67,13 +65,12 @@ namespace csah::local_lighting
         [[nodiscard]] bool active() const noexcept {return active_;}
     private:
         static constexpr std::array<UINT,4> slots_{45,47,81,82};
-        static constexpr std::array<UINT,3> constantSlots_{7,9,10};
+        static constexpr std::array<UINT,2> constantSlots_{7,9};
         ID3D11DeviceContext* context_{};
         bool compute_{},active_{};
         basic_wetness::ScopedDrawBindings wetness_;
-        hair_specular::ScopedDrawBindings hair_;
         pbr::ScopedDrawBindings pbr_;
         std::array<Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>,4> previousInputs_;
-        std::array<Microsoft::WRL::ComPtr<ID3D11Buffer>,3> previousConstants_;
+        std::array<Microsoft::WRL::ComPtr<ID3D11Buffer>,2> previousConstants_;
     };
 }

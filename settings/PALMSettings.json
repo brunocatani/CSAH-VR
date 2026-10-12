@@ -51,9 +51,6 @@
                 {"id": "pbr", "type": "toggle", "label": "Physical Materials (PBR)", "help": "Requires Linear Lighting. Uses one energy-conserving GGX/Fresnel material response for direct light, IBL, dynamic cubemaps, wetness, and the native reflection fallback.", "default": true, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "PBR", "key": "bEnabled"}},
                 {"id": "complex-environment", "type": "toggle", "label": "Complex Metal Response", "help": "Enables complex-material environment response when validated IBL data is available.", "default": false, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "ComplexMaterials", "key": "bEnableEnvironmentResponse"}},
                 {"id": "complex-parallax", "type": "toggle", "label": "Complex Parallax", "help": "Enables parallax on assets authored for the CSAH complex-material contract.", "default": true, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "ComplexMaterials", "key": "bEnableParallax"}},
-                {"id": "wrapped-grass", "type": "toggle", "label": "Wrapped Grass Lighting", "help": "Wraps directional light around classified grass blades.", "default": false, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "WrappedGrassLighting", "key": "bEnabled"}},
-                {"id": "hair-specular", "type": "toggle", "label": "Hair Specular", "help": "Enables classified anisotropic hair highlights.", "default": false, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "HairSpecular", "key": "bEnabled"}},
-                {"id": "subsurface-scattering", "type": "toggle", "label": "Subsurface Scattering", "help": "Enables depth-aware diffusion on classified skin and face materials.", "default": false, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "SubsurfaceScattering", "key": "bEnabled"}},
                 {"id": "basic-wetness", "type": "toggle", "label": "Basic Wetness", "help": "Applies the manual wet-state material response to classified wettable surfaces.", "default": false, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "BasicWetness", "key": "bEnabled"}},
                 {"id": "water-effects-enabled", "type": "toggle", "label": "Water Effects", "help": "Enables the selected water surface and underwater lighting effects.", "default": false, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "WaterEffects", "key": "bEnabled"}},
                 {"id": "water-parallax-enabled", "type": "toggle", "label": "Water Parallax", "help": "Uses alpha heights in compatible water normal maps to displace their texture sampling.", "default": true, "binding": {"type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "WaterEffects", "key": "bEnableParallax"}},
@@ -359,23 +356,6 @@
           "label": "Surfaces",
           "groups": [
             {
-              "id": "grass-hair",
-              "label": "Grass and hair",
-              "controls": [
-                { "id": "grass-wrap", "type": "slider", "label": "Grass Light Wrap", "default": 0.5, "min": 0.0, "max": 1.0, "step": 0.01, "binding": { "type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "WrappedGrassLighting", "key": "fWrapAmount" } },
-                { "id": "hair-highlight", "type": "slider", "label": "Hair Highlight", "default": 1.6, "min": 0.0, "max": 4.0, "step": 0.01, "binding": { "type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "HairSpecular", "key": "fSpecularMultiplier" } }
-              ]
-            },
-            {
-              "id": "skin",
-              "label": "Skin scattering",
-              "controls": [
-                { "id": "skin-strength", "type": "slider", "label": "Scattering Strength", "default": 0.55, "min": 0.0, "max": 1.0, "step": 0.01, "binding": { "type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "SubsurfaceScattering", "key": "fStrength" } },
-                { "id": "skin-radius", "type": "slider", "label": "Scattering Radius", "default": 2.0, "min": 0.25, "max": 5.0, "step": 0.05, "binding": { "type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "SubsurfaceScattering", "key": "fRadiusPixels" } },
-                { "id": "skin-depth-rejection", "type": "slider", "label": "Depth Rejection", "default": 0.003, "min": 0.0001, "max": 0.05, "step": 0.0001, "binding": { "type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "SubsurfaceScattering", "key": "fDepthRejection" } }
-              ]
-            },
-            {
               "id": "wetness",
               "label": "Wetness",
               "controls": [
@@ -487,7 +467,7 @@
                 { "id": "image-space", "type": "toggle", "label": "Image Space Modifiers", "default": true, "binding": { "type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "VanillaFixes", "key": "bAllowImageSpaceModifiers" } },
                 { "id": "sao", "type": "toggle", "label": "Stereo SAO", "default": true, "binding": { "type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "VanillaFixes", "key": "bVrAllowSAO" } },
                 { "id": "ssr", "type": "toggle", "label": "Stable Screen-Space Reflections", "help": "Enables FO4VR screen-space reflections with per-eye traversal, geometric reflection rays, shared world-radiance retention, and corrected cubemap fallback. Water uses separate shaders and is not changed.", "default": true, "binding": { "type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "VanillaFixes", "key": "bVrAllowScreenSpaceReflections" } },
-                { "id": "native-screen-space-material-pipeline", "type": "toggle", "label": "Native Screen-Space Material Pipeline", "help": "Controls Bethesda's shared native SSS and reflection image-space pipeline. It can change SSR and Dynamic Cubemap capture; use the separate Subsurface Scattering feature for isolated skin diffusion.", "default": true, "binding": { "type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "VanillaFixes", "key": "bNativeScreenSpaceMaterialPipeline" } },
+                { "id": "native-screen-space-material-pipeline", "type": "toggle", "label": "Native Screen-Space Material Pipeline", "help": "Controls Bethesda's shared native SSS and reflection image-space pipeline. It can change SSR and Dynamic Cubemap capture.", "default": true, "binding": { "type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "VanillaFixes", "key": "bNativeScreenSpaceMaterialPipeline" } },
                 { "id": "lens-flare", "type": "toggle", "label": "VR Lens Flare", "default": true, "binding": { "type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "VanillaFixes", "key": "bLensFlareVr" } },
                 { "id": "focus-shadows", "type": "toggle", "label": "Focus Shadows", "default": true, "binding": { "type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "VanillaFixes", "key": "bVrAllowFocusShadows" } },
                 { "id": "stereo-sun-occlusion", "type": "toggle", "label": "Stable Stereo Sun Occlusion", "help": "Prevents a peripheral Sun query from forcing the shared glare visibility to fully occluded while another completed query still has valid coverage.", "default": true, "binding": { "type": "ini", "root": "documents", "path": "Mods_Config/CSAH/CSAH.ini", "section": "VanillaFixes", "key": "bVrSunOcclusion" } },

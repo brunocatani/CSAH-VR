@@ -112,7 +112,7 @@ namespace csah::contact_shadows
         void recordDrawFallback() noexcept;
         [[nodiscard]] bool featureEnabled() const noexcept;
         [[nodiscard]] bool compositorReady(
-            bool wrappedGrassActive) const noexcept;
+            bool materialEffectsActive) const noexcept;
         void applySettings(const Settings& settings) noexcept;
         [[nodiscard]] RuntimeSnapshot snapshot() const noexcept;
 

@@ -21,43 +21,6 @@ namespace
         ComPtr<ID3DBlob> code,error;auto hr=D3DCompileFromFile(path.c_str(),nullptr,D3D_COMPILE_STANDARD_FILE_INCLUDE,"main",profile,D3DCOMPILE_OPTIMIZATION_LEVEL3|D3DCOMPILE_WARNINGS_ARE_ERRORS,0,&code,&error);
         if(FAILED(hr)) throw std::runtime_error(error?static_cast<const char*>(error->GetBufferPointer()):"compile");return code;
     }
-    void scatteringViewport(ID3D11Device* device,ID3D11DeviceContext* context,const std::filesystem::path& root)
-    {
-        context->ClearState();
-        const auto path=root/"package/Shaders/Community/SubsurfaceScattering/SubsurfaceScatteringCS.hlsl";
-        ComPtr<ID3DBlob> code,error;
-        check(D3DCompileFromFile(path.c_str(),nullptr,D3D_COMPILE_STANDARD_FILE_INCLUDE,"CSMain","cs_5_0",D3DCOMPILE_OPTIMIZATION_LEVEL3|D3DCOMPILE_WARNINGS_ARE_ERRORS,0,&code,&error),"scattering compile");
-        ComPtr<ID3D11ComputeShader> shader;check(device->CreateComputeShader(code->GetBufferPointer(),code->GetBufferSize(),nullptr,&shader),"scattering shader");
-        std::array<F4,24> colour{},albedo{};std::array<float,24> depth{},skin{};
-        colour.fill({0,0,4,1});albedo.fill({1,1,1,1});depth.fill(.5f);skin.fill(3.0f/255);
-        colour[10]=colour[11]={3,0,0,1};colour[12]=colour[13]={0,3,0,1};
-        D3D11_TEXTURE2D_DESC d{};d.Width=8;d.Height=3;d.ArraySize=d.MipLevels=d.SampleDesc.Count=1;d.BindFlags=D3D11_BIND_SHADER_RESOURCE;
-        std::array<ComPtr<ID3D11Texture2D>,4> textures;std::array<ComPtr<ID3D11ShaderResourceView>,4> views;
-        for(unsigned i=0;i<4;i++) {
-            d.Format=(i==0 || i==3)?DXGI_FORMAT_R32G32B32A32_FLOAT:DXGI_FORMAT_R32_FLOAT;
-            const void* data=i==0?static_cast<const void*>(colour.data()):i==1?static_cast<const void*>(depth.data()):i==2?static_cast<const void*>(skin.data()):static_cast<const void*>(albedo.data());
-            D3D11_SUBRESOURCE_DATA initial{data,8u*((i==0 || i==3)?16u:4u),0};
-            check(device->CreateTexture2D(&d,&initial,&textures[i]),"scattering input");check(device->CreateShaderResourceView(textures[i].Get(),nullptr,&views[i]),"scattering SRV");
-            auto* v=views[i].Get();context->CSSetShaderResources(i,1,&v);
-        }
-        ComPtr<ID3D11Texture2D> output,readback;ComPtr<ID3D11UnorderedAccessView> uav;
-        d.Format=DXGI_FORMAT_R32G32B32A32_FLOAT;d.BindFlags=D3D11_BIND_UNORDERED_ACCESS;
-        check(device->CreateTexture2D(&d,nullptr,&output),"scattering output");check(device->CreateUnorderedAccessView(output.Get(),nullptr,&uav),"scattering UAV");
-        d.BindFlags=0;d.Usage=D3D11_USAGE_STAGING;d.CPUAccessFlags=D3D11_CPU_ACCESS_READ;check(device->CreateTexture2D(&d,nullptr,&readback),"scattering readback");
-        D3D11_BUFFER_DESC bd{};bd.ByteWidth=64;bd.BindFlags=D3D11_BIND_CONSTANT_BUFFER;ComPtr<ID3D11Buffer> buffer;check(device->CreateBuffer(&bd,nullptr,&buffer),"scattering constants");
-        auto* b=buffer.Get();context->CSSetConstantBuffers(0,1,&b);context->CSSetShader(shader.Get(),nullptr,0);
-        for(unsigned axis=0;axis<2;axis++) {
-            std::array<F4,4> parameters{{{8,3,axis?0.0f:1.0f,axis?1.0f:0.0f},{1440,1,.001f,3.0f/255},{.5f/255,0,0,0},{2,1,4,1}}};
-            context->UpdateSubresource(buffer.Get(),0,nullptr,parameters.data(),0,0);auto* u=uav.Get();context->CSSetUnorderedAccessViews(0,1,&u,nullptr);context->Dispatch(1,1,1);u=nullptr;context->CSSetUnorderedAccessViews(0,1,&u,nullptr);
-            context->CopyResource(readback.Get(),output.Get());D3D11_MAPPED_SUBRESOURCE m{};check(context->Map(readback.Get(),0,D3D11_MAP_READ,0,&m),"scattering map");
-            for(unsigned y=0;y<3;y++)for(unsigned x=0;x<8;x++) {
-                const auto p=reinterpret_cast<const F4*>(static_cast<const char*>(m.pData)+y*m.RowPitch)[x];const auto expected=colour[y*8+x];
-                require(std::abs(p.x-expected.x)<1e-5f && std::abs(p.y-expected.y)<1e-5f && std::abs(p.z-expected.z)<1e-5f,"skin scattering crossed an active eye or viewport boundary");
-            }
-            context->Unmap(readback.Get(),0);
-        }
-        context->ClearState();
-    }
     void run(const std::filesystem::path& root,D3D_DRIVER_TYPE driver)
     {
         ComPtr<ID3D11Device> device;ComPtr<ID3D11DeviceContext> context;D3D_FEATURE_LEVEL level;
@@ -158,7 +121,6 @@ namespace
         auto density=[&](F4 view){context->UpdateSubresource(camera.Get(),0,nullptr,cameraData.data(),0,0);fog[0]=view;context->UpdateSubresource(parameters.Get(),0,nullptr,fog.data(),0,0);auto* u=densityOutput.Get();context->CSSetUnorderedAccessViews(0,1,&u,nullptr);context->Dispatch(1,1,1);u=nullptr;context->CSSetUnorderedAccessViews(0,1,&u,nullptr);context->CopyResource(readback.Get(),densityTexture.Get());D3D11_MAPPED_SUBRESOURCE m{};check(context->Map(readback.Get(),0,D3D11_MAP_READ,0,&m),"density readback");float result=*static_cast<const float*>(m.pData);context->Unmap(readback.Get(),0);return result;};
         const auto fixedWorldDensity=density({500,-200,900,0});cameraData[20]={0,0,1,0};cameraData[22]={1,0,0,0};
         require(std::abs(fixedWorldDensity-density({900,-200,500,0}))<.000001,"volume density rotates with the headset");
-        scatteringViewport(device.Get(),context.Get(),root);
         std::cout<<(driver==D3D_DRIVER_TYPE_WARP?"WARP":"Hardware")<<": analytic integration, stereo altitude, first-person exclusion, horizontal ray, rotation, opacity cap and neutral gates passed\n";
     }
 }

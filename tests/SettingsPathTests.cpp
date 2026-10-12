@@ -82,8 +82,12 @@ int main()
         "fresh install must create its settings automatically");
     require(read(target) == settings_path::kFirstRunIni,
         "created settings must contain the full shipped preset");
-    for (const auto* section : { L"CloudShadows", L"HairSpecular",
-            L"WrappedGrassLighting", L"SubsurfaceScattering", L"VolumetricLighting" }) {
+    const auto freshSettings = read(target);
+    for (const auto* section : { "[WrappedGrassLighting]", "[HairSpecular]", "[SubsurfaceScattering]" }) {
+        require(freshSettings.find(section) == std::string::npos,
+            "removed effects must not be written to first-run settings");
+    }
+    for (const auto* section : { L"CloudShadows", L"VolumetricLighting" }) {
         require(GetPrivateProfileIntW(section, L"bEnabled", 1, target.c_str()) == 0,
             "unfinished effects must be disabled in first-run settings");
     }

@@ -94,9 +94,9 @@ foreach(tabIndex RANGE 0 ${lastTab})
   endforeach()
 endforeach()
 
-if(NOT controlCount EQUAL 182)
+if(NOT controlCount EQUAL 174)
   message(FATAL_ERROR
-    "CSAH PALM settings coverage changed: expected 182 controls, found ${controlCount}")
+    "CSAH PALM settings coverage changed: expected 174 controls, found ${controlCount}")
 endif()
 
 foreach(required IN ITEMS
@@ -113,19 +113,19 @@ foreach(required IN ITEMS
     glare-noise-floor
     skylighting-quality skylighting-diffuse-min skylighting-specular-min
     skylighting-zenith filmic-tonemapping
-    cloud-shadows complex-environment complex-parallax wrapped-grass
+    cloud-shadows complex-environment complex-parallax
     pbr pbr-legacy pbr-direct-ggx pbr-grass-ggx
     pbr-environment-fresnel pbr-energy-conservation pbr-multiscatter
     pbr-specular-occlusion pbr-roughness pbr-roughness-blend pbr-base-f0
     pbr-min-f0 pbr-cubemap-f0 pbr-complex-f0 pbr-direct-scale
-    hair-specular subsurface-scattering basic-wetness contact-shadows
+    basic-wetness contact-shadows
     contact-foveated dlaa vanilla-fixes native-auto-exposure exposure-ev
-    filmic-strength white-point-scale diffuse-ibl-level grass-wrap
+    filmic-strength white-point-scale diffuse-ibl-level
     volumetric-lighting volumetric-quality volumetric-intensity
     volumetric-base volumetric-shafts volumetric-density-mix
     volumetric-density-scale volumetric-distance
     volumetric-temporal volumetric-wind
-    hair-highlight skin-strength wetness-amount cloud-opacity strength
+    wetness-amount cloud-opacity strength
     quality precipitation native-shadows-enabled shadow-distance mode
     center-width stereo-sun-occlusion directional-diagnostic
     stereo-sharing-measurement gpu-profiling-mode lod-matching lod-terrain-brightness lod-terrain-gamma
@@ -153,9 +153,6 @@ endforeach()
 foreach(required IN ITEMS
     "validateD3D11ShaderHooks(\"GameDataReady\")"
     "validateD3D11ShaderHooks(\"GameSessionReady\")"
-    "wrapped_grass::Runtime::get().applySettings"
-    "hair_specular::Runtime::get().applySettings"
-    "subsurface_scattering::Runtime::get().applySettings"
     "basic_wetness::Runtime::get().applySettings"
     "lod_blending::Runtime::get().applySettings"
     "terrain_variation::Runtime::get().applySettings"
@@ -183,9 +180,6 @@ foreach(required IN ITEMS
     "ibl::Runtime::get().applySettings"
     "queueComplexParallaxSettings"
     "contact_shadows::Runtime::get().applySettings"
-    "wrapped_grass::Runtime::get().applySettings"
-    "hair_specular::Runtime::get().applySettings"
-    "subsurface_scattering::Runtime::get().applySettings"
     "basic_wetness::Runtime::get().applySettings"
     "lod_blending::Runtime::get().applySettings"
     "terrain_variation::Runtime::get().applySettings"
@@ -267,4 +261,4 @@ foreach(relativePath IN ITEMS
 endforeach()
 
 message(STATUS
-  "Verified PALM settings ownership: 165 shared-INI controls, direct runtime publication, no wrist provider or assets")
+  "Verified PALM settings ownership: ${controlCount} shared-INI controls, direct runtime publication, no wrist provider or assets")

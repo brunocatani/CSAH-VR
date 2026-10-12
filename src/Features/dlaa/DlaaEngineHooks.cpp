@@ -1,7 +1,6 @@
 #include "diagnostics/stereo_measurement/StereoMeasurement.h"
 #include "Features/surface_classification/SurfaceClassificationRuntime.h"
 #include "Features/volumetric_lighting/VolumetricLightingRuntime.h"
-#include "Features/subsurface_scattering/SubsurfaceScatteringRuntime.h"
 #include "Features/cloud_shadows/CloudShadowRuntime.h"
 #include "Features/terrain_shadows/TerrainShadowRuntime.h"
 #include "Features/dlaa/DlaaEngineHooks.h"
@@ -278,7 +277,6 @@ namespace csah::dlaa
                 surface_classification::Runtime::get().markWorldFrameConsumed();
                 screen_space_gi::Runtime::get().beginFrame();
                 diagnostics::stereo_measurement::Runtime::get().beginFrame();
-                subsurface_scattering::Runtime::get().beginFrame();
                 volumetric_lighting::Runtime::get().beginFrame();
                 cloud_shadows::Runtime::get().beginFrame();
                 terrain_shadows::Runtime::get().beginFrame();

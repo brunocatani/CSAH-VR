@@ -416,10 +416,6 @@ set(CONTACT_SHADOW_SETTINGS_STORE_HEADER
   "${SOURCE_DIR}/Features/contact_shadows/ContactShadowSettingsStore.h")
 set(CONTACT_SHADOW_SHADER_SOURCE
   "${ROOT_DIR}/package/Shaders/Community/ContactShadows/ContactShadowTransform.hlsl")
-set(CONTACT_SHADOW_WRAPPED_SHADER_SOURCE
-  "${ROOT_DIR}/package/Shaders/Community/ContactShadows/WrappedGrassTransform.hlsl")
-set(CONTACT_SHADOW_HAIR_SHADER_SOURCE
-  "${ROOT_DIR}/package/Shaders/Community/ContactShadows/HairSpecularTransform.hlsl")
 set(CONTACT_SHADOW_WETNESS_SHADER_SOURCE
   "${ROOT_DIR}/package/Shaders/Community/ContactShadows/BasicWetnessTransform.hlsl")
 set(CONTACT_SHADOW_DIAGNOSTIC_SHADER_SOURCE
@@ -432,8 +428,6 @@ set(CONTACT_SHADOW_RESOLVE_SHADER_SOURCE
   "${ROOT_DIR}/package/Shaders/Community/ContactShadows/ContactShadowResolveCS.hlsl")
 set_source_files_properties(
   "${CONTACT_SHADOW_SHADER_SOURCE}"
-  "${CONTACT_SHADOW_WRAPPED_SHADER_SOURCE}"
-  "${CONTACT_SHADOW_HAIR_SHADER_SOURCE}"
   "${CONTACT_SHADOW_WETNESS_SHADER_SOURCE}"
   "${CONTACT_SHADOW_DIAGNOSTIC_SHADER_SOURCE}"
   "${CONTACT_SHADOW_MASK_SHADER_SOURCE}"
@@ -560,26 +554,6 @@ set(SURFACE_CLASSIFICATION_GENERATED_CONTRACTS
   "${SOURCE_DIR}/Features/surface_classification/GeneratedSurfaceClassContracts.inl")
 set(SURFACE_CLASSIFICATION_RUNTIME_VERIFY_SCRIPT
   "${ROOT_DIR}/cmake/VerifySurfaceClassificationRuntime.cmake")
-set(WRAPPED_GRASS_RUNTIME_SOURCE
-  "${SOURCE_DIR}/Features/wrapped_grass/WrappedGrassRuntime.cpp")
-set(WRAPPED_GRASS_RUNTIME_HEADER
-  "${SOURCE_DIR}/Features/wrapped_grass/WrappedGrassRuntime.h")
-set(WRAPPED_GRASS_SETTINGS_HEADER
-  "${SOURCE_DIR}/Features/wrapped_grass/WrappedGrassSettings.h")
-set(WRAPPED_GRASS_SETTINGS_STORE_SOURCE
-  "${SOURCE_DIR}/Features/wrapped_grass/WrappedGrassSettingsStore.cpp")
-set(WRAPPED_GRASS_SETTINGS_STORE_HEADER
-  "${SOURCE_DIR}/Features/wrapped_grass/WrappedGrassSettingsStore.h")
-set(HAIR_SPECULAR_RUNTIME_SOURCE
-  "${SOURCE_DIR}/Features/hair_specular/HairSpecularRuntime.cpp")
-set(HAIR_SPECULAR_RUNTIME_HEADER
-  "${SOURCE_DIR}/Features/hair_specular/HairSpecularRuntime.h")
-set(HAIR_SPECULAR_SETTINGS_HEADER
-  "${SOURCE_DIR}/Features/hair_specular/HairSpecularSettings.h")
-set(HAIR_SPECULAR_SETTINGS_STORE_SOURCE
-  "${SOURCE_DIR}/Features/hair_specular/HairSpecularSettingsStore.cpp")
-set(HAIR_SPECULAR_SETTINGS_STORE_HEADER
-  "${SOURCE_DIR}/Features/hair_specular/HairSpecularSettingsStore.h")
 set(BASIC_WETNESS_RUNTIME_SOURCE
   "${SOURCE_DIR}/Features/basic_wetness/BasicWetnessRuntime.cpp")
 set(BASIC_WETNESS_RUNTIME_HEADER
@@ -655,23 +629,6 @@ set_source_files_properties(
   "${VOLUMETRIC_TEMPORAL_SHADER_SOURCE}"
   "${VOLUMETRIC_BLUR_SHADER_SOURCE}"
   "${VOLUMETRIC_COMPOSITE_SHADER_SOURCE}"
-  PROPERTIES HEADER_FILE_ONLY TRUE)
-set(SUBSURFACE_SCATTERING_RUNTIME_SOURCE
-  "${SOURCE_DIR}/Features/subsurface_scattering/SubsurfaceScatteringRuntime.cpp")
-set(SUBSURFACE_SCATTERING_RUNTIME_HEADER
-  "${SOURCE_DIR}/Features/subsurface_scattering/SubsurfaceScatteringRuntime.h")
-set(SUBSURFACE_SCATTERING_SETTINGS_HEADER
-  "${SOURCE_DIR}/Features/subsurface_scattering/SubsurfaceScatteringSettings.h")
-set(SUBSURFACE_SCATTERING_SETTINGS_STORE_SOURCE
-  "${SOURCE_DIR}/Features/subsurface_scattering/SubsurfaceScatteringSettingsStore.cpp")
-set(SUBSURFACE_SCATTERING_SETTINGS_STORE_HEADER
-  "${SOURCE_DIR}/Features/subsurface_scattering/SubsurfaceScatteringSettingsStore.h")
-set(SUBSURFACE_SCATTERING_SHADER_SOURCE
-  "${ROOT_DIR}/package/Shaders/Community/SubsurfaceScattering/SubsurfaceScatteringCS.hlsl")
-set(SUBSURFACE_SCATTERING_SHADER_GENERATOR
-  "${ROOT_DIR}/tools/generate_subsurface_scattering_shader.py")
-set_source_files_properties(
-  "${SUBSURFACE_SCATTERING_SHADER_SOURCE}"
   PROPERTIES HEADER_FILE_ONLY TRUE)
 set(COMPLEX_MATERIAL_PRODUCER_MODEL
   "${SOURCE_DIR}/Features/complex_materials/ComplexMaterialProducerModel.h")
@@ -1683,13 +1640,11 @@ add_custom_command(
   DEPENDS
     "${CONTACT_SHADOW_SHADER_GENERATOR}"
     "${CONTACT_SHADOW_SHADER_SOURCE}"
-    "${CONTACT_SHADOW_WRAPPED_SHADER_SOURCE}"
     "${SKYLIGHTING_SAMPLING_SHADER_SOURCE}"
     "${SKYLIGHTING_RECEIVER_SHADER_SOURCE}"
     "${SKYLIGHTING_DIRECTIONAL_SHADER_SOURCE}"
     "${ROOT_DIR}/package/Shaders/Community/WaterEffects/WaterCaustics.hlsli"
     "${ROOT_DIR}/package/Shaders/Community/TerrainShadows/TerrainShadows.hlsli"
-    "${CONTACT_SHADOW_HAIR_SHADER_SOURCE}"
     "${CONTACT_SHADOW_WETNESS_SHADER_SOURCE}"
     "${PBR_DIRECTIONAL_SHADER_SOURCE}"
     "${PBR_COMMON_SHADER_SOURCE}"
@@ -2055,31 +2010,6 @@ add_custom_target(VerifyBloomGlare ALL
   DEPENDS BloomGlareShaders FilmicTonemappingShader
   COMMENT "Verifying stereo Bloom and Physical Glare contracts"
   VERBATIM)
-set(SUBSURFACE_SCATTERING_GENERATED_DIR
-  "${CMAKE_CURRENT_BINARY_DIR}/generated/SubsurfaceScattering")
-set(SUBSURFACE_SCATTERING_SHADER_BINARY
-  "${SUBSURFACE_SCATTERING_GENERATED_DIR}/SubsurfaceScatteringCS.dxbc")
-set(SUBSURFACE_SCATTERING_SHADER_HEADER
-  "${SUBSURFACE_SCATTERING_GENERATED_DIR}/SubsurfaceScatteringCS.h")
-add_custom_command(
-  OUTPUT
-    "${SUBSURFACE_SCATTERING_SHADER_BINARY}"
-    "${SUBSURFACE_SCATTERING_SHADER_HEADER}"
-  COMMAND "${Python3_EXECUTABLE}"
-    "${SUBSURFACE_SCATTERING_SHADER_GENERATOR}"
-    --root "${ROOT_DIR}"
-    --fxc "${CSAH_FXC_EXECUTABLE}"
-    --binary "${SUBSURFACE_SCATTERING_SHADER_BINARY}"
-    --header "${SUBSURFACE_SCATTERING_SHADER_HEADER}"
-  DEPENDS
-    "${SUBSURFACE_SCATTERING_SHADER_GENERATOR}"
-    "${SUBSURFACE_SCATTERING_SHADER_SOURCE}"
-  COMMENT "Compiling stereo-safe subsurface scattering compute pass"
-  VERBATIM)
-add_custom_target(SubsurfaceScatteringShader
-  DEPENDS
-    "${SUBSURFACE_SCATTERING_SHADER_BINARY}"
-    "${SUBSURFACE_SCATTERING_SHADER_HEADER}")
 add_custom_target(VerifyContactShadows ALL
   COMMAND "${CMAKE_COMMAND}"
     "-DCONTACT_SHADOW_RUNTIME_SOURCE=${CONTACT_SHADOW_RUNTIME_SOURCE}"
@@ -2448,7 +2378,6 @@ add_library(${PROJECT_NAME} SHARED
   "${CONTACT_SHADOW_SHADER_GENERATOR}"
   "${CONTACT_SHADOW_SHADER_SOURCE}"
   "${CONTACT_SHADOW_DIAGNOSTIC_SHADER_SOURCE}"
-  "${CONTACT_SHADOW_WRAPPED_SHADER_SOURCE}"
   "${CONTACT_SHADOW_SHADER_HEADER}"
   "${CONTACT_SHADOW_MASK_SHADER_SOURCE}"
   "${CONTACT_SHADOW_MASK_HEADER}"
@@ -2479,16 +2408,6 @@ add_library(${PROJECT_NAME} SHARED
   "${SURFACE_CLASSIFICATION_GENERATOR}"
   "${SURFACE_CLASSIFICATION_GENERATED_CONTRACTS}"
   "${SOURCE_DIR}/GeneratedSurfaceClassificationResources.h"
-  "${WRAPPED_GRASS_RUNTIME_SOURCE}"
-  "${WRAPPED_GRASS_RUNTIME_HEADER}"
-  "${WRAPPED_GRASS_SETTINGS_HEADER}"
-  "${WRAPPED_GRASS_SETTINGS_STORE_SOURCE}"
-  "${WRAPPED_GRASS_SETTINGS_STORE_HEADER}"
-  "${HAIR_SPECULAR_RUNTIME_SOURCE}"
-  "${HAIR_SPECULAR_RUNTIME_HEADER}"
-  "${HAIR_SPECULAR_SETTINGS_HEADER}"
-  "${HAIR_SPECULAR_SETTINGS_STORE_SOURCE}"
-  "${HAIR_SPECULAR_SETTINGS_STORE_HEADER}"
   "${BASIC_WETNESS_RUNTIME_SOURCE}"
   "${BASIC_WETNESS_RUNTIME_HEADER}"
   "${BASIC_WETNESS_SETTINGS_HEADER}"
@@ -2531,13 +2450,6 @@ add_library(${PROJECT_NAME} SHARED
   "${VOLUMETRIC_BLUR_H_SHADER_HEADER}"
   "${VOLUMETRIC_BLUR_V_SHADER_HEADER}"
   "${VOLUMETRIC_COMPOSITE_SHADER_HEADER}"
-  "${SUBSURFACE_SCATTERING_RUNTIME_SOURCE}"
-  "${SUBSURFACE_SCATTERING_RUNTIME_HEADER}"
-  "${SUBSURFACE_SCATTERING_SETTINGS_HEADER}"
-  "${SUBSURFACE_SCATTERING_SETTINGS_STORE_SOURCE}"
-  "${SUBSURFACE_SCATTERING_SETTINGS_STORE_HEADER}"
-  "${SUBSURFACE_SCATTERING_SHADER_SOURCE}"
-  "${SUBSURFACE_SCATTERING_SHADER_HEADER}"
   "${COMPLEX_MATERIAL_PRODUCER_MODEL}"
   "${COMPLEX_MATERIAL_PRODUCER_CONTRACT_GENERATOR}"
   "${COMPLEX_MATERIAL_PRODUCER_GENERATED_CONTRACTS}"
@@ -2651,7 +2563,6 @@ add_dependencies(${PROJECT_NAME}
   SkylightingShaders
   FilmicTonemappingShader
   BloomGlareShaders
-  SubsurfaceScatteringShader
   ComplexParallaxShaders
   VerifyComplexParallax
   VerifyFo4VrLoader
@@ -2711,7 +2622,6 @@ target_include_directories(${PROJECT_NAME} PRIVATE
   "${WATER_EFFECTS_GENERATED_DIR}"
   "${FILMIC_TONEMAPPING_GENERATED_DIR}"
   "${BLOOM_GLARE_GENERATED_DIR}"
-  "${SUBSURFACE_SCATTERING_GENERATED_DIR}"
   "${VANILLA_FIXES_GENERATED_DIR}")
 target_compile_definitions(${PROJECT_NAME} PRIVATE
   UNICODE
@@ -3547,17 +3457,6 @@ if(BUILD_CSAH_TESTS)
   target_precompile_headers(CSAHInverseSquareTests PRIVATE "${SOURCE_DIR}/PCH.h")
   target_link_libraries(CSAHInverseSquareTests PRIVATE CommonLibF4::CommonLibF4 d3d11 d3dcompiler spdlog::spdlog)
   add_test(NAME CSAH.InverseSquare COMMAND CSAHInverseSquareTests "${INVERSE_SQUARE_GENERATED_DIR}")
-  add_executable(CSAHInteriorScatteringTests "${ROOT_DIR}/tests/InteriorScatteringTests.cpp"
-    "${SOURCE_DIR}/Features/surface_classification/SurfaceClassificationRuntime.cpp"
-    "${SOURCE_DIR}/Features/subsurface_scattering/SubsurfaceScatteringRuntime.cpp"
-    "${SOURCE_DIR}/render/ComputeStateScope.cpp" "${SOURCE_DIR}/render/GpuTimingProfiler.cpp")
-  add_dependencies(CSAHInteriorScatteringTests SubsurfaceScatteringShader)
-  target_compile_features(CSAHInteriorScatteringTests PRIVATE cxx_std_23)
-  target_compile_definitions(CSAHInteriorScatteringTests PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
-  target_include_directories(CSAHInteriorScatteringTests PRIVATE "${SOURCE_DIR}" "${SUBSURFACE_SCATTERING_GENERATED_DIR}")
-  target_precompile_headers(CSAHInteriorScatteringTests PRIVATE "${SOURCE_DIR}/PCH.h")
-  target_link_libraries(CSAHInteriorScatteringTests PRIVATE CommonLibF4::CommonLibF4 d3d11 spdlog::spdlog)
-  add_test(NAME CSAH.InteriorScattering COMMAND CSAHInteriorScatteringTests)
   add_executable(CSAHHeightFogTests "${ROOT_DIR}/tests/HeightFogTests.cpp")
   target_compile_features(CSAHHeightFogTests PRIVATE cxx_std_23)
   target_compile_definitions(CSAHHeightFogTests PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)

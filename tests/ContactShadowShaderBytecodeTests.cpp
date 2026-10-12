@@ -88,9 +88,9 @@ int main(int argumentCount, char** arguments)
                 "dcl_resource_texture2d (float,float,float,float) t46"),
             "Contact Shadows mask input must remain at t46");
         require(
-            assembly.contains(
-                "dcl_constantbuffer CB11[1], immediateIndexed"),
-            "Wrapped Grass settings buffer must remain at b11");
+            !assembly.contains("dcl_constantbuffer CB11[") &&
+                !assembly.contains("dcl_constantbuffer CB10["),
+            "removed grass and hair feature buffers must not be present");
         require(
             assembly.contains(
                 "dcl_constantbuffer CB7[4], immediateIndexed"),

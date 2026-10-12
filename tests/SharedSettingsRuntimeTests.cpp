@@ -41,8 +41,7 @@ int main(int argumentCount, char** arguments)
         require(WritePrivateProfileStringW(L"Diagnostics", L"iGpuProfilingMode", L"99", file.c_str()), "test invalid settings write failed");
         require(csah::diagnostics_settings::load(file).gpuProfilingGroups == 0, "invalid profiling selection must fail closed");
     }
-    require(!baseline.cloudShadows.enabled && !baseline.hairSpecular.enabled &&
-            !baseline.wrappedGrass.enabled && !baseline.subsurfaceScattering.enabled &&
+    require(!baseline.cloudShadows.enabled &&
             !baseline.volumetricLighting.enabled,
         "unfinished effects must default to disabled");
     require(!diff(baseline, baseline).any(), "equal snapshots changed");
@@ -110,17 +109,6 @@ int main(int argumentCount, char** arguments)
     verifyLive(
         [](Snapshot& value) { value.contactShadows.enabled = false; },
         "Contact Shadows diff");
-    verifyLive(
-        [](Snapshot& value) { value.wrappedGrass.enabled = true; },
-        "Wrapped Grass diff");
-    verifyLive(
-        [](Snapshot& value) { value.hairSpecular.enabled = true; },
-        "Hair Specular diff");
-    verifyLive(
-        [](Snapshot& value) {
-            value.subsurfaceScattering.enabled = true;
-        },
-        "Subsurface Scattering diff");
     verifyLive(
         [](Snapshot& value) { value.basicWetness.enabled = true; },
         "Basic Wetness diff");

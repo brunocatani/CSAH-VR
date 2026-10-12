@@ -11,17 +11,14 @@
 #include "Features/contact_shadows/ContactShadowSettings.h"
 #include "Features/dlaa/DlaaSettings.h"
 #include "Features/filmic_tonemapping/FilmicTonemappingSettings.h"
-#include "Features/hair_specular/HairSpecularSettings.h"
 #include "Features/ibl/IblSettings.h"
 #include "Features/linear_lighting/LinearLightingSettings.h"
 #include "Features/native_shadows/NativeShadowSettings.h"
 #include "Features/pbr/PbrSettings.h"
 #include "Features/skylighting/SkylightingSettings.h"
 #include "Features/sky_sync/SkySyncSettings.h"
-#include "Features/subsurface_scattering/SubsurfaceScatteringSettings.h"
 #include "Features/vanilla_fixes/VanillaFixesSettings.h"
 #include "Features/volumetric_lighting/VolumetricLightingSettings.h"
-#include "Features/wrapped_grass/WrappedGrassSettings.h"
 #include "settings/DiagnosticsSettings.h"
 
 #include "Features/terrain_shadows/TerrainShadowSettings.h"
@@ -41,9 +38,6 @@ namespace csah::shared_settings
         ibl::Settings ibl{};
         complex_materials::Settings complexMaterials{};
         contact_shadows::Settings contactShadows{};
-        wrapped_grass::Settings wrappedGrass{};
-        hair_specular::Settings hairSpecular{};
-        subsurface_scattering::Settings subsurfaceScattering{};
         basic_wetness::Settings basicWetness{};
         lod_blending::Settings lodBlending{};
         terrain_variation::Settings terrainVariation{};
@@ -73,9 +67,6 @@ namespace csah::shared_settings
         bool ibl{};
         bool complexMaterials{};
         bool contactShadows{};
-        bool wrappedGrass{};
-        bool hairSpecular{};
-        bool subsurfaceScattering{};
         bool basicWetness{};
         bool lodBlending{};
         bool terrainVariation{};
@@ -108,9 +99,6 @@ namespace csah::shared_settings
                 static_cast<std::size_t>(ibl) +
                 static_cast<std::size_t>(complexMaterials) +
                 static_cast<std::size_t>(contactShadows) +
-                static_cast<std::size_t>(wrappedGrass) +
-                static_cast<std::size_t>(hairSpecular) +
-                static_cast<std::size_t>(subsurfaceScattering) +
                 static_cast<std::size_t>(basicWetness) +
                 static_cast<std::size_t>(lodBlending) +
                 static_cast<std::size_t>(terrainVariation) +
@@ -145,10 +133,6 @@ namespace csah::shared_settings
                 previous.complexMaterials != next.complexMaterials,
             .contactShadows =
                 previous.contactShadows != next.contactShadows,
-            .wrappedGrass = previous.wrappedGrass != next.wrappedGrass,
-            .hairSpecular = previous.hairSpecular != next.hairSpecular,
-            .subsurfaceScattering = previous.subsurfaceScattering !=
-                next.subsurfaceScattering,
             .basicWetness = previous.basicWetness != next.basicWetness,
             .lodBlending = previous.lodBlending != next.lodBlending,
             .terrainVariation = previous.terrainVariation != next.terrainVariation,

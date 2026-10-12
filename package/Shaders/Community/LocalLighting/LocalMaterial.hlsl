@@ -6,7 +6,6 @@ Texture2D<float4> AuthoredMaterial : register(t45);
 Texture2D<float> SurfaceClass : register(t47);
 cbuffer PbrSettings : register(b7) {float4 Feature0;float4 Feature1;float4 Material0;float4 Material1;};
 cbuffer WetnessSettings : register(b9) {float4 Wetness;float4 WetMaterial;};
-cbuffer HairSettings : register(b10) {float4 Hair;};
 struct MaterialData {float4 f0Roughness:SV_Target0;float4 traits:SV_Target1;float4 response:SV_Target2;};
 MaterialData InitMain(float4 position:SV_Position)
 {
@@ -15,9 +14,8 @@ MaterialData InitMain(float4 position:SV_Position)
         int2 pixel=int2(position.xy);
         float code=SurfaceClass.Load(int3(pixel,0))*255;
         float ordinary=1-step(.5,abs(code)),grass=1-step(.5,abs(code-1)),terrain=1-step(.5,abs(code-4));
-        float hair=1-step(.5,abs(code-2));
         float wet=saturate(Wetness.x*Wetness.y*saturate(ordinary+grass+terrain));
-        result.response=float4(1-saturate(Wetness.z)*wet,lerp(1,max(Wetness.w,0),wet),lerp(1,max(Hair.y,0),saturate(Hair.x)*hair),max(Material1.z,0));
+        result.response=float4(1-saturate(Wetness.z)*wet,lerp(1,max(Wetness.w,0),wet),1,max(Material1.z,0));
         [branch] if(Feature0.x>1.0/255 && Feature0.z>.5) {
             float4 material=LocalMaterial.Load(int3(pixel,0)),authored=AuthoredMaterial.Load(int3(pixel,0));
             float authoredActive=step(.5,authored.x),legacyMetal=PbrDecodeMetalness(material.w);
@@ -48,7 +46,7 @@ LightOutput LightMain(LightInput input)
     LightOutput result;result.diffuse=input.diffuse;result.specular=input.specular;
     [branch] if(LocalLightingControl[0].w>.5) {
         result.diffuse.rgb*=input.response.x;
-        result.specular.rgb*=input.response.y*input.response.z;
+        result.specular.rgb*=input.response.y;
         // Native bit 8 selects unlit/ambient local lighting; bit 16 enables specular.
         uint flags=asuint(input.control.x);
         [branch] if(input.traits.x>1.0/255 && (flags&8)==0) {

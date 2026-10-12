@@ -21,10 +21,8 @@
 #include "Features/dlaa/DlaaSettingsStore.h"
 #include "Features/filmic_tonemapping/FilmicTonemappingRuntime.h"
 #include "Features/filmic_tonemapping/FilmicTonemappingSettingsStore.h"
-#include "Features/hair_specular/HairSpecularRuntime.h"
 #include "Features/ibl/IblRuntime.h"
 #include "Features/ibl/IblSettingsStore.h"
-#include "Features/hair_specular/HairSpecularSettingsStore.h"
 #include "Features/linear_lighting/LinearLightingRuntime.h"
 #include "Features/linear_lighting/LinearLightingSettingsStore.h"
 #include "Features/native_shadows/NativeShadowSettingsStore.h"
@@ -34,14 +32,10 @@
 #include "Features/skylighting/SkylightingSettingsStore.h"
 #include "Features/sky_sync/SkySyncRuntime.h"
 #include "Features/sky_sync/SkySyncSettingsStore.h"
-#include "Features/subsurface_scattering/SubsurfaceScatteringRuntime.h"
-#include "Features/subsurface_scattering/SubsurfaceScatteringSettingsStore.h"
 #include "Features/vanilla_fixes/VanillaFixesRuntime.h"
 #include "Features/vanilla_fixes/VanillaFixesSettingsStore.h"
 #include "Features/volumetric_lighting/VolumetricLightingRuntime.h"
 #include "Features/volumetric_lighting/VolumetricLightingSettingsStore.h"
-#include "Features/wrapped_grass/WrappedGrassRuntime.h"
-#include "Features/wrapped_grass/WrappedGrassSettingsStore.h"
 #include "render/GpuTimingProfiler.h"
 #include "diagnostics/RenderDocCapture.h"
 #include "settings/DiagnosticsSettings.h"
@@ -114,10 +108,6 @@ namespace csah::shared_settings
                 .complexMaterials =
                     complex_materials::loadSettings(path),
                 .contactShadows = contact_shadows::loadSettings(path),
-                .wrappedGrass = wrapped_grass::loadSettings(path),
-                .hairSpecular = hair_specular::loadSettings(path),
-                .subsurfaceScattering =
-                    subsurface_scattering::loadSettings(path),
                 .basicWetness = basic_wetness::loadSettings(path),
                 .lodBlending = lod_blending::loadSettings(path),
                 .terrainVariation = terrain_variation::loadSettings(path),
@@ -171,18 +161,6 @@ namespace csah::shared_settings
             if (changes.contactShadows) {
                 contact_shadows::Runtime::get().applySettings(
                     next.contactShadows);
-            }
-            if (changes.wrappedGrass) {
-                wrapped_grass::Runtime::get().applySettings(
-                    next.wrappedGrass);
-            }
-            if (changes.hairSpecular) {
-                hair_specular::Runtime::get().applySettings(
-                    next.hairSpecular);
-            }
-            if (changes.subsurfaceScattering) {
-                subsurface_scattering::Runtime::get().applySettings(
-                    next.subsurfaceScattering);
             }
             if(changes.inverseSquare) inverse_square::Runtime::get().applySettings(next.inverseSquare);
             if(changes.terrainShadows) terrain_shadows::Runtime::get().applySettings(next.terrainShadows);

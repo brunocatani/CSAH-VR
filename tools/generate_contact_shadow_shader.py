@@ -37,8 +37,6 @@ DFLIGHT_DIRECTIONAL_DESCRIPTOR_MASK = 0x00000003
 DFLIGHT_CHARACTER_DESCRIPTOR_MASK = 0x04000000
 CONTACT_CONSTANT_SLOT = 13
 CONTACT_MASK_SLOT = 46
-WRAPPED_GRASS_CONSTANT_SLOT = 11
-HAIR_SPECULAR_CONSTANT_SLOT = 10
 BASIC_WETNESS_CONSTANT_SLOT = 9
 PBR_CONSTANT_SLOT = 7
 PBR_MATERIAL_SLOT = 45
@@ -47,7 +45,7 @@ DIRECTIONAL_DIAGNOSTIC_MODE_COUNT = 6
 MUL_OPCODE = 0x38
 DIV_OPCODE = 0x0E
 MOV_OPCODE = 0x36
-WRAPPED_NDOTL_INSTRUCTION = (
+NATIVE_NDOTL_INSTRUCTION = (
     0x06002036,
     0x00100012,
     0x00000001,
@@ -261,99 +259,6 @@ def compile_template(root: Path, fxc: Path, temporary: Path) -> bytes:
         if required not in text:
             raise ContractError(
                 "contact-shadow transform assembly changed: " + required
-            )
-    return output.read_bytes()
-
-
-def compile_wrapped_grass_template(
-    root: Path, fxc: Path, temporary: Path
-) -> bytes:
-    source = (
-        root
-        / "package"
-        / "Shaders"
-        / "Community"
-        / "ContactShadows"
-        / "WrappedGrassTransform.hlsl"
-    )
-    output = temporary / "WrappedGrassTransform.dxbc"
-    assembly = temporary / "WrappedGrassTransform.asm.txt"
-    run(
-        [
-            str(fxc),
-            "/nologo",
-            "/T",
-            "ps_5_0",
-            "/E",
-            "PSMain",
-            "/O3",
-            "/Ges",
-            "/WX",
-            "/Fo",
-            str(output),
-            "/Fc",
-            str(assembly),
-            str(source),
-        ],
-        "wrapped-grass transform compilation",
-    )
-    text = assembly.read_text(encoding="utf-8")
-    for required in (
-        "dcl_constantbuffer CB11[1], immediateIndexed",
-        "dcl_resource_texture2d (float,float,float,float) t47",
-        "dcl_input_ps linear v1.x",
-        "dcl_input_ps_siv linear noperspective v0.xy, position",
-    ):
-        if required not in text:
-            raise ContractError(
-                "wrapped-grass transform assembly changed: " + required
-            )
-    return output.read_bytes()
-
-
-def compile_hair_specular_template(
-    root: Path, fxc: Path, temporary: Path
-) -> bytes:
-    source = (
-        root
-        / "package"
-        / "Shaders"
-        / "Community"
-        / "ContactShadows"
-        / "HairSpecularTransform.hlsl"
-    )
-    output = temporary / "HairSpecularTransform.dxbc"
-    assembly = temporary / "HairSpecularTransform.asm.txt"
-    run(
-        [
-            str(fxc),
-            "/nologo",
-            "/T",
-            "ps_5_0",
-            "/E",
-            "PSMain",
-            "/O3",
-            "/Ges",
-            "/WX",
-            "/Fo",
-            str(output),
-            "/Fc",
-            str(assembly),
-            str(source),
-        ],
-        "hair-specular transform compilation",
-    )
-    text = assembly.read_text(encoding="utf-8")
-    for required in (
-        "dcl_constantbuffer CB10[1], immediateIndexed",
-        "dcl_resource_texture2d (float,float,float,float) t0",
-        "dcl_resource_texture2d (float,float,float,float) t47",
-        "dcl_input_ps linear v1.xyz",
-        "dcl_input_ps_siv linear noperspective v0.xy, position",
-    ):
-        if required not in text:
-            raise ContractError(
-                "hair-specular transform assembly changed: " + required
             )
     return output.read_bytes()
 
@@ -635,99 +540,12 @@ def template_contract(
     return [resource_declaration, constant_declaration], transform[:-1], temp_count
 
 
-def wrapped_grass_template_contract(
-    template: bytes,
-) -> tuple[list[list[int]], list[list[int]], int]:
-    _, _, _, words = shader_words(template)
-    constant_declaration: list[int] | None = None
-    resource_declaration: list[int] | None = None
-    for start, end in instructions(words):
-        opcode = words[start] & 0x7FF
-        operands = executable_operands(words, start, end)
-        if (
-            opcode == OPCODE_DCL_CONSTANT_BUFFER
-            and operands
-            and operands[0].operand_type == OPERAND_CONSTANT_BUFFER
-            and operands[0].immediate_indices
-            and operands[0].immediate_indices[0]
-            == WRAPPED_GRASS_CONSTANT_SLOT
-        ):
-            constant_declaration = words[start:end]
-        if (
-            opcode == OPCODE_DCL_RESOURCE
-            and operands
-            and operands[0].operand_type == OPERAND_RESOURCE
-            and operands[0].immediate_indices == (SURFACE_CLASS_SLOT,)
-        ):
-            resource_declaration = words[start:end]
-    if constant_declaration is None or resource_declaration is None:
-        raise ContractError("wrapped-grass template resource contract changed")
-    temp_declaration, _, body = shader_declarations_and_body(words)
-    temp_count = words[temp_declaration[0] + 1]
-    transform = [words[start:end] for start, end in body]
-    if not transform or (transform[-1][0] & 0x7FF) != OPCODE_RET:
-        raise ContractError("wrapped-grass template no longer terminates with ret")
-    if any((instruction[0] & 0x7FF) == OPCODE_RET for instruction in transform[:-1]):
-        raise ContractError("wrapped-grass template contains an early return")
-    return [resource_declaration, constant_declaration], transform[:-1], temp_count
-
-
-def hair_specular_template_contract(
-    template: bytes,
-) -> tuple[list[list[int]], list[list[int]], int]:
-    _, _, _, words = shader_words(template)
-    constant_declaration: list[int] | None = None
-    owns_gbuffer_material = False
-    owns_surface_class = False
-    for start, end in instructions(words):
-        opcode = words[start] & 0x7FF
-        operands = executable_operands(words, start, end)
-        if (
-            opcode == OPCODE_DCL_CONSTANT_BUFFER
-            and operands
-            and operands[0].operand_type == OPERAND_CONSTANT_BUFFER
-            and operands[0].immediate_indices
-            and operands[0].immediate_indices[0]
-            == HAIR_SPECULAR_CONSTANT_SLOT
-        ):
-            constant_declaration = words[start:end]
-        if (
-            opcode == OPCODE_DCL_RESOURCE
-            and operands
-            and operands[0].operand_type == OPERAND_RESOURCE
-            and operands[0].immediate_indices == (0,)
-        ):
-            owns_gbuffer_material = True
-        if (
-            opcode == OPCODE_DCL_RESOURCE
-            and operands
-            and operands[0].operand_type == OPERAND_RESOURCE
-            and operands[0].immediate_indices == (SURFACE_CLASS_SLOT,)
-        ):
-            owns_surface_class = True
-    if (
-        constant_declaration is None
-        or not owns_gbuffer_material
-        or not owns_surface_class
-    ):
-        raise ContractError("hair-specular template resource contract changed")
-    temp_declaration, _, body = shader_declarations_and_body(words)
-    temp_count = words[temp_declaration[0] + 1]
-    transform = [words[start:end] for start, end in body]
-    if not transform or (transform[-1][0] & 0x7FF) != OPCODE_RET:
-        raise ContractError("hair-specular template no longer terminates with ret")
-    if any((instruction[0] & 0x7FF) == OPCODE_RET for instruction in transform[:-1]):
-        raise ContractError("hair-specular template contains an early return")
-    # Wrapped Grass already contributes the shared t47 declaration.
-    return [constant_declaration], transform[:-1], temp_count
-
-
 def basic_wetness_template_contract(
     template: bytes,
 ) -> tuple[list[list[int]], list[list[int]], int]:
     _, _, _, words = shader_words(template)
     constant_declaration: list[int] | None = None
-    owns_surface_class = False
+    resource_declaration: list[int] | None = None
     for start, end in instructions(words):
         opcode = words[start] & 0x7FF
         operands = executable_operands(words, start, end)
@@ -746,8 +564,8 @@ def basic_wetness_template_contract(
             and operands[0].operand_type == OPERAND_RESOURCE
             and operands[0].immediate_indices == (SURFACE_CLASS_SLOT,)
         ):
-            owns_surface_class = True
-    if constant_declaration is None or not owns_surface_class:
+            resource_declaration = words[start:end]
+    if constant_declaration is None or resource_declaration is None:
         raise ContractError("basic-wetness template resource contract changed")
     temp_declaration, _, body = shader_declarations_and_body(words)
     temp_count = words[temp_declaration[0] + 1]
@@ -756,8 +574,7 @@ def basic_wetness_template_contract(
         raise ContractError("basic-wetness template no longer terminates with ret")
     if any((instruction[0] & 0x7FF) == OPCODE_RET for instruction in transform[:-1]):
         raise ContractError("basic-wetness template contains an early return")
-    # Wrapped Grass already contributes the shared t47 declaration.
-    return [constant_declaration], transform[:-1], temp_count
+    return [resource_declaration, constant_declaration], transform[:-1], temp_count
 
 
 def pbr_template_contract(
@@ -889,76 +706,6 @@ def remap_transform_instruction(
                 instruction,
                 operand,
                 visibility_scratch,
-            )
-    return replace_instruction_operands(instruction, replacements)
-
-
-def remap_wrapped_grass_instruction(
-    instruction: list[int], first_scratch: int, template_temp_count: int
-) -> list[int]:
-    replacements: dict[int, list[int]] = {}
-    for operand in flatten_operands(executable_operands(instruction, 0, len(instruction))):
-        if operand.operand_type == OPERAND_TEMP:
-            if (
-                len(operand.immediate_indices) != 1
-                or operand.immediate_indices[0] is None
-                or int(operand.immediate_indices[0]) >= template_temp_count
-            ):
-                raise ContractError("wrapped-grass template temporary changed")
-            replacements[operand.start] = replace_operand_with_temp(
-                instruction,
-                operand,
-                first_scratch + int(operand.immediate_indices[0]),
-            )
-        elif operand.operand_type == OPERAND_INPUT:
-            if operand.immediate_indices == (1,):
-                replacements[operand.start] = replace_operand_with_temp(
-                    instruction,
-                    operand,
-                    1,
-                )
-            elif operand.immediate_indices != (0,):
-                raise ContractError("wrapped-grass template input changed")
-        elif operand.operand_type == OPERAND_OUTPUT:
-            if operand.immediate_indices != (0,):
-                raise ContractError("wrapped-grass template output changed")
-            replacements[operand.start] = replace_operand_with_temp(
-                instruction,
-                operand,
-                1,
-            )
-    return replace_instruction_operands(instruction, replacements)
-
-
-def remap_hair_specular_instruction(
-    instruction: list[int], first_scratch: int, template_temp_count: int
-) -> list[int]:
-    replacements: dict[int, list[int]] = {}
-    for operand in flatten_operands(executable_operands(instruction, 0, len(instruction))):
-        if operand.operand_type == OPERAND_TEMP:
-            if (
-                len(operand.immediate_indices) != 1
-                or operand.immediate_indices[0] is None
-                or int(operand.immediate_indices[0]) >= template_temp_count
-            ):
-                raise ContractError("hair-specular template temporary changed")
-            replacements[operand.start] = replace_operand_with_temp(
-                instruction,
-                operand,
-                first_scratch + int(operand.immediate_indices[0]),
-            )
-        elif operand.operand_type == OPERAND_INPUT:
-            if operand.immediate_indices == (1,):
-                replacements[operand.start] = replace_operand_with_temp(
-                    instruction, operand, 1
-                )
-            elif operand.immediate_indices != (0,):
-                raise ContractError("hair-specular template input changed")
-        elif operand.operand_type == OPERAND_OUTPUT:
-            if operand.immediate_indices != (0,):
-                raise ContractError("hair-specular template output changed")
-            replacements[operand.start] = replace_operand_with_temp(
-                instruction, operand, 1
             )
     return replace_instruction_operands(instruction, replacements)
 
@@ -1280,10 +1027,10 @@ def remap_sun_instruction(instruction, first_temp, rim, transmission, diffuse_sc
     return replace_instruction_operands(instruction, replacements)
 
 
-def sun_lobe_sites(words, body, wrapped_site, output_site):
+def sun_lobe_sites(words, body, ndotl_site, output_site):
     hard, back, forward = [], [], []
     for start, end in body:
-        if (words[start] & 0x7FF) != 0x32 or not (wrapped_site[0] - 30 < start < output_site[0]): continue
+        if (words[start] & 0x7FF) != 0x32 or not (ndotl_site[0] - 30 < start < output_site[0]): continue
         operands = executable_operands(words, start, end)
         if len(operands) != 4: continue
         destination, a, b, addend = operands
@@ -1310,8 +1057,6 @@ def record_transmission(instruction, register, accumulate):
 def patch_shader(
     original: bytes,
     contact_template: bytes,
-    wrapped_grass_template: bytes,
-    hair_specular_template: bytes,
     basic_wetness_template: bytes,
     pbr_template: bytes,
     skylighting_template: bytes,
@@ -1325,12 +1070,6 @@ def patch_shader(
         )
     declarations, transform, template_temps = template_contract(
         contact_template
-    )
-    wrapped_declarations, wrapped_transform, wrapped_template_temps = (
-        wrapped_grass_template_contract(wrapped_grass_template)
-    )
-    hair_declarations, hair_transform, hair_template_temps = (
-        hair_specular_template_contract(hair_specular_template)
     )
     wetness_declarations, wetness_transform, wetness_template_temps = (
         basic_wetness_template_contract(basic_wetness_template)
@@ -1380,9 +1119,7 @@ def patch_shader(
         raise ContractError("native directional shader owns a private Skylighting resource slot")
     first_scratch = original_temps
     visibility_scratch = first_scratch + template_temps
-    wrapped_first_scratch = visibility_scratch + 1
-    hair_first_scratch = wrapped_first_scratch + wrapped_template_temps
-    wetness_first_scratch = hair_first_scratch + hair_template_temps
+    wetness_first_scratch = visibility_scratch + 1
     pbr_first_scratch = wetness_first_scratch + wetness_template_temps
     sun_declarations, sun_transform, sun_temps = sun_template_contract(skylighting_template)
     diffuse_scale_scratch = pbr_first_scratch + pbr_template_temps
@@ -1402,26 +1139,6 @@ def patch_shader(
                 first_scratch,
                 template_temps,
                 visibility_scratch,
-            )
-        )
-
-    transformed_wrapped: list[int] = []
-    for instruction in wrapped_transform:
-        transformed_wrapped.extend(
-            remap_wrapped_grass_instruction(
-                instruction,
-                wrapped_first_scratch,
-                wrapped_template_temps,
-            )
-        )
-
-    transformed_hair: list[int] = []
-    for instruction in hair_transform:
-        transformed_hair.extend(
-            remap_hair_specular_instruction(
-                instruction,
-                hair_first_scratch,
-                hair_template_temps,
             )
         )
 
@@ -1446,18 +1163,18 @@ def patch_shader(
             )
         )
 
-    wrapped_sites = [
+    ndotl_sites = [
         (start, end)
         for start, end in body
-        if tuple(words[start:end]) == WRAPPED_NDOTL_INSTRUCTION
+        if tuple(words[start:end]) == NATIVE_NDOTL_INSTRUCTION
     ]
-    if len(wrapped_sites) != 1:
+    if len(ndotl_sites) != 1:
         raise ContractError(
-            "directional DFLight wrapped NdotL instruction changed"
+            "directional DFLight native NdotL instruction changed"
         )
-    wrapped_site = wrapped_sites[0]
+    ndotl_site = ndotl_sites[0]
 
-    hard_site, back_site, forward_site = sun_lobe_sites(words, body, wrapped_site, o1_write)
+    hard_site, back_site, forward_site = sun_lobe_sites(words, body, ndotl_site, o1_write)
     transformed_sun = []
     for instruction in sun_transform:
         transformed_sun.extend(remap_sun_instruction(instruction, sun_first_scratch, rim_scratch,
@@ -1469,10 +1186,6 @@ def patch_shader(
             if operand.immediate_indices[0] == 12: prefix[end-1] = max(prefix[end-1],61)
     for declaration in sun_declarations: prefix.extend(declaration)
     for declaration in declarations:
-        prefix.extend(declaration)
-    for declaration in wrapped_declarations:
-        prefix.extend(declaration)
-    for declaration in hair_declarations:
         prefix.extend(declaration)
     for declaration in wetness_declarations:
         prefix.extend(declaration)
@@ -1487,7 +1200,6 @@ def patch_shader(
         if (start, end) == o1_write:
             rewritten.extend(transformed_wetness)
             rewritten.extend(transformed_pbr)
-            rewritten.extend(transformed_hair)
             rewritten.extend(transformed)
             rewritten.extend(transformed_sun)
             rewritten.extend(multiply_rgb(1, visibility_scratch))
@@ -1499,8 +1211,6 @@ def patch_shader(
         rewritten.extend(words[start:end])
         if (start, end) == back_site: rewritten.extend(record_transmission(words[start:end], transmission_scratch, False))
         if (start, end) == forward_site: rewritten.extend(record_transmission(words[start:end], transmission_scratch, True))
-        if (start, end) == wrapped_site:
-            rewritten.extend(transformed_wrapped)
 
     patched_words = [*prefix, *updated_temps, *rewritten]
     patched_words[1] = len(patched_words)
@@ -1772,16 +1482,6 @@ def main() -> int:
         canonical_original = original_shader(root)
         originals = directional_pixel_shaders(root)
         template = compile_template(root, args.fxc.resolve(), temporary)
-        wrapped_grass_template = compile_wrapped_grass_template(
-            root,
-            args.fxc.resolve(),
-            temporary,
-        )
-        hair_specular_template = compile_hair_specular_template(
-            root,
-            args.fxc.resolve(),
-            temporary,
-        )
         basic_wetness_template = compile_basic_wetness_template(
             root,
             args.fxc.resolve(),
@@ -1819,8 +1519,6 @@ def main() -> int:
                 candidate = patch_shader(
                     original.data,
                     template,
-                    wrapped_grass_template,
-                    hair_specular_template,
                     basic_wetness_template,
                     pbr_template,
                     skylighting_template,
@@ -1844,15 +1542,11 @@ def main() -> int:
 
         required_assembly = (
             "dcl_constantbuffer CB13[3], immediateIndexed",
-            "dcl_constantbuffer CB11[1], immediateIndexed",
-            "dcl_constantbuffer CB10[1], immediateIndexed",
             "dcl_constantbuffer CB9[1], immediateIndexed",
             "dcl_constantbuffer CB7[4], immediateIndexed",
             "dcl_resource_texture2d (float,float,float,float) t45",
             "dcl_resource_texture2d (float,float,float,float) t46",
             "dcl_resource_texture2d (float,float,float,float) t47",
-            "l(0.212600, 0.715200, 0.072200",
-            "l(0.140000)",
             "dcl_output o0.xyzw",
             "dcl_output o1.xyzw",
         )

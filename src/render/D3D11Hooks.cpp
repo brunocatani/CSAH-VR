@@ -17,7 +17,6 @@
 #include "Features/dlaa/DlaaRuntime.h"
 #include "Features/dlaa/StreamlineBackend.h"
 #include "Features/filmic_tonemapping/FilmicTonemappingRuntime.h"
-#include "Features/hair_specular/HairSpecularRuntime.h"
 #include "Features/ibl/IblRuntime.h"
 #include "Features/linear_lighting/DFTiledPointLightHook.h"
 #include "Features/linear_lighting/LinearLightingRuntime.h"
@@ -25,7 +24,6 @@
 #include "Features/skylighting/SkylightingNativeHooks.h"
 #include "Features/skylighting/SkylightingRuntime.h"
 #include "Features/sky_sync/SkySyncRuntime.h"
-#include "Features/subsurface_scattering/SubsurfaceScatteringRuntime.h"
 #include "Features/surface_classification/SurfaceClassificationRuntime.h"
 #include "Features/vanilla_fixes/FocusShadowRuntime.h"
 #include "Features/vanilla_fixes/DirectionalLightDiagnosticSurface.h"
@@ -33,7 +31,6 @@
 #include "Features/vanilla_fixes/VanillaFixesRuntime.h"
 #include "Features/vanilla_fixes/VanillaShaderFixes.h"
 #include "Features/volumetric_lighting/VolumetricLightingRuntime.h"
-#include "Features/wrapped_grass/WrappedGrassRuntime.h"
 #include "diagnostics/HdrOutputProbe.h"
 #include "diagnostics/RenderDocCapture.h"
 #include "render/D3D11MethodOwner.h"
@@ -361,8 +358,6 @@ namespace csah::render
         thread_local filmic_tonemapping::ShaderBinding
             activeFilmicTonemappingBinding{};
         thread_local bool activeContactShadowsEnabled{};
-        thread_local bool activeWrappedGrassEnabled{};
-        thread_local bool activeHairSpecularEnabled{};
         thread_local bool activeBasicWetnessEnabled{};
         thread_local bool activePbrEnabled{};
         thread_local bool activeCloudShadowsEnabled{};
@@ -1896,10 +1891,7 @@ namespace csah::render
             if (activeContactShadowBinding &&
                 !contact_shadows::Runtime::get().compositorReady(
                     skylighting::Runtime::get().requested() || water_effects::Runtime::get().causticsRequested() ||
-                    (wrapped_grass::Runtime::get().requested() ||
-                        hair_specular::Runtime::get().requested() ||
-                        subsurface_scattering::Runtime::get().requested() ||
-                        basic_wetness::Runtime::get().requested() ||
+                    (basic_wetness::Runtime::get().requested() ||
                         cloud_shadows::Runtime::get().requested() ||
                         pbr::Runtime::get().requested()) &&
                     linear_lighting::Runtime::get()
@@ -1913,8 +1905,6 @@ namespace csah::render
                 }
                 activeContactShadowBinding = {};
                 activeContactShadowsEnabled = false;
-                activeWrappedGrassEnabled = false;
-                activeHairSpecularEnabled = false;
 
                 activeBasicWetnessEnabled = false;
                 activePbrEnabled = false;
@@ -2104,7 +2094,7 @@ namespace csah::render
         {
             return linear_lighting::Runtime::get().linearLightingEnabled() &&
                 vanilla_fixes::directionalLightDiagnosticMode()==vanilla_fixes::DirectionalLightDiagnosticMode::off &&
-                (pbr::Runtime::get().requested() || basic_wetness::Runtime::get().requested() || hair_specular::Runtime::get().requested());
+                (pbr::Runtime::get().requested() || basic_wetness::Runtime::get().requested());
         }
 
         [[nodiscard]] bool prepareVolumetricDraw(
@@ -2307,9 +2297,6 @@ namespace csah::render
             ID3D11DeviceContext* context) noexcept
         {
             if (activeWorldCameraComposite && activeWorldCameraContext == context) {
-                if (activeWorldCompositeDiffuse && linear_lighting::Runtime::get().linearLightingEnabled() &&
-                    vanilla_fixes::directionalLightDiagnosticMode()==vanilla_fixes::DirectionalLightDiagnosticMode::off)
-                    subsurface_scattering::Runtime::get().executeBeforeWorldComposite(context,activeWorldCompositeTiled);
                 dlaa::Runtime::get().onWorldCompositeDraw(context);
                 cloud_shadows::Runtime::get().observeMainView(context);
                 if(activeWorldCompositeDiffuse) screen_space_gi::Runtime::get().captureRadiance(context,activeWorldCompositeTiled,
@@ -2542,14 +2529,6 @@ namespace csah::render
                 activeContactShadowBinding,
                 activeContactShadowsEnabled,
                 activeCloudShadowsEnabled);
-            auto& wrappedRuntime = wrapped_grass::Runtime::get();
-            const auto wrappedBindings = wrappedRuntime.scopeDraw(
-                context,
-                activeWrappedGrassEnabled);
-            auto& hairRuntime = hair_specular::Runtime::get();
-            const auto hairBindings = hairRuntime.scopeDraw(
-                context,
-                activeHairSpecularEnabled);
             auto& wetnessRuntime = basic_wetness::Runtime::get();
             const auto wetnessBindings = wetnessRuntime.scopeDraw(
                 context,
@@ -2558,16 +2537,13 @@ namespace csah::render
             const auto pbrBindings = pbrRuntime.scopeDraw(
                 context,
                 activePbrEnabled);
-            if (bindings.active() && wrappedBindings.active() &&
-                hairBindings.active() && wetnessBindings.active() &&
+            if (bindings.active() && wetnessBindings.active() &&
                 pbrBindings.active()) {
                 draw();
                 return;
             }
 
             runtime.recordDrawFallback();
-            wrappedRuntime.recordDrawFallback();
-            hairRuntime.recordDrawFallback();
             wetnessRuntime.recordDrawFallback();
             pbrRuntime.recordDrawFallback();
             if (!originalPSSetShader) {
@@ -3258,8 +3234,6 @@ namespace csah::render
                 activeContactShadowBinding = {};
                 activeFilmicTonemappingBinding = {};
                 activeContactShadowsEnabled = false;
-                activeWrappedGrassEnabled = false;
-                activeHairSpecularEnabled = false;
 
                 activeBasicWetnessEnabled = false;
                 activePbrEnabled = false;
@@ -3280,8 +3254,6 @@ namespace csah::render
                 activeContactShadowBinding = {};
                 activeFilmicTonemappingBinding = {};
                 activeContactShadowsEnabled = false;
-                activeWrappedGrassEnabled = false;
-                activeHairSpecularEnabled = false;
 
                 activeBasicWetnessEnabled = false;
                 activePbrEnabled = false;
@@ -3296,8 +3268,6 @@ namespace csah::render
             activatePendingQualificationSession();
             auto& replacementRuntime = linear_lighting::Runtime::get();
             auto& skylightingRuntime = skylighting::Runtime::get();
-            auto& wrappedGrassRuntime = wrapped_grass::Runtime::get();
-            auto& hairSpecularRuntime = hair_specular::Runtime::get();
             auto& basicWetnessRuntime = basic_wetness::Runtime::get();
             auto& pbrRuntime = pbr::Runtime::get();
             auto& cloudShadowRuntime = cloud_shadows::Runtime::get();
@@ -3319,14 +3289,6 @@ namespace csah::render
             const auto contactShadowFeatureActive =
                 !exclusiveDirectionalDiagnostic &&
                 contactShadowRuntime.featureEnabled();
-            const auto wrappedGrassFeatureActive =
-                !exclusiveDirectionalDiagnostic &&
-                wrappedGrassRuntime.requested() &&
-                replacementRuntime.linearLightingEnabled();
-            const auto hairSpecularFeatureActive =
-                !exclusiveDirectionalDiagnostic &&
-                hairSpecularRuntime.requested() &&
-                replacementRuntime.linearLightingEnabled();
             const auto basicWetnessFeatureActive =
                 !exclusiveDirectionalDiagnostic &&
                 basicWetnessRuntime.requested() &&
@@ -3344,8 +3306,6 @@ namespace csah::render
                 filmicTonemappingRuntime.featureEnabled();
             const auto dflightCompositorActive =
                 contactShadowRuntime.compositorReady(
-                    wrappedGrassFeatureActive || hairSpecularFeatureActive ||
-
                     basicWetnessFeatureActive || cloudShadowFeatureActive ||
                     (skylighting::Runtime::get().requested() || water_effects::Runtime::get().causticsRequested() || terrain_shadows::Runtime::get().requested()));
             const auto materialCompositorActive =
@@ -3373,8 +3333,6 @@ namespace csah::render
                 activeContactShadowBinding = {};
                 activeFilmicTonemappingBinding = {};
                 activeContactShadowsEnabled = false;
-                activeWrappedGrassEnabled = false;
-                activeHairSpecularEnabled = false;
 
                 activeBasicWetnessEnabled = false;
                 activePbrEnabled = false;
@@ -3409,10 +3367,7 @@ namespace csah::render
                 contactShadowSelection =
                     contactShadowRuntime.selectPixelShader(
                         shader,
-                        wrappedGrassFeatureActive ||
-                            hairSpecularFeatureActive ||
-
-                            basicWetnessFeatureActive ||
+                        basicWetnessFeatureActive ||
                             cloudShadowFeatureActive || pbrFeatureActive ||
                             (skylighting::Runtime::get().requested() || water_effects::Runtime::get().causticsRequested() || terrain_shadows::Runtime::get().requested()));
             }
@@ -3522,12 +3477,6 @@ namespace csah::render
             activeContactShadowsEnabled =
                 contactShadowSelection.binding &&
                 contactShadowFeatureActive;
-            activeWrappedGrassEnabled =
-                contactShadowSelection.binding &&
-                wrappedGrassFeatureActive;
-            activeHairSpecularEnabled =
-                contactShadowSelection.binding &&
-                hairSpecularFeatureActive;
             activeBasicWetnessEnabled =
                 contactShadowSelection.binding &&
                 basicWetnessFeatureActive;
@@ -4835,12 +4784,6 @@ namespace csah::render
             surface_classification::Runtime::get().onDeviceCreated(
                 *device,
                 *immediateContext);
-            wrapped_grass::Runtime::get().onDeviceCreated(
-                *device,
-                *immediateContext);
-            hair_specular::Runtime::get().onDeviceCreated(
-                *device,
-                *immediateContext);
             lod_blending::Runtime::get().onDeviceCreated(*device, *immediateContext);
             terrain_variation::Runtime::get().onDeviceCreated(*device, *immediateContext);
             water_effects::Runtime::get().onDeviceCreated(*device, *immediateContext);
@@ -4858,9 +4801,6 @@ namespace csah::render
                 *device,
                 *immediateContext);
             volumetric_lighting::Runtime::get().onDeviceCreated(
-                *device,
-                *immediateContext);
-            subsurface_scattering::Runtime::get().onDeviceCreated(
                 *device,
                 *immediateContext);
             ibl::Runtime::get().onDeviceCreated(

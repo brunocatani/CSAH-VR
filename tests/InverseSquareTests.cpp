@@ -45,13 +45,13 @@ namespace
         D3D11_RASTERIZER_DESC rd{};rd.FillMode=D3D11_FILL_SOLID;rd.CullMode=D3D11_CULL_NONE;rd.DepthClipEnable=TRUE;ComPtr<ID3D11RasterizerState> raster;check(device->CreateRasterizerState(&rd,&raster),"raster");context->RSSetState(raster.Get());
         auto& runtime=csah::inverse_square::Runtime::get();runtime.onDeviceCreated(device.Get(),context.Get());runtime.setDispatchReady(true);csah::inverse_square::Settings settings;
         bool localEnabled=false;
-        auto pbr=buffer(64,D3D11_BIND_CONSTANT_BUFFER),wet=buffer(32,D3D11_BIND_CONSTANT_BUFFER),hair=buffer(16,D3D11_BIND_CONSTANT_BUFFER);
+        auto pbr=buffer(64,D3D11_BIND_CONSTANT_BUFFER),wet=buffer(32,D3D11_BIND_CONSTANT_BUFFER);
         std::array<F4,4> pbrData{{{0,1,1,0},{0,1,0,0},{1,1,.32f,.02f},{1,1,1,0}}};
-        std::array<F4,2> wetData{};F4 hairData{};
+        std::array<F4,2> wetData{};;
         auto classMask=texture({0,0,0,0});
         auto bindMaterials=[&](){
-            context->UpdateSubresource(pbr.Get(),0,nullptr,pbrData.data(),0,0);context->UpdateSubresource(wet.Get(),0,nullptr,wetData.data(),0,0);context->UpdateSubresource(hair.Get(),0,nullptr,&hairData,0,0);
-            for(auto slot:{7u,9u,10u}) {auto* value=slot==7?pbr.Get():slot==9?wet.Get():hair.Get();context->PSSetConstantBuffers(slot,1,&value);context->CSSetConstantBuffers(slot,1,&value);}
+            context->UpdateSubresource(pbr.Get(),0,nullptr,pbrData.data(),0,0);context->UpdateSubresource(wet.Get(),0,nullptr,wetData.data(),0,0);
+            for(auto slot:{7u,9u}) {auto* value=slot==7?pbr.Get():wet.Get();context->PSSetConstantBuffers(slot,1,&value);context->CSSetConstantBuffers(slot,1,&value);}
             for(auto slot:{47u,81u,82u}) {auto* value=slot==47?classMask.Get():slot==81?albedo.Get():material.Get();context->PSSetShaderResources(slot,1,&value);context->CSSetShaderResources(slot,1,&value);}
         };bindMaterials();
         auto readback=[&](){std::array<F4,128> out;for(unsigned i=0;i<2;i++){context->CopyResource(staging.Get(),targets[i].Get());D3D11_MAPPED_SUBRESOURCE m{};check(context->Map(staging.Get(),0,D3D11_MAP_READ,0,&m),"readback map");for(unsigned y=0;y<8;y++)std::memcpy(out.data()+i*64+y*8,static_cast<const char*>(m.pData)+m.RowPitch*y,8*sizeof(F4));context->Unmap(staging.Get(),0);}return out;};
@@ -103,10 +103,11 @@ namespace
         require(std::abs(authoredResult[73].x-authoredSpec)<authoredSpec*.003f,"authored local roughness/F0 missing");
         authoredView=nullptr;context->PSSetShaderResources(45,1,&authoredView);
         classMask=texture({3.0f/255,0,0,0});bindMaterials();compare(pixelDraw(false),pixelDraw(true),1);
-        classMask=texture({2.0f/255,0,0,0});hairData={1,2,0,0};bindMaterials();auto baseHair=pixelDraw(false),enhancedHair=pixelDraw(true);
-        require(baseHair[73].x>0 && std::abs(enhancedHair[73].x-baseHair[73].x*2)<1e-6f,"local hair highlight multiplier missing");
-        require(enhancedHair[9].x==baseHair[9].x,"hair multiplier changed diffuse");
-        hairData={};classMask=texture({0,0,0,0});bindMaterials();
+        // Removed hair enhancement must retain the native local-light response.
+        classMask=texture({2.0f/255,0,0,0});bindMaterials();
+        const auto nativeHair=pixelDraw(false),materialHair=pixelDraw(true);
+        compare(nativeHair,materialHair,1.0f);
+        classMask=texture({0,0,0,0});bindMaterials();
         // Projected lamp colour must tint the replacement BRDF, not only native diffuse.
         auto cookie=texture({.25f,.5f,.75f,1});auto* cookieView=cookie.Get();context->PSSetShaderResources(7,1,&cookieView);auto* cookieSampler=sampler.Get();context->PSSetSamplers(7,1,&cookieSampler);
         a=bytes(generated/"PS_00001204_original.dxbc");b=bytes(generated/"PS_00001204_replacement.dxbc");

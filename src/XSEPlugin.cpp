@@ -23,8 +23,6 @@
 #include "Features/dlaa/DlaaSettingsStore.h"
 #include "Features/filmic_tonemapping/FilmicTonemappingRuntime.h"
 #include "Features/filmic_tonemapping/FilmicTonemappingSettingsStore.h"
-#include "Features/hair_specular/HairSpecularRuntime.h"
-#include "Features/hair_specular/HairSpecularSettingsStore.h"
 #include "Features/ibl/IblRuntime.h"
 #include "Features/ibl/IblSettingsStore.h"
 #include "Features/complex_materials/ComplexParallaxSettingsStore.h"
@@ -40,14 +38,10 @@
 #include "Features/skylighting/SkylightingSettingsStore.h"
 #include "Features/sky_sync/SkySyncRuntime.h"
 #include "Features/sky_sync/SkySyncSettingsStore.h"
-#include "Features/subsurface_scattering/SubsurfaceScatteringRuntime.h"
-#include "Features/subsurface_scattering/SubsurfaceScatteringSettingsStore.h"
 #include "Features/vanilla_fixes/VanillaFixesRuntime.h"
 #include "Features/vanilla_fixes/VanillaFixesSettingsStore.h"
 #include "Features/volumetric_lighting/VolumetricLightingRuntime.h"
 #include "Features/volumetric_lighting/VolumetricLightingSettingsStore.h"
-#include "Features/wrapped_grass/WrappedGrassRuntime.h"
-#include "Features/wrapped_grass/WrappedGrassSettingsStore.h"
 #include "diagnostics/HdrOutputProbe.h"
 #include "diagnostics/RenderDocCapture.h"
 #include "diagnostics/LinearLightingQualification.h"
@@ -422,12 +416,6 @@ extern "C" __declspec(dllexport) bool F4SEAPI F4SEPlugin_Load(
             csah::contact_shadows::loadSettings();
         const auto complexMaterialSettings =
             csah::complex_materials::loadSettings();
-        const auto wrappedGrassSettings =
-            csah::wrapped_grass::loadSettings();
-        const auto hairSpecularSettings =
-            csah::hair_specular::loadSettings();
-        const auto subsurfaceScatteringSettings =
-            csah::subsurface_scattering::loadSettings();
         const auto terrainVariationSettings=csah::terrain_variation::loadSettings();
         const auto screenSpaceGISettings=csah::screen_space_gi::loadSettings();
         csah::terrain_shadows::Runtime::get().loadMaps("Data/F4SE/Plugins/CSAH/HeightMaps");
@@ -475,12 +463,6 @@ extern "C" __declspec(dllexport) bool F4SEAPI F4SEPlugin_Load(
             csah::logging::warn(
                 "Volumetric Lighting rejected an exact FO4VR host, camera, or weather contract; the feature remains fail-closed.");
         }
-        csah::wrapped_grass::Runtime::get().applySettings(
-            wrappedGrassSettings);
-        csah::hair_specular::Runtime::get().applySettings(
-            hairSpecularSettings);
-        csah::subsurface_scattering::Runtime::get().applySettings(
-            subsurfaceScatteringSettings);
         csah::lod_blending::Runtime::get().applySettings(lodBlendingSettings);
         csah::terrain_variation::Runtime::get().applySettings(terrainVariationSettings);
         csah::screen_space_gi::Runtime::get().applySettings(screenSpaceGISettings);
@@ -544,7 +526,7 @@ extern "C" __declspec(dllexport) bool F4SEAPI F4SEPlugin_Load(
         }
 
         csah::logging::info(
-            "Community Shaders at Home (CSAH) VR loaded; persisted upscaling enabled={}, mode={}, modelPreset={}, sharpening={}, sharpness={}; Linear Lighting enabled={}, Image Based Lighting enabled={}, Dynamic Cubemaps enabled={}, diffuse IBL enabled={}, diffuse level={}, PBR enabled={}, direct GGX={}, environment Fresnel={}, Skylighting enabled={}, quality={}, Contact Shadows enabled={}, samples={}, Wrapped Grass Lighting enabled={}, wrap amount={}, Hair Specular enabled={}, multiplier={}, Subsurface Scattering enabled={}, strength={}, Basic Wetness enabled={}, wetness={}, Cloud Shadows enabled={}, opacity={}, Volumetric Lighting enabled={}, quality={}, base={}, shafts={}, complex parallax enabled={}, parallax quality={}, Native Shadows enabled={}, four cascades={}, tiled deferred lighting={}, fixed shadow distance={}, Vanilla Fixes enabled={}, focus shadows={}, and replacements remain fail-closed until their verified render providers are ready.",
+            "Community Shaders at Home (CSAH) VR loaded; persisted upscaling enabled={}, mode={}, modelPreset={}, sharpening={}, sharpness={}; Linear Lighting enabled={}, Image Based Lighting enabled={}, Dynamic Cubemaps enabled={}, diffuse IBL enabled={}, diffuse level={}, PBR enabled={}, direct GGX={}, environment Fresnel={}, Skylighting enabled={}, quality={}, Contact Shadows enabled={}, samples={}, Basic Wetness enabled={}, wetness={}, Cloud Shadows enabled={}, opacity={}, Volumetric Lighting enabled={}, quality={}, base={}, shafts={}, complex parallax enabled={}, parallax quality={}, Native Shadows enabled={}, four cascades={}, tiled deferred lighting={}, fixed shadow distance={}, Vanilla Fixes enabled={}, focus shadows={}, and replacements remain fail-closed until their verified render providers are ready.",
             dlaaSettings.enabled,
             csah::dlaa::modeName(dlaaSettings.mode),
             static_cast<std::uint32_t>(dlaaSettings.modelPreset),
@@ -563,12 +545,6 @@ extern "C" __declspec(dllexport) bool F4SEAPI F4SEPlugin_Load(
                 skylightingSettings.quality),
             contactShadowSettings.enabled,
             contactShadowSettings.sampleCount,
-            wrappedGrassSettings.enabled,
-            wrappedGrassSettings.wrapAmount,
-            hairSpecularSettings.enabled,
-            hairSpecularSettings.specularMultiplier,
-            subsurfaceScatteringSettings.enabled,
-            subsurfaceScatteringSettings.strength,
             basicWetnessSettings.enabled,
             basicWetnessSettings.wetness,
             cloudShadowSettings.enabled,

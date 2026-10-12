@@ -1065,10 +1065,10 @@ namespace csah::contact_shadows
             resourcesReady_.load(std::memory_order_acquire);
     }
 
-    bool Runtime::compositorReady(bool wrappedGrassActive) const noexcept
+    bool Runtime::compositorReady(bool materialEffectsActive) const noexcept
     {
         return resourcesReady_.load(std::memory_order_acquire) &&
-            (featureEnabled() || wrappedGrassActive);
+            (featureEnabled() || materialEffectsActive);
     }
 
     void Runtime::applySettings(const Settings& settings) noexcept
