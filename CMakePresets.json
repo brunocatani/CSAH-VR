@@ -48,15 +48,6 @@
       "inherits": ["cmake-dev", "vcpkg", "windows", "vs2022"],
       "binaryDir": "${sourceDir}/build-fast",
       "cacheVariables": {
-        "BUILD_CSAH_TESTS": false,
-        "POST_BUILD_COPY_PLUGIN": false
-      }
-    },
-    {
-      "name": "tests",
-      "inherits": ["cmake-dev", "vcpkg", "windows", "vs2022"],
-      "binaryDir": "${sourceDir}/build-tests",
-      "cacheVariables": {
         "BUILD_CSAH_TESTS": true,
         "POST_BUILD_COPY_PLUGIN": false
       }
