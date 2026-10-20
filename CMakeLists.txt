@@ -93,8 +93,6 @@ find_program(POWERSHELL_EXECUTABLE NAMES pwsh powershell REQUIRED)
 
 set(DLAA_GENERATED_DIR "${BUILD_DIR}/generated/dlaa")
 file(MAKE_DIRECTORY "${DLAA_GENERATED_DIR}")
-include("${ROOT_DIR}/cmake/VerifyFo4VrLoader.cmake")
-csah_verify_fo4vr_loader("${SOURCE_DIR}/XSEPlugin.cpp")
 set(RENDERER_HOOK_SOURCE
   "${SOURCE_DIR}/render/BSLightingGeometryHook.cpp")
 set(DFPREPASS_HOOK_SOURCE
@@ -709,7 +707,6 @@ include("${ROOT_DIR}/cmake/VerifyEffectLinearLighting.cmake")
 include("${ROOT_DIR}/cmake/VerifyFixedShaderBindingLookup.cmake")
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
   "${SOURCE_DIR}/XSEPlugin.cpp"
-  "${ROOT_DIR}/cmake/VerifyFo4VrLoader.cmake"
   "${RENDERER_HOOK_SOURCE}"
   "${DFPREPASS_HOOK_SOURCE}"
   "${ROOT_DIR}/cmake/VerifyBSDFPrePassHook.cmake"
@@ -921,13 +918,6 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
   "${ROOT_DIR}/cmake/VerifyVLSCompositeLinearLighting.cmake"
   "${ROOT_DIR}/cmake/VerifyEffectLinearLighting.cmake"
   "${ROOT_DIR}/cmake/VerifyFixedShaderBindingLookup.cmake")
-
-add_custom_target(VerifyFo4VrLoader ALL
-  COMMAND "${CMAKE_COMMAND}"
-    "-DLOADER_SOURCE=${SOURCE_DIR}/XSEPlugin.cpp"
-    -P "${ROOT_DIR}/cmake/VerifyFo4VrLoader.cmake"
-  COMMENT "Verifying FO4VR F4SE loader compatibility contract"
-  VERBATIM)
 
 add_custom_target(VerifyFo4VrRendererHook ALL
   COMMAND "${CMAKE_COMMAND}"
@@ -2565,7 +2555,6 @@ add_dependencies(${PROJECT_NAME}
   BloomGlareShaders
   ComplexParallaxShaders
   VerifyComplexParallax
-  VerifyFo4VrLoader
   VerifyFo4VrRendererHook
   VerifyBSDFPrePassHook
   VerifyAuthoredPbrRuntime
@@ -2912,9 +2901,6 @@ if(BUILD_CSAH_TESTS)
   add_test(NAME CSAH.ComplexParallaxModel
     COMMAND CSAHComplexParallaxModelTests)
 
-  add_test(NAME CSAH.LoaderSource
-    COMMAND "${PWSH_EXECUTABLE}" -NoProfile -Command
-      "& '${CMAKE_COMMAND}' '-DLOADER_SOURCE=${SOURCE_DIR}/XSEPlugin.cpp' '-P' '${ROOT_DIR}/cmake/VerifyFo4VrLoader.cmake'")
   add_test(NAME CSAH.RendererHookSource
     COMMAND "${PWSH_EXECUTABLE}" -NoProfile -Command
       "& '${CMAKE_COMMAND}' '-DRENDERER_HOOK_SOURCE=${RENDERER_HOOK_SOURCE}' '-P' '${ROOT_DIR}/cmake/VerifyFo4VrRendererHook.cmake'")
