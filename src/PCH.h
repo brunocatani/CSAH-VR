@@ -10,6 +10,9 @@
 #include <REL/Relocation.h>
 
 #include <Windows.h>
+// Windows.h defines this name as a macro, which would rewrite
+// REX::W32::InterlockedCompareExchange in RE/Havok headers included after it.
+#undef InterlockedCompareExchange
 
 #include <atomic>
 #include <cstdio>
