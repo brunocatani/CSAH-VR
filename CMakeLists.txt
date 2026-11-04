@@ -8,8 +8,11 @@ set(ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
 set(SOURCE_DIR "${ROOT_DIR}/src")
 set(BUILD_DIR "${CMAKE_CURRENT_BINARY_DIR}")
 get_filename_component(WORKSPACE_ROOT "${ROOT_DIR}/../.." ABSOLUTE)
-set(PALM_DEVELOPER_SDK "${WORKSPACE_ROOT}/PROJECT_ROCK_V2/secondary_projects/ROCK_Addons/ROCK_Whell_Menu/SDK/include"
-  CACHE PATH "RobCo PALM developer action SDK")
+set(PALM_INCLUDE_DIR "${WORKSPACE_ROOT}/ui_mods/ROCK_Whell_Menu/include"
+  CACHE PATH "RobCo PALM public include directory")
+if(NOT EXISTS "${PALM_INCLUDE_DIR}/RobCoPALM/Developer.h")
+  message(FATAL_ERROR "RobCo PALM headers not found in '${PALM_INCLUDE_DIR}'; set PALM_INCLUDE_DIR.")
+endif()
 
 set(PALM_SETTINGS_SOURCE
   "${ROOT_DIR}/settings/PALMSettings.json")
@@ -2596,7 +2599,7 @@ add_dependencies(${PROJECT_NAME}
   VerifyPALMSettings
   StereoMeasurementShader)
 target_include_directories(${PROJECT_NAME} PRIVATE "${STEREO_MEASUREMENT_DIR}")
-target_include_directories(${PROJECT_NAME} PRIVATE "${PALM_DEVELOPER_SDK}")
+target_include_directories(${PROJECT_NAME} PRIVATE "${PALM_INCLUDE_DIR}")
 
 target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_23)
 target_include_directories(${PROJECT_NAME} PRIVATE
@@ -3569,7 +3572,7 @@ if(BUILD_CSAH_TESTS)
   target_compile_features(CSAHRenderDocCaptureTests PRIVATE cxx_std_23)
   target_compile_definitions(CSAHRenderDocCaptureTests PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
   target_include_directories(CSAHRenderDocCaptureTests PRIVATE "${SOURCE_DIR}" "${ROOT_DIR}/extern/RenderDoc")
-  target_include_directories(CSAHRenderDocCaptureTests PRIVATE "${PALM_DEVELOPER_SDK}")
+  target_include_directories(CSAHRenderDocCaptureTests PRIVATE "${PALM_INCLUDE_DIR}")
   target_precompile_headers(CSAHRenderDocCaptureTests PRIVATE "${SOURCE_DIR}/PCH.h")
   target_link_libraries(CSAHRenderDocCaptureTests PRIVATE CommonLibF4::CommonLibF4 d3d11 d3dcompiler dxguid shell32 spdlog::spdlog minhook::minhook)
   if(EXISTS "$ENV{ProgramFiles}/RenderDoc/renderdoc.dll")

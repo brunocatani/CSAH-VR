@@ -2,7 +2,8 @@
 #include "diagnostics/RenderDocCapture.h"
 #include "support/Logger.h"
 #include "../../extern/RenderDoc/renderdoc_app.h"
-#include <PALMDeveloperApi.h>
+#include <RobCoPALM/Client.h>
+#include <RobCoPALM/Developer.h>
 
 #include <array>
 #include <filesystem>
@@ -26,7 +27,7 @@ namespace csah::diagnostics
             bool awaitingCompletion{};
             std::uint64_t requestSequence{};
             std::atomic_bool wheelRequest{};
-            palm::developer::Handle wheelAction{};
+            palm::api::developer::Handle wheelAction{};
 
             ~CaptureState()
             {
@@ -59,15 +60,15 @@ namespace csah::diagnostics
     {
         try {
             auto& capture=state();if(capture.wheelAction)return;
-            const auto module=GetModuleHandleW(palm::developer::kModuleName);
-            const auto getApi=module?reinterpret_cast<palm::developer::GetApi>(GetProcAddress(module,palm::developer::kExportName)):nullptr;
-            const auto* api=getApi?getApi(palm::developer::kVersion):nullptr;
-            if(!api || api->version!=palm::developer::kVersion || api->byteSize<sizeof(*api) || !api->enabled || !api->enabled() || !api->registerAction)return;
-            palm::developer::ActionV1 action;
+            const auto module=GetModuleHandleW(palm::api::kModuleName);
+            const auto query=module?reinterpret_cast<palm::api::QueryInterfaceV1>(GetProcAddress(module,palm::api::kQueryExportName)):nullptr;
+            const palm::api::developer::Api* api{};
+            if(palm::api::acquire(query,api)!=palm::api::Result::Ok || !api->enabled())return;
+            palm::api::developer::Action action;
             strcpy_s(action.id,"csah.lighting.gpu");strcpy_s(action.label,"CSAH: Capture lighting data");
             action.invoke=[](void*) noexcept {state().wheelRequest.store(true,std::memory_order_release);};
             const auto result=api->registerAction(&action,&capture.wheelAction);
-            if(result==palm::developer::Result::Ok)logging::info("CSAH lighting GPU data capture registered in PALM's Developer wheel.");
+            if(result==palm::api::Result::Ok)logging::info("CSAH lighting GPU data capture registered in PALM's Developer wheel.");
             else logging::warn("CSAH Developer action registration rejected ({}); existing actions preserved. If full, ask which action may be removed.",static_cast<unsigned>(result));
         }catch(...){logging::warn("CSAH Developer action registration failed.");}
     }
