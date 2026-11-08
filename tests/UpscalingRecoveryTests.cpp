@@ -124,6 +124,7 @@ namespace csah::dlaa
 
 namespace csah::diagnostics { void processRenderDocCapture() noexcept {} }
 namespace csah::render { bool scopedWorldPassActive() noexcept { return false; } }
+namespace csah::dlaa::mip_bias { bool build(ID3D11Device*, float) noexcept { return false; } void apply() noexcept {} void restore() noexcept {} }
 
 int main(int argc, char** argv)
 {

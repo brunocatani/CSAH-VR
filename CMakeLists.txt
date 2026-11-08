@@ -2490,6 +2490,8 @@ add_library(${PROJECT_NAME} SHARED
   "${SOURCE_DIR}/render/D3D11Hooks.h"
   "${DLAA_RUNTIME_SOURCE}"
   "${DLAA_SOURCE_DIR}/DlaaRuntime.h"
+  "${DLAA_SOURCE_DIR}/DlaaMipBias.cpp"
+  "${DLAA_SOURCE_DIR}/DlaaMipBias.h"
   "${DLAA_SOURCE_DIR}/DlaaSettings.h"
   "${DLAA_SETTINGS_STORE_SOURCE}"
   "${DLAA_SOURCE_DIR}/DlaaSettingsStore.h"

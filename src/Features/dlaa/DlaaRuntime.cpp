@@ -1,5 +1,6 @@
 #include "Features/dlaa/DlaaRuntime.h"
 #include "Features/dlaa/DlaaCameraValidation.h"
+#include "Features/dlaa/DlaaMipBias.h"
 #include "diagnostics/RenderDocCapture.h"
 
 #include "GeneratedUpscalingComposeShader.h"
@@ -45,6 +46,21 @@ namespace csah::dlaa
         };
 
         thread_local PendingCameraMap pendingCameraMap;
+
+        // NVIDIA's DLSS guide: log2(render/display) - 1 (+ epsilon toward the
+        // less flicker-prone end). The hybrid mode shows TAA outside its DLAA
+        // box, and Fo4VR-Upscaler measured -0.5 as equally sharp inside the
+        // box with a calmer periphery.
+        [[nodiscard]] float mipBiasFor(Mode mode, float widthScale) noexcept
+        {
+            constexpr float kEpsilon = 1.0f / 256.0f;
+            if (mode == Mode::centerDlaa) {
+                return -0.5f;
+            }
+            const auto scale = widthScale > 0.0f && widthScale <= 1.0f ?
+                widthScale : 1.0f;
+            return std::log2(scale) - 1.0f + kEpsilon;
+        }
 
         constexpr UINT kProbeSampleCount = 16;
         constexpr std::uint32_t kMaximumProbePolls = 120;
@@ -832,6 +848,15 @@ namespace csah::dlaa
             &ownedActive,
             sizeof(ownedActive));
 
+        // Texture detail for the reconstructed world frame, only while DLAA
+        // publishes its output; restored at the post-image-space boundary.
+        if (operational_.load(std::memory_order_acquire) && device_) {
+            if (mip_bias::build(device_.Get(), mipBiasFor(settings_.mode,
+                    evaluationGeometry_.widthScale))) {
+                mip_bias::apply();
+            }
+        }
+
         // Native DLAA and the hybrid mode keep FO4VR's own TAA jitter because
         // vanilla TAA remains the upstream temporal owner (and, for hybrid,
         // the published periphery). DLSS changes render resolution and owns a
@@ -898,6 +923,8 @@ namespace csah::dlaa
 
     void Runtime::onPostImageSpace() noexcept
     {
+        // Image-space and UI passes after this boundary keep the game's bias.
+        mip_bias::restore();
         if (render::scopedWorldPassActive() || isSecondaryImageSpaceBoundary()) {
             return;
         }
@@ -1650,6 +1677,7 @@ namespace csah::dlaa
 
     void Runtime::hardResetTemporalState(const char* reason) noexcept
     {
+        mip_bias::restore();
         depthPublicationLogged_ = false;
         operational_.store(false, std::memory_order_release);
         nextResourceAttemptPostCall_ = 0;
@@ -3172,6 +3200,7 @@ namespace csah::dlaa
 
     void Runtime::clearRenderResources(bool releaseStreamline) noexcept
     {
+        mip_bias::restore();
         operational_.store(false, std::memory_order_release);
         nextResourceAttemptPostCall_ = 0;
         renderResourcesQualified_.store(false, std::memory_order_release);
@@ -3205,6 +3234,7 @@ namespace csah::dlaa
 
     void Runtime::restoreDynamicResolutionIfOwned() noexcept
     {
+        mip_bias::restore();
         if (!dynamicResolutionOwned_ || !dynamicResolutionManager_) {
             dynamicResolutionOwned_ = false;
             dynamicResolutionManager_ = nullptr;
