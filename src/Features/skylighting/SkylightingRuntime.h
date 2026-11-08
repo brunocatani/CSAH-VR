@@ -281,6 +281,7 @@ namespace csah::skylighting
         bool publishedFeatureActive_{};
         std::uint64_t captureRevision_{};
         bool diagnosticSubmitted_{};
+        std::uint32_t diagnosticTraceCount_{};
         bool diagnosticPending_{};
         bool diagnosticLogged_{};
         bool ambientDiagnosticSubmitted_{};

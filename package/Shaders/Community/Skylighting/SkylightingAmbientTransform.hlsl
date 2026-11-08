@@ -152,11 +152,21 @@ PixelOutput PSMain(PixelInput input)
                         16u, 1u, ignored);
                 }
                 if (sampled) {
+                    // Probe SH is accumulated from upward sky directions
+                    // only, so it carries an up lobe even when unoccluded.
+                    // As in Skyrim CS, down-facing receivers evaluate it as
+                    // horizontal; otherwise every ceiling read as occluded.
+                    const float3 upperNormal =
+                        float3(normal.xy, max(normal.z, 0.0f));
+                    const float3 diffuseNormal =
+                        dot(upperNormal, upperNormal) > 1.0e-6f ?
+                        normalize(upperNormal) :
+                        float3(0.0f, 0.0f, 1.0f);
                     const float diffuseVisibility = lerp(
                         1.0f,
                         saturate(dot(
                             visibilitySh,
-                            CosineLobe(normal)) / kPi),
+                            CosineLobe(diffuseNormal)) / kPi),
                         fade);
                     const float3 viewDirection = normalize(
                         Camera[59u + input.Eye].xyz - ProbeWorldOrigin.xyz - relativeWorldPosition);

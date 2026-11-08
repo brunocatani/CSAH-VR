@@ -152,6 +152,14 @@ namespace csah::skylighting
         // capture and the occlusion depth stays clear.
         constexpr std::size_t kNiAVObjectLocalRotateOffset = 0x30;
         constexpr std::size_t kNiMatrix3RowStride = 0x10;
+        // ComputeProjection writes the camera's local translate at +0x60..+0x68
+        // as snap(anchor + anchorRow0*size*0.5 - d*size*2), snapping each
+        // component to size*0.0078125 (constants 0.5 at 0x142C81B98, 2.0 at
+        // 0x142C7FA70, 0.0078125 at 0x142CBB824). The ortho half-extent is
+        // size*0.5, so that centre leaves the anchor on the box edge.
+        constexpr std::size_t kNiAVObjectLocalTranslateOffset = 0x60;
+        constexpr float kNativeCaptureLiftScale = 2.0f;
+        constexpr float kNativeCaptureSnapScale = 0.0078125f;
         constexpr std::array<std::byte, 16> kSetViewFrustumVrSignature{
             std::byte{ 0x57 }, std::byte{ 0x44 }, std::byte{ 0x8B },
             std::byte{ 0x99 }, std::byte{ 0xB0 }, std::byte{ 0x01 },
@@ -658,6 +666,30 @@ namespace csah::skylighting
                     r1[0] = -r1[0];
                     r1[1] = -r1[1];
                     r1[2] = -r1[2];
+                }
+
+                // Stock rain centres its box half a box ahead of the anchor
+                // (anchorRow0 * size * 0.5), leaving the player on the box
+                // edge, so most of the anchor-centred probe volume was never
+                // captured. Re-centre on the anchor, keeping the native
+                // 2*size offset up the travel direction and its size/128
+                // snap so the capture does not shimmer between frames.
+                float anchor[3]{};
+                const float halfSize =
+                    (frustum->right - frustum->left) * 0.5f;
+                if (halfSize > 0.0f && std::isfinite(halfSize) &&
+                    readProjectionAnchor(anchor)) {
+                    const float size = halfSize * 2.0f;
+                    const float grid = size * kNativeCaptureSnapScale;
+                    auto* translate = reinterpret_cast<float*>(
+                        static_cast<std::byte*>(camera) +
+                        kNiAVObjectLocalTranslateOffset);
+                    for (std::size_t axis = 0; axis < 3; ++axis) {
+                        const float position = anchor[axis] -
+                            r0[axis] * size * kNativeCaptureLiftScale;
+                        translate[axis] =
+                            std::floor(position / grid) * grid;
+                    }
                 }
             }
 

@@ -16,7 +16,9 @@ struct ProbeLevelSettings
 
 cbuffer SkylightingSettings : register(b13)
 {
-    column_major float4x4 OcclusionViewProjection;
+    // FO4VR writes this matrix row-major for mul(M, v) (translation in
+    // element 3 of each row); column_major dropped the translation.
+    row_major float4x4 OcclusionViewProjection;
     float4 OcclusionDirection;
     ProbeLevelSettings NearLevel;
     ProbeLevelSettings FarLevel;
@@ -86,6 +88,43 @@ void CSMain(uint3 dispatchThread : SV_DispatchThreadID)
         UpdateControl.x == 0u &&
         all((probeTexel % uint3(16u, 16u, 8u)) == 0u);
     uint ignored;
+    // One-shot coverage of the whole captured map on a uniform 8x8 grid,
+    // independent of where probes project.
+    if (Response.w > 0.5f && UpdateControl.x == 0u &&
+        dispatchThread.z == 0u && all(dispatchThread.xy < 8u)) {
+        uint gridWidth;
+        uint gridHeight;
+        OcclusionDepth.GetDimensions(gridWidth, gridHeight);
+        const uint2 gridPixel = uint2(
+            (float2(dispatchThread.xy) + 0.5f) / 8.0f *
+            float2(gridWidth, gridHeight));
+        const float gridDepth = OcclusionDepth.Load(int3(gridPixel, 0));
+        if (gridDepth < 1.0f - 1.0e-5f) {
+            DiagnosticStats.InterlockedAdd(40u, 1u, ignored);
+        }
+        DiagnosticStats.InterlockedMin(44u, asuint(gridDepth), ignored);
+        DiagnosticStats.InterlockedMax(48u, asuint(gridDepth), ignored);
+        // The projection anchor is the origin of the relative probe space:
+        // the map depth straight above it shows whether its roof was drawn.
+        if (all(dispatchThread.xy == 0u)) {
+            const float4 anchorClip = mul(
+                OcclusionViewProjection,
+                float4(0.0f, 0.0f, 0.0f, 1.0f));
+            const float3 anchorNdc =
+                anchorClip.xyz / max(abs(anchorClip.w), 1.0e-7f);
+            const float2 anchorUv =
+                anchorNdc.xy * float2(0.5f, -0.5f) + 0.5f;
+            const bool anchorInside =
+                all(anchorUv > 0.0f) && all(anchorUv < 1.0f);
+            const uint2 anchorPixel = min(
+                uint2(saturate(anchorUv) * float2(gridWidth, gridHeight)),
+                uint2(gridWidth - 1u, gridHeight - 1u));
+            DiagnosticStats.Store(52u, anchorInside ? 1u : 0u);
+            DiagnosticStats.Store(56u, asuint(
+                OcclusionDepth.Load(int3(anchorPixel, 0))));
+            DiagnosticStats.Store(60u, asuint(anchorNdc.z));
+        }
+    }
     if (diagnosticSample) {
         DiagnosticStats.InterlockedAdd(0u, 1u, ignored);
         if (all(abs(occlusionPosition) < 1.0e20f)) {

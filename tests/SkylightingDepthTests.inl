@@ -36,7 +36,9 @@ void skylightingDepthTest(GPU& gpu,const std::filesystem::path& root)
  for(auto scenario:std::array<F4,5>{{{1,.5f,1,1},{.75f,.5f,1,1},{.25f,.5f,0,1},{1,-.1f,1,0},{1,1.1f,1,0}}}) {
   gpu.context->ClearDepthStencilView(dsv.Get(),D3D11_CLEAR_DEPTH,scenario[0],0);
   gpu.context->OMSetRenderTargetsAndUnorderedAccessViews(1,&colourOutput,dsv.Get(),3,1,&psUav,nullptr);
-  std::array<F4,32> data{};data[3]={0,0,scenario[1],1};data[4]={0,0,1,0};data[5]=data[6]={1,1,1,0};
+  // FO4VR's occlusion matrix is row-major for mul(M, v): a constant
+  // projection to (0.5, 0.5, receiver depth) keeps only row translations.
+  std::array<F4,32> data{};data[2]={0,0,0,scenario[1]};data[3]={0,0,0,1};data[4]={0,0,1,0};data[5]=data[6]={1,1,1,0};
   UINT one=1;float packedOne;std::memcpy(&packedOne,&one,4);data[8]={packedOne,packedOne,packedOne,0};data[17]={0,0,packedOne,0};data[18]={.1f,.1f,1,0};
   gpu.context->UpdateSubresource(constants.Get(),0,nullptr,data.data(),0,0);
   const F4 neutral{3.5449077018f,0,0,0};const UINT zero=0;

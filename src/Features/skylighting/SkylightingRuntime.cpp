@@ -71,7 +71,7 @@ namespace csah::skylighting
             0.01745329251994329577f;
         constexpr float kR2X = 0.245122333753f;
         constexpr float kR2Y = 0.430159709002f;
-        constexpr std::size_t kDiagnosticStatCount = 10;
+        constexpr std::size_t kDiagnosticStatCount = 16;
         constexpr std::size_t kDiagnosticByteWidth =
             kDiagnosticStatCount * sizeof(std::uint32_t);
         constexpr std::size_t kAmbientDiagnosticStatCount = 34;
@@ -566,6 +566,7 @@ namespace csah::skylighting
         diagnosticSubmitted_ = false;
         diagnosticPending_ = false;
         diagnosticLogged_ = false;
+        diagnosticTraceCount_ = 0;
         ambientDiagnosticSubmitted_ = false;
         ambientDiagnosticPending_ = false;
         ambientDiagnosticLogged_ = false;
@@ -1291,6 +1292,7 @@ namespace csah::skylighting
         if (collectDiagnostic) {
             std::array<std::uint32_t, kDiagnosticStatCount> initial{};
             initial[8] = std::bit_cast<std::uint32_t>(1.0f);
+            initial[11] = std::bit_cast<std::uint32_t>(1.0f);
             context_->UpdateSubresource(
                 diagnosticBuffer_.Get(),
                 0,
@@ -1405,7 +1407,9 @@ namespace csah::skylighting
             return;
         }
         diagnosticPending_ = false;
-        diagnosticLogged_ = true;
+        // One trace per capture quadrant: each covers a different quarter.
+        diagnosticSubmitted_ = false;
+        diagnosticLogged_ = ++diagnosticTraceCount_ >= 4u;
         if (FAILED(queryResult)) {
             logging::warn(
                 "Skylighting GPU visibility trace completion failed with HRESULT 0x{:08X}.",
@@ -1434,7 +1438,7 @@ namespace csah::skylighting
         std::memcpy(stats.data(), mapped.pData, kDiagnosticByteWidth);
         context_->Unmap(diagnosticStaging_.Get(), 0);
         logging::info(
-            "Skylighting GPU visibility trace: sparseSamples={}, finiteProjection={}, insideUv={}, referenceInDepthRange={}, nonClearDepth={}, occluded={}, accumulated={}, changedProbe={}, sampledDepthMin={:.9f}, sampledDepthMax={:.9f}.",
+            "Skylighting GPU visibility trace: sparseSamples={}, finiteProjection={}, insideUv={}, referenceInDepthRange={}, nonClearDepth={}, occluded={}, accumulated={}, changedProbe={}, sampledDepthMin={:.9f}, sampledDepthMax={:.9f}, mapGridNonClear={}/64, mapGridDepth={:.6f}..{:.6f}, anchorInside={}, anchorMapDepth={:.6f}, anchorDepth={:.6f}.",
             stats[0],
             stats[1],
             stats[2],
@@ -1444,7 +1448,13 @@ namespace csah::skylighting
             stats[6],
             stats[7],
             std::bit_cast<float>(stats[8]),
-            std::bit_cast<float>(stats[9]));
+            std::bit_cast<float>(stats[9]),
+            stats[10],
+            std::bit_cast<float>(stats[11]),
+            std::bit_cast<float>(stats[12]),
+            stats[13],
+            std::bit_cast<float>(stats[14]),
+            std::bit_cast<float>(stats[15]));
     }
 
     void Runtime::submitAmbientDiagnostic() noexcept

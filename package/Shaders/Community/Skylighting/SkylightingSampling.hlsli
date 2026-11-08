@@ -37,7 +37,9 @@ ProbeLevelSettings ReadSkylightingLevel(uint base)
 #else
 cbuffer SkylightingSettings : register(b13)
 {
-    column_major float4x4 OcclusionViewProjection;
+    // FO4VR writes this matrix row-major for mul(M, v) (translation in
+    // element 3 of each row); column_major dropped the translation.
+    row_major float4x4 OcclusionViewProjection;
     float4 OcclusionDirection;
     ProbeLevelSettings NearLevel;
     ProbeLevelSettings FarLevel;
