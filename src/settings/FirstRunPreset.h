@@ -257,5 +257,8 @@ namespace csah::settings_path
         "iDirectionalLightingMode=0\r\n"
         "; Continuous image-neutral performance telemetry. Hot-reloaded.\r\n"
         "; 0=Off, 1=Contact Shadows, 2=Skylighting, 3=Both, 4=IBL, 7=All.\r\n"
-        "iGpuProfilingMode=0\r\n";
+        "iGpuProfilingMode=0\r\n"
+        "; Loads RenderDoc for PALM Developer wheel captures. Restart required.\r\n"
+        "; RenderDoc disables NVAPI, so DLAA/DLSS are unavailable while it is on.\r\n"
+        "bRenderDocCapture=0\r\n";
 }

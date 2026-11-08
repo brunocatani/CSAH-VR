@@ -46,6 +46,10 @@ namespace csah::diagnostics
     {
         try {
             if(!csahIniPath || !*csahIniPath)return;
+            // RenderDoc disables NVAPI, so Streamline then rejects DLSS/DLAA.
+            // The backend therefore needs its own off-by-default switch: PALM
+            // Developer mode alone must never cost the player DLAA.
+            if(GetPrivateProfileIntW(L"Diagnostics",L"bRenderDocCapture",0,csahIniPath)==0)return;
             const auto palmIni=std::filesystem::path(csahIniPath).parent_path().parent_path()/L"RobCo_PALM"/L"PALM.ini";
             if(GetPrivateProfileIntW(L"Developer",L"bEnabled",0,palmIni.c_str())==0)return;
             std::array<wchar_t,1024> programFiles{};
@@ -59,7 +63,7 @@ namespace csah::diagnostics
     void registerDeveloperCapture() noexcept
     {
         try {
-            auto& capture=state();if(capture.wheelAction)return;
+            auto& capture=state();if(capture.wheelAction || !capture.api)return;
             const auto module=GetModuleHandleW(palm::api::kModuleName);
             const auto query=module?reinterpret_cast<palm::api::QueryInterfaceV1>(GetProcAddress(module,palm::api::kQueryExportName)):nullptr;
             const palm::api::developer::Api* api{};
@@ -105,7 +109,7 @@ namespace csah::diagnostics
             api->SetCaptureKeys(nullptr, 0);
             api->SetFocusToggleKeys(nullptr, 0);
             api->MaskOverlayBits(0, 0);
-            logging::info("GPU data capture backend enabled by PALM Developer mode; only explicit Developer wheel actions capture data. Disable PALM.ini [Developer] bEnabled and restart to unload it.");
+            logging::warn("RenderDoc capture backend loaded by CSAH.ini [Diagnostics] bRenderDocCapture=1 with PALM Developer mode; RenderDoc disables NVAPI, so DLAA/DLSS stay unavailable this session. Set bRenderDocCapture=0 and restart to unload it.");
             return true;
         } catch (...) {
             logging::warn("GPU data capture startup could not load the configured backend.");
