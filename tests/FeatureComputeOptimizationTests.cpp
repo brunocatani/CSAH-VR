@@ -18,6 +18,8 @@
 #include <stdexcept>
 #include <thread>
 #include <vector>
+// Unit tests run without the engine: no scope pass is ever active.
+namespace csah::render { bool scopedWorldPassActive() noexcept { return false; } }
 // The test exercises Bloom/Glare directly; the output compositor gate has no draw here.
 namespace csah::filmic_tonemapping {
 Runtime& Runtime::get() noexcept { static Runtime runtime; return runtime; }

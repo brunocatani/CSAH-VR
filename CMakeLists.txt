@@ -2482,6 +2482,8 @@ add_library(${PROJECT_NAME} SHARED
   "${SOURCE_DIR}/render/BSDFPrePassShaderHook.h"
   "${SOURCE_DIR}/render/NativeShadowProperty.cpp"
   "${SOURCE_DIR}/render/NativeShadowProperty.h"
+  "${SOURCE_DIR}/render/ScopedWorldPass.cpp"
+  "${SOURCE_DIR}/render/ScopedWorldPass.h"
   "${SOURCE_DIR}/render/NativeEmissionRead.cpp"
   "${SOURCE_DIR}/render/NativeEmissionRead.h"
   "${D3D11_HOOK_SOURCE}"

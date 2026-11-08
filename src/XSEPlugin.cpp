@@ -46,6 +46,7 @@
 #include "diagnostics/RenderDocCapture.h"
 #include "diagnostics/LinearLightingQualification.h"
 #include "render/BSDFPrePassShaderHook.h"
+#include "render/ScopedWorldPass.h"
 #include "render/BSLightingGeometryHook.h"
 #include "render/D3D11Hooks.h"
 #include "support/Logger.h"
@@ -493,6 +494,7 @@ extern "C" __declspec(dllexport) bool F4SEAPI F4SEPlugin_Load(
             csah::logging::warn(
                 "Verified FO4VR HDR output ownership probe was not installed; Filmic/Bloom/Glare diagnosis remains fail-closed.");
         }
+        (void)csah::render::installScopedWorldPassProbe();
         if (!csah::dlaa::installEngineHooks()) {
             csah::logging::warn(
                 "Verified FO4VR DLAA engine boundaries were not installed; vanilla TAA remains active.");

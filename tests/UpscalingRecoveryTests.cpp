@@ -123,6 +123,7 @@ namespace csah::dlaa
 }
 
 namespace csah::diagnostics { void processRenderDocCapture() noexcept {} }
+namespace csah::render { bool scopedWorldPassActive() noexcept { return false; } }
 
 int main(int argc, char** argv)
 {

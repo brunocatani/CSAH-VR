@@ -10,6 +10,7 @@
 #include "Features/volumetric_lighting/VolumetricStateScope.h"
 #include "render/Fo4VrDepth.h"
 #include "render/StereoSceneExtent.h"
+#include "render/ScopedWorldPass.h"
 #include "render/DebugResourceName.h"
 #include "GeneratedUpscalingReactiveMaskShader.h"
 
@@ -586,6 +587,9 @@ namespace csah::dlaa
     {
         if (!context || context != context_.Get()) return;
         pendingCameraMap = {};
+        // The scope pass uploads its own camera; it must not become the
+        // world camera DLAA evaluates against.
+        if (render::scopedWorldPassActive()) return;
         if (!resource || !mapped.pData ||
             (mapType != D3D11_MAP_WRITE &&
                 mapType != D3D11_MAP_WRITE_DISCARD &&
@@ -688,6 +692,7 @@ namespace csah::dlaa
 
     void Runtime::onWorldCompositeDraw(ID3D11DeviceContext* context) noexcept
     {
+        if (render::scopedWorldPassActive()) return;
         if (!context || context != context_.Get() || !qualifiedResources_) return;
         Microsoft::WRL::ComPtr<ID3D11RenderTargetView> target;
         context->OMGetRenderTargets(1, target.GetAddressOf(), nullptr);
@@ -754,6 +759,8 @@ namespace csah::dlaa
         float* jitterY) noexcept
     {
         diagnostics::processRenderDocCapture();
+        // The nested scope render keeps its own resolution and jitter.
+        if (render::scopedWorldPassActive()) return;
         const auto call = preRenderCalls_.fetch_add(
                               1,
                               std::memory_order_relaxed) +
@@ -891,7 +898,7 @@ namespace csah::dlaa
 
     void Runtime::onPostImageSpace() noexcept
     {
-        if (isSecondaryImageSpaceBoundary()) {
+        if (render::scopedWorldPassActive() || isSecondaryImageSpaceBoundary()) {
             return;
         }
         const auto postCall = postRenderCalls_.fetch_add(

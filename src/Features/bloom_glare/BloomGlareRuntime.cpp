@@ -3,6 +3,7 @@
 #include "BloomGlareShaders.h"
 #include "Features/filmic_tonemapping/FilmicTonemappingRuntime.h"
 #include "render/ComputeStateScope.h"
+#include "render/ScopedWorldPass.h"
 #include "render/StereoSceneExtent.h"
 #include "support/Logger.h"
 
@@ -819,8 +820,10 @@ namespace csah::bloom_glare
         const auto settings = currentSettings();
         bool bloomReady{};
         bool glareReady{};
+        // The vanilla scope's nested mono pass is not a packed-stereo scene.
         if ((settings.bloom.enabled || settings.glare.enabled) &&
-            gpuReady_.load(std::memory_order_acquire)) {
+            gpuReady_.load(std::memory_order_acquire) &&
+            !render::scopedWorldPassActive()) {
             ID3D11ShaderResourceView* rawScene{};
             context->PSGetShaderResources(1, 1, &rawScene);
             Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> scene;
