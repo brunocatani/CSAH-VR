@@ -184,6 +184,7 @@ namespace csah::bloom_glare
         std::atomic<float> glarePsfNoiseFloor_{ 0.001f };
         std::atomic_bool gpuReady_{};
         std::atomic_bool firstDispatchLogged_{};
+        std::atomic_bool secondarySceneLogged_{};
         std::atomic_uint64_t bloomDispatches_{};
         std::atomic_uint64_t glareDispatches_{};
         std::atomic_uint64_t psfGenerations_{};

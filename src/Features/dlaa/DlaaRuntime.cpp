@@ -9,6 +9,7 @@
 #include "GeneratedUpscalingDepthPS.h"
 #include "Features/volumetric_lighting/VolumetricStateScope.h"
 #include "render/Fo4VrDepth.h"
+#include "render/StereoSceneExtent.h"
 #include "render/DebugResourceName.h"
 #include "GeneratedUpscalingReactiveMaskShader.h"
 
@@ -846,8 +847,53 @@ namespace csah::dlaa
         *jitterY = 2.0f * sampleY / static_cast<float>(qualifiedResources_.height);
     }
 
+    bool Runtime::isSecondaryImageSpaceBoundary() noexcept
+    {
+        // FO4VR also runs this image-space boundary for secondary
+        // render-to-texture scenes (seen at 1024x1024). Once the world TAA
+        // output is pinned, a boundary writing any other RTV1 is not a world
+        // frame: counting it made every world camera upload look stale and
+        // evaluated DLAA on the previous world frame.
+        if (!context_ ||
+            !renderResourcesQualified_.load(std::memory_order_acquire) ||
+            !qualifiedResources_.outputColor) {
+            return false;
+        }
+        std::array<ID3D11RenderTargetView*, 2> targets{};
+        context_->OMGetRenderTargets(
+            static_cast<UINT>(targets.size()),
+            targets.data(),
+            nullptr);
+        ID3D11Resource* output{};
+        if (targets[1]) {
+            targets[1]->GetResource(&output);
+        }
+        const auto world = output == qualifiedResources_.outputColor.Get();
+        if (output) {
+            output->Release();
+        }
+        for (auto* target : targets) {
+            if (target) {
+                target->Release();
+            }
+        }
+        if (!world) {
+            secondaryBoundaries_.fetch_add(1, std::memory_order_relaxed);
+            if (!firstSecondaryBoundaryLogged_.exchange(
+                    true,
+                    std::memory_order_relaxed)) {
+                logging::info(
+                    "DLAA ignored a secondary image-space boundary whose output is not the pinned stereo TAA target; only world frames advance DLAA.");
+            }
+        }
+        return !world;
+    }
+
     void Runtime::onPostImageSpace() noexcept
     {
+        if (isSecondaryImageSpaceBoundary()) {
+            return;
+        }
         const auto postCall = postRenderCalls_.fetch_add(
                                   1,
                                   std::memory_order_relaxed) +
@@ -918,14 +964,12 @@ namespace csah::dlaa
         const auto lastCamera = lastValidCameraPostCall_.load(
             std::memory_order_acquire);
         if (lastCamera + 1 < postCall) {
-            const auto wasOperational = operational_.exchange(
-                false,
-                std::memory_order_acq_rel);
-            if (wasOperational && settings_.hardResetOnLoad) {
-                hardResetTemporalState("camera upload interruption");
-            } else {
-                resetHistory_ = true;
-            }
+            // A missed upload invalidates only temporal history. Loads reach
+            // the hard reset through the PostLoadGame qualification reset;
+            // tearing down the Streamline context and eye resources here
+            // rebuilt everything on every gap.
+            operational_.store(false, std::memory_order_release);
+            resetHistory_ = true;
             if (!firstEvaluationFailureLogged_.exchange(
                     true,
                     std::memory_order_relaxed)) {
@@ -1174,6 +1218,9 @@ namespace csah::dlaa
                 .eyeWidth = eyeWidth,
                 .height = sceneDescription.Height,
             };
+            render::publishStereoSceneExtent(
+                packedWidth,
+                sceneDescription.Height);
             resourceContractObserved_ = true;
             if (!firstResourceContractLogged_.exchange(
                     true,
@@ -3125,6 +3172,7 @@ namespace csah::dlaa
             releaseStreamlineDlaaResources();
         }
         qualifiedResources_ = {};
+        render::publishStereoSceneExtent(0, 0);
         depthPublicationTarget_.Reset();
         depthPublicationOwner_.Reset();
         depthPublicationLogged_ = false;

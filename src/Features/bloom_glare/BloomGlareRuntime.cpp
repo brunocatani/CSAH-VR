@@ -3,6 +3,7 @@
 #include "BloomGlareShaders.h"
 #include "Features/filmic_tonemapping/FilmicTonemappingRuntime.h"
 #include "render/ComputeStateScope.h"
+#include "render/StereoSceneExtent.h"
 #include "support/Logger.h"
 
 #include <algorithm>
@@ -831,6 +832,28 @@ namespace csah::bloom_glare
             Microsoft::WRL::ComPtr<ID3D11Texture2D> sceneTexture;
             if (sceneResource) {
                 (void)sceneResource.As(&sceneTexture);
+            }
+            // The chain splits its input into two eyes, so only the packed
+            // stereo world scene qualifies. Secondary render-to-texture
+            // composites otherwise resized every resource twice per frame.
+            const auto extent = render::stereoSceneExtent();
+            if (sceneTexture && extent.known()) {
+                D3D11_TEXTURE2D_DESC description{};
+                sceneTexture->GetDesc(&description);
+                if (description.Width != extent.width ||
+                    description.Height != extent.height) {
+                    sceneTexture.Reset();
+                    if (!secondarySceneLogged_.exchange(
+                            true,
+                            std::memory_order_relaxed)) {
+                        logging::info(
+                            "Bloom/Glare skipped a {}x{} HDR composite that is not the {}x{} packed-stereo world scene.",
+                            description.Width,
+                            description.Height,
+                            extent.width,
+                            extent.height);
+                    }
+                }
             }
             if (sceneTexture && ensureSizeResources(sceneTexture.Get(), settings)) {
                 render::ScopedComputeState computeState(

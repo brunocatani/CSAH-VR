@@ -81,6 +81,7 @@ namespace csah::dlaa
         [[nodiscard]] RuntimeSnapshot snapshot() const noexcept;
 
     private:
+        [[nodiscard]] bool isSecondaryImageSpaceBoundary() noexcept;
         static constexpr std::size_t kQualificationProbeCount = 15;
 
         struct QualificationProbe
@@ -279,6 +280,8 @@ namespace csah::dlaa
         std::atomic_uint32_t qualificationProbeAttempts_{};
         std::atomic_uint64_t preRenderCalls_{};
         std::atomic_uint64_t postRenderCalls_{};
+        std::atomic_uint64_t secondaryBoundaries_{};
+        std::atomic_bool firstSecondaryBoundaryLogged_{};
         std::atomic_uint64_t lastValidCameraPostCall_{};
         std::atomic_uint64_t stereoEvaluations_{};
         std::atomic_uint64_t stereoEvaluationFailures_{};
