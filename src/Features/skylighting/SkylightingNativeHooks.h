@@ -24,4 +24,9 @@ namespace csah::skylighting
 
     [[nodiscard]] bool installNativeHooks() noexcept;
     [[nodiscard]] bool validateNativeHooks(const char* trigger) noexcept;
+    // World translate of the node FO4VR's precipitation projection subtracts
+    // when it builds the occlusion matrix. Valid only on the render thread
+    // directly after a native precipitation render, which dereferenced the
+    // same node.
+    [[nodiscard]] bool readProjectionAnchor(float (&translate)[3]) noexcept;
 }

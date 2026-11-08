@@ -313,6 +313,7 @@ namespace csah::skylighting
         std::atomic_bool firstWorldStateRejectionLogged_{};
         std::atomic_bool firstRenderAttemptLogged_{};
         std::atomic_bool firstPrivateDepthFailureLogged_{};
+        std::atomic_bool firstAnchorFailureLogged_{};
         std::atomic_bool firstActiveAmbientBindLogged_{};
         std::atomic_bool firstPassProducerSummaryLogged_{};
         std::atomic_bool firstFarProbeUpdateLogged_{};

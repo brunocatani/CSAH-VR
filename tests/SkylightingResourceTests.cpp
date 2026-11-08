@@ -13,6 +13,7 @@ namespace csah::skylighting
     ScopedOcclusionPassProduction::ScopedOcclusionPassProduction(std::uint32_t) noexcept { std::abort(); }
     ScopedOcclusionPassProduction::~ScopedOcclusionPassProduction() noexcept = default;
     bool ScopedOcclusionPassProduction::active() const noexcept { std::abort(); }
+    bool readProjectionAnchor(float (&)[3]) noexcept { std::abort(); }
 }
 
 namespace

@@ -1800,14 +1800,26 @@ namespace csah::skylighting
             auto* cameraHolder = camera;
             restoreProjection(precipitation, &cameraHolder);
         }
-        if (!privateRenderCompleted) {
+        // The copied occlusion matrix maps positions relative to the native
+        // projection anchor, not the player camera root; in VR the two
+        // differ, which left every probe outside the captured frustum.
+        float anchor[3]{};
+        const auto anchorRead = readProjectionAnchor(anchor);
+        if (!privateRenderCompleted || !anchorRead) {
+            if (privateRenderCompleted &&
+                !firstAnchorFailureLogged_.exchange(
+                    true,
+                    std::memory_order_relaxed)) {
+                logging::warn(
+                    "Skylighting could not read the FO4VR precipitation projection anchor; the capture was discarded.");
+            }
             exteriorActive_.store(false, std::memory_order_release);
             rejectedCaptures_.fetch_add(1, std::memory_order_relaxed);
             return;
         }
         targetLevel.captureQuadrant =
             (targetLevel.captureQuadrant + 1u) % 4u;
-        const auto& cameraPosition = playerCamera->cameraRoot->world.translate;
+        const RE::NiPoint3 cameraPosition{ anchor[0], anchor[1], anchor[2] };
         const auto volumeMoved = updateRollingVolume(
             targetLevel,
             targetConstants,

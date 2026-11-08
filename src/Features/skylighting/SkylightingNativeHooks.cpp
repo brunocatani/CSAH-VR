@@ -136,6 +136,22 @@ namespace csah::skylighting
             std::byte{ 0x81 }, std::byte{ 0xEC }, std::byte{ 0xE0 },
             std::byte{ 0x01 }, std::byte{ 0x00 }, std::byte{ 0x00 },
         };
+        // ComputeProjection loads its anchor node at +0x2C0:
+        //   48 8B 05 rel32 (MOV RAX,[global]); 48 8B 98 80 01 00 00 (MOV RBX,[RAX+0x180]).
+        // The render wrapper at 0x006350C0 subtracts the same node's world
+        // translate (+0xA0) when it builds the output occlusion matrix, so
+        // probe positions must be expressed relative to this node.
+        constexpr std::size_t kProjectionAnchorLoadOffset = 0x2C0;
+        constexpr std::size_t kProjectionAnchorLoadSize = 14;
+        constexpr std::size_t kAnchorNodeOffset = 0x180;
+        constexpr std::size_t kNiAVObjectWorldTranslateOffset = 0xA0;
+        // ComputeProjection stores the camera's local rotation rows at +0x30,
+        // +0x40 and +0x50 as r0=d, r1=cross(d,r2), r2=normalize(cross(d,up)),
+        // whose determinant is -1. The mirrored basis flips rasterizer
+        // winding, so single-sided terrain and roofs are culled from the
+        // capture and the occlusion depth stays clear.
+        constexpr std::size_t kNiAVObjectLocalRotateOffset = 0x30;
+        constexpr std::size_t kNiMatrix3RowStride = 0x10;
         constexpr std::array<std::byte, 16> kSetViewFrustumVrSignature{
             std::byte{ 0x57 }, std::byte{ 0x44 }, std::byte{ 0x8B },
             std::byte{ 0x99 }, std::byte{ 0xB0 }, std::byte{ 0x01 },
@@ -332,6 +348,7 @@ namespace csah::skylighting
         LightingPassListResolver resolveLightingPassList{};
         PassListClear clearPassList{};
         PassListEmplace emplacePass{};
+        void* const* projectionAnchorRoot{};
         void* utilityShader{};
         const void* utilityShaderVtable{};
         const void* utilityShaderSecondaryVtable{};
@@ -617,6 +634,31 @@ namespace csah::skylighting
                 quadrant >= 4u || !frustum) {
                 originalSetViewFrustumVr(camera, frustum);
                 return;
+            }
+
+            // Only the private capture sees a right-handed basis: the native
+            // Update that follows this call republishes the world transform,
+            // and the projection restore after the capture rewrites the rows
+            // for stock precipitation.
+            if (camera) {
+                auto* rows = static_cast<std::byte*>(camera) +
+                    kNiAVObjectLocalRotateOffset;
+                const auto row = [rows](std::size_t index) noexcept {
+                    return reinterpret_cast<float*>(
+                        rows + index * kNiMatrix3RowStride);
+                };
+                const float* r0 = row(0);
+                float* r1 = row(1);
+                const float* r2 = row(2);
+                const float determinant =
+                    r0[0] * (r1[1] * r2[2] - r1[2] * r2[1]) -
+                    r0[1] * (r1[0] * r2[2] - r1[2] * r2[0]) +
+                    r0[2] * (r1[0] * r2[1] - r1[1] * r2[0]);
+                if (determinant < 0.0f) {
+                    r1[0] = -r1[0];
+                    r1[1] = -r1[1];
+                    r1[2] = -r1[2];
+                }
             }
 
             auto quarter = *frustum;
@@ -1236,6 +1278,32 @@ namespace csah::skylighting
                 "Skylighting native projection signature mismatch at RVA 0x00635530.");
             return false;
         }
+        void* const* resolvedAnchorRoot{};
+        {
+            const auto* load = projection + kProjectionAnchorLoadOffset;
+            constexpr std::array<std::byte, 3> movRaxRip{
+                std::byte{ 0x48 }, std::byte{ 0x8B }, std::byte{ 0x05 } };
+            constexpr std::array<std::byte, 7> movRbxAnchor{
+                std::byte{ 0x48 }, std::byte{ 0x8B }, std::byte{ 0x98 },
+                std::byte{ 0x80 }, std::byte{ 0x01 }, std::byte{ 0x00 },
+                std::byte{ 0x00 } };
+            std::int32_t displacement{};
+            if (!isExecutableRange(load, kProjectionAnchorLoadSize) ||
+                std::memcmp(load, movRaxRip.data(), movRaxRip.size()) != 0 ||
+                std::memcmp(load + 7, movRbxAnchor.data(), movRbxAnchor.size()) != 0) {
+                logging::error(
+                    "Skylighting native projection anchor load mismatch at RVA 0x006357F0.");
+                return false;
+            }
+            std::memcpy(&displacement, load + 3, sizeof(displacement));
+            const auto* global = load + 7 + displacement;
+            if (!isReadableRange(global, sizeof(void*))) {
+                logging::error(
+                    "Skylighting native projection anchor global is outside readable FO4VR memory.");
+                return false;
+            }
+            resolvedAnchorRoot = reinterpret_cast<void* const*>(global);
+        }
         DirectCallIdentity preexistingSetViewFrustumCall{};
         if (!captureDirectCallIdentity(
                 setViewFrustumVrCall,
@@ -1456,6 +1524,7 @@ namespace csah::skylighting
             nativeSkySingleton = nullptr;
             nativeRender = nullptr;
             nativeProjection = nullptr;
+            projectionAnchorRoot = nullptr;
             collectAccumulatorPass = nullptr;
             resolveLightingPassList = nullptr;
             clearPassList = nullptr;
@@ -1557,6 +1626,7 @@ namespace csah::skylighting
                 image + kWrapperFirstCallTargetRva);
         nativeRender = reinterpret_cast<NativePrecipitationRender>(render);
         nativeProjection = reinterpret_cast<NativeProjectionSetup>(projection);
+        projectionAnchorRoot = resolvedAnchorRoot;
         privateRenderGpuCullingReturnAddress =
             render + kRenderGpuCullingReturnOffset;
 
@@ -1735,5 +1805,25 @@ namespace csah::skylighting
                 utilityShaderOwned);
         }
         return owned;
+    }
+
+    bool readProjectionAnchor(float (&translate)[3]) noexcept
+    {
+        // The native render just dereferenced this node, so no page probe
+        // is needed; only null links fail closed.
+        auto* const* root = projectionAnchorRoot;
+        auto* owner = root ? static_cast<std::byte*>(*root) : nullptr;
+        auto* node = owner ?
+            *reinterpret_cast<std::byte**>(owner + kAnchorNodeOffset) :
+            nullptr;
+        if (!node) {
+            return false;
+        }
+        std::memcpy(
+            translate,
+            node + kNiAVObjectWorldTranslateOffset,
+            sizeof(translate));
+        return std::isfinite(translate[0]) && std::isfinite(translate[1]) &&
+            std::isfinite(translate[2]);
     }
 }
