@@ -2,7 +2,7 @@
 #include "Globals.h"
 #include "State.h"
 #include "Feature.h"
-#include "support/SettingsPath.h"
+#include "settings/SettingsFile.h"
 #include "Menu.h"
 #include "EngineFixes.h"
 #include "ShaderCache.h"
@@ -264,9 +264,9 @@ namespace {
         EngineFixes::ApplyPostLoadFixes();
         EngineFixes::StartCascadeRuntime();
 
-        const auto configurationPath = csah::settings_path::resolveIniPath();
-        if (!configurationPath.empty()) {
-            Feature::SaveAllSettings(configurationPath.parent_path() / "CommunityShaders.json");
+        const auto settingsDirectory = csah::settings_file::resolveDirectory();
+        if (!settingsDirectory.empty()) {
+            Feature::SaveAllSettings(settingsDirectory / "CommunityShaders.json");
         }
         spdlog::info("=== Deferred D3D init complete ===");
     }

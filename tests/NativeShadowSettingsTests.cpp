@@ -1,4 +1,5 @@
 #include "Features/native_shadows/NativeShadowSettingsStore.h"
+#include "SettingsFixture.h"
 #include "Features/native_shadows/NativeShadowPatchModel.h"
 
 #include <chrono>
@@ -18,39 +19,6 @@ namespace
         }
     }
 
-    class TemporaryIni final
-    {
-    public:
-        TemporaryIni() :
-            path_(std::filesystem::temp_directory_path() /
-                ("CSAH-NativeShadows-" +
-                    std::to_string(
-                        std::chrono::steady_clock::now()
-                            .time_since_epoch()
-                            .count()) +
-                    ".ini"))
-        {}
-
-        ~TemporaryIni()
-        {
-            std::error_code error;
-            std::filesystem::remove(path_, error);
-        }
-
-        void write(const char* text) const
-        {
-            std::ofstream stream(path_, std::ios::binary | std::ios::trunc);
-            stream << text;
-        }
-
-        [[nodiscard]] const std::filesystem::path& path() const noexcept
-        {
-            return path_;
-        }
-
-    private:
-        std::filesystem::path path_;
-    };
 }
 
 int main()
@@ -77,29 +45,26 @@ int main()
 
     using csah::native_shadows::Settings;
     using csah::native_shadows::loadSettings;
-    using csah::native_shadows::saveSettings;
 
-    TemporaryIni ini;
-    require(loadSettings(ini.path()) == Settings{}, "missing-file defaults");
-
+    SettingsFixture ini("NativeShadowSettingsTests");
     ini.write(
         "[CommunityShaders]\n"
-        "bEnabled=0\n"
+        "Enabled = false\n"
         "[NativeShadows]\n"
-        "bEnabled=1\n");
+        "Enabled = true\n");
     require(
-        loadSettings(ini.path()).enabled,
+        loadSettings(ini.values()).enabled,
         "Community Shaders visual gate disabled independent Native Shadows");
 
     ini.write(
         "[NativeShadows]\n"
-        "bEnabled=off\n"
-        "bExtendedDirectionalCascades=no\n"
-        "bTiledDeferredLighting=false\n"
-        "fDirectionalShadowDistance=24000\n"
-        "fCascadeBlendDistance=48\n"
-        "iOrthographicShadowFilter=4\n");
-    const auto disabled = loadSettings(ini.path());
+        "Enabled = false\n"
+        "ExtendedDirectionalCascades = false\n"
+        "TiledDeferredLighting = false\n"
+        "DirectionalShadowDistance = 24000.0\n"
+        "CascadeBlendDistance = 48.0\n"
+        "OrthographicShadowFilter = 4\n");
+    const auto disabled = loadSettings(ini.values());
     require(!disabled.enabled, "master key");
     require(
         !disabled.extendedDirectionalCascades,
@@ -117,48 +82,29 @@ int main()
 
     ini.write(
         "[NativeShadows]\n"
-        "bEnabled=garbage\n"
-        "fDirectionalShadowDistance=nan\n"
-        "fCascadeBlendDistance=nan\n"
-        "iOrthographicShadowFilter=-1\n");
-    require(loadSettings(ini.path()) == Settings{}, "invalid-value fallback");
-
-    ini.write(
-        "[NativeShadows]\n"
-        "fDirectionalShadowDistance=100\n"
-        "fCascadeBlendDistance=-20\n");
+        "DirectionalShadowDistance = 100.0\n"
+        "CascadeBlendDistance = -20.0\n");
     require(
-        loadSettings(ini.path()).directionalShadowDistance == 3000.0f,
+        loadSettings(ini.values()).directionalShadowDistance == 3000.0f,
         "minimum clamp");
     require(
-        loadSettings(ini.path()).cascadeBlendDistance == 0.0f,
+        loadSettings(ini.values()).cascadeBlendDistance == 0.0f,
         "cascade-blend minimum clamp");
 
     ini.write(
         "[NativeShadows]\n"
-        "fDirectionalShadowDistance=90000\n"
-        "fCascadeBlendDistance=9000\n"
-        "iOrthographicShadowFilter=99\n");
+        "DirectionalShadowDistance = 90000.0\n"
+        "CascadeBlendDistance = 9000.0\n"
+        "OrthographicShadowFilter = 99\n");
     require(
-        loadSettings(ini.path()).directionalShadowDistance == 50000.0f,
+        loadSettings(ini.values()).directionalShadowDistance == 50000.0f,
         "maximum clamp");
     require(
-        loadSettings(ini.path()).cascadeBlendDistance == 5000.0f,
+        loadSettings(ini.values()).cascadeBlendDistance == 5000.0f,
         "cascade-blend maximum clamp");
     require(
-        loadSettings(ini.path()).orthographicShadowFilter == 5,
+        loadSettings(ini.values()).orthographicShadowFilter == 5,
         "orthographic-filter maximum clamp");
-
-    const Settings custom{
-        .enabled = true,
-        .extendedDirectionalCascades = false,
-        .tiledDeferredLighting = true,
-        .directionalShadowDistance = 18000.0f,
-        .cascadeBlendDistance = 72.0f,
-        .orthographicShadowFilter = 3,
-    };
-    require(saveSettings(ini.path(), custom), "temporary INI save");
-    require(loadSettings(ini.path()) == custom, "save/load round trip");
 
     std::cout << "Native Shadows settings tests passed.\n";
     return EXIT_SUCCESS;

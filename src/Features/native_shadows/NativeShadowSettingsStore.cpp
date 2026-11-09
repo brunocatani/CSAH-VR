@@ -1,25 +1,21 @@
 #include "Features/native_shadows/NativeShadowSettingsStore.h"
+#include "settings/SettingsFile.h"
 
 #include "support/Logger.h"
-#include "support/SettingsPath.h"
-
-#include <Windows.h>
 
 #include <array>
-#include <cerrno>
 #include <cmath>
 #include <cwchar>
 #include <cwctype>
 #include <limits>
 #include <string>
 #include <string_view>
-#include <system_error>
 
 namespace csah::native_shadows
 {
     namespace
     {
-        constexpr auto kSection = L"NativeShadows";
+        constexpr std::string_view kSection = "NativeShadows";
 
         [[nodiscard]] bool parseBoolean(
             const std::wstring_view source,
@@ -48,154 +44,58 @@ namespace csah::native_shadows
         }
 
         [[nodiscard]] bool readBoolean(
-            const std::filesystem::path& path,
-            const wchar_t* key,
+            const settings_file::Values& values,
+            std::string_view key,
             const bool fallback) noexcept
         {
-            std::array<wchar_t, 64> value{};
-            const auto count = GetPrivateProfileStringW(
-                kSection,
-                key,
-                L"",
-                value.data(),
-                static_cast<DWORD>(value.size()),
-                path.c_str());
-            return count == 0 ? fallback :
-                parseBoolean(
-                    std::wstring_view(value.data(), count), fallback);
+            return values.boolean(kSection, key, fallback);
         }
 
         [[nodiscard]] float readFloat(
-            const std::filesystem::path& path,
-            const wchar_t* key,
+            const settings_file::Values& values,
+            std::string_view key,
             const float fallback) noexcept
         {
-            std::array<wchar_t, 64> value{};
-            const auto count = GetPrivateProfileStringW(
-                kSection,
-                key,
-                L"",
-                value.data(),
-                static_cast<DWORD>(value.size()),
-                path.c_str());
-            if (count == 0) {
-                return fallback;
-            }
-            wchar_t* end{};
-            errno = 0;
-            const auto parsed = std::wcstof(value.data(), &end);
-            return errno != ERANGE && end != value.data() &&
-                    end == value.data() + count && std::isfinite(parsed) ?
-                parsed : fallback;
+            return values.number(kSection, key, fallback);
         }
 
         [[nodiscard]] std::uint32_t readUnsigned(
-            const std::filesystem::path& path,
-            const wchar_t* key,
+            const settings_file::Values& values,
+            std::string_view key,
             const std::uint32_t fallback) noexcept
         {
-            std::array<wchar_t, 64> value{};
-            const auto count = GetPrivateProfileStringW(
-                kSection,
-                key,
-                L"",
-                value.data(),
-                static_cast<DWORD>(value.size()),
-                path.c_str());
-            if (count == 0 || value[0] == L'-') {
-                return fallback;
-            }
-            wchar_t* end{};
-            errno = 0;
-            const auto parsed = std::wcstoul(value.data(), &end, 10);
-            return errno != ERANGE && end != value.data() &&
-                    end == value.data() + count &&
-                    parsed <=
-                        (std::numeric_limits<std::uint32_t>::max)() ?
-                static_cast<std::uint32_t>(parsed) : fallback;
-        }
-
-        [[nodiscard]] bool writeBoolean(
-            const std::filesystem::path& path,
-            const wchar_t* key,
-            const bool value) noexcept
-        {
-            return WritePrivateProfileStringW(
-                       kSection,
-                       key,
-                       value ? L"1" : L"0",
-                       path.c_str()) != FALSE;
-        }
-
-        [[nodiscard]] bool writeFloat(
-            const std::filesystem::path& path,
-            const wchar_t* key,
-            const float value) noexcept
-        {
-            std::array<wchar_t, 64> text{};
-            _snwprintf_s(
-                text.data(),
-                text.size(),
-                _TRUNCATE,
-                L"%.9g",
-                static_cast<double>(value));
-            return WritePrivateProfileStringW(
-                       kSection, key, text.data(), path.c_str()) != FALSE;
-        }
-
-        [[nodiscard]] bool writeUnsigned(
-            const std::filesystem::path& path,
-            const wchar_t* key,
-            const std::uint32_t value) noexcept
-        {
-            std::array<wchar_t, 64> text{};
-            _snwprintf_s(
-                text.data(), text.size(), _TRUNCATE, L"%u", value);
-            return WritePrivateProfileStringW(
-                       kSection, key, text.data(), path.c_str()) != FALSE;
+            return values.unsignedInteger(kSection, key, fallback);
         }
     }
 
-    Settings loadSettings(const std::filesystem::path& path) noexcept
+    Settings loadSettings(const settings_file::Values& values) noexcept
     {
         const Settings defaults{};
-        std::error_code error;
-        if (path.empty() || !std::filesystem::is_regular_file(path, error) ||
-            error) {
-            return defaults;
-        }
         return sanitize({
-            .enabled = readBoolean(path, L"bEnabled", defaults.enabled),
-            .extendedDirectionalCascades = readBoolean(
-                path,
-                L"bExtendedDirectionalCascades",
+            .enabled = readBoolean(values, "Enabled", defaults.enabled),
+            .extendedDirectionalCascades = readBoolean(values,
+                "ExtendedDirectionalCascades",
                 defaults.extendedDirectionalCascades),
-            .tiledDeferredLighting = readBoolean(
-                path,
-                L"bTiledDeferredLighting",
+            .tiledDeferredLighting = readBoolean(values,
+                "TiledDeferredLighting",
                 defaults.tiledDeferredLighting),
-            .directionalShadowDistance = readFloat(
-                path,
-                L"fDirectionalShadowDistance",
+            .directionalShadowDistance = readFloat(values,
+                "DirectionalShadowDistance",
                 defaults.directionalShadowDistance),
-            .cascadeBlendDistance = readFloat(
-                path,
-                L"fCascadeBlendDistance",
+            .cascadeBlendDistance = readFloat(values,
+                "CascadeBlendDistance",
                 defaults.cascadeBlendDistance),
-            .orthographicShadowFilter = readUnsigned(
-                path,
-                L"iOrthographicShadowFilter",
+            .orthographicShadowFilter = readUnsigned(values,
+                "OrthographicShadowFilter",
                 defaults.orthographicShadowFilter),
         });
     }
 
     Settings loadSettings() noexcept
     {
-        const auto path = settings_path::resolveIniPath();
-        const auto result = loadSettings(path);
+        const auto result = loadSettings(settings_file::File::get().current());
         logging::info(
-            "Native Shadows settings loaded from '{}'; enabled={}, fourCascades={}, tiledDeferredLighting={}, fixedDistance={}, cascadeBlend={}, orthoFilter={}. No FPS or adaptive-quality controller is present.",
-            path.string(),
+            "Native Shadows settings loaded; enabled={}, fourCascades={}, tiledDeferredLighting={}, fixedDistance={}, cascadeBlend={}, orthoFilter={}. No FPS or adaptive-quality controller is present.",
             result.enabled,
             result.extendedDirectionalCascades,
             result.tiledDeferredLighting,
@@ -203,50 +103,5 @@ namespace csah::native_shadows
             result.cascadeBlendDistance,
             result.orthographicShadowFilter);
         return result;
-    }
-
-    bool saveSettings(
-        const std::filesystem::path& path,
-        const Settings& settings) noexcept
-    {
-        if (path.empty() || !settings_path::ensureParentDirectory(path)) {
-            logging::error(
-                "CSAH settings directory is unavailable for '{}'.",
-                path.string());
-            return false;
-        }
-        const auto safe = sanitize(settings);
-        auto success = writeBoolean(path, L"bEnabled", safe.enabled);
-        success = writeBoolean(
-                      path,
-                      L"bExtendedDirectionalCascades",
-                      safe.extendedDirectionalCascades) &&
-            success;
-        success = writeBoolean(
-                      path,
-                      L"bTiledDeferredLighting",
-                      safe.tiledDeferredLighting) &&
-            success;
-        success = writeFloat(
-                      path,
-                      L"fDirectionalShadowDistance",
-                      safe.directionalShadowDistance) &&
-            success;
-        success = writeFloat(
-                      path,
-                      L"fCascadeBlendDistance",
-                      safe.cascadeBlendDistance) &&
-            success;
-        success = writeUnsigned(
-                      path,
-                      L"iOrthographicShadowFilter",
-                      safe.orthographicShadowFilter) &&
-            success;
-        return success;
-    }
-
-    bool saveSettings(const Settings& settings) noexcept
-    {
-        return saveSettings(settings_path::resolveIniPath(), settings);
     }
 }

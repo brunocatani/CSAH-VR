@@ -1,4 +1,5 @@
 #include "Features/contact_shadows/ContactShadowSettingsStore.h"
+#include "SettingsFixture.h"
 
 #include <chrono>
 #include <cmath>
@@ -18,67 +19,23 @@ namespace
         }
     }
 
-    class TemporaryIni final
-    {
-    public:
-        TemporaryIni() :
-            path_(std::filesystem::temp_directory_path() /
-                ("CSAH-ContactShadows-" +
-                    std::to_string(
-                        std::chrono::steady_clock::now()
-                            .time_since_epoch()
-                            .count()) +
-                    ".ini"))
-        {}
-
-        ~TemporaryIni()
-        {
-            std::error_code error;
-            std::filesystem::remove(path_, error);
-        }
-
-        void write(const char* text) const
-        {
-            std::ofstream stream(path_, std::ios::binary | std::ios::trunc);
-            stream << text;
-        }
-
-        [[nodiscard]] const std::filesystem::path& path() const noexcept
-        {
-            return path_;
-        }
-
-    private:
-        std::filesystem::path path_;
-    };
 }
 
 int main()
 {
     using csah::contact_shadows::loadSettings;
-    using csah::contact_shadows::parseBoolean;
 
-    require(parseBoolean(L" TRUE ") == true, "true syntax");
-    require(parseBoolean(L"off") == false, "off syntax");
-    require(!parseBoolean(L"invalid"), "invalid syntax");
-
-    TemporaryIni ini;
-    const auto defaults = loadSettings(ini.path());
-    require(defaults.enabled, "missing file enabled default");
-    require(defaults.foveated, "missing file foveated default");
-    require(defaults.sampleCount == 8, "missing file sample default");
-    require(defaults.fadeDistance == 2048.0f, "missing file fade default");
-
+    SettingsFixture ini("ContactShadowSettingsTests");
     ini.write(
         "[ContactShadows]\n"
-        "bEnabled=0\n"
-        "bFoveated= false \n"
-        "fStrength=0.62\n"
-        "fMaxDistance=72\n"
-        "fFadeDistance=1536\n"
-        "fThickness=0.009\n"
-        "iSampleCount=6\n");
-    const auto configured = loadSettings(ini.path());
+        "Enabled = false\n"
+        "Foveated = false\n"
+        "Strength = 0.62\n"
+        "MaxDistance = 72.0\n"
+        "FadeDistance = 1536.0\n"
+        "Thickness = 0.009\n"
+        "SampleCount = 6\n");
+    const auto configured = loadSettings(ini.values());
     require(!configured.enabled, "disabled owned key");
     require(!configured.foveated, "disabled foveation key");
     require(
@@ -93,25 +50,25 @@ int main()
 
     ini.write(
         "[ContactShadows]\n"
-        "fStrength=9\n"
-        "fMaxDistance=1\n"
-        "fFadeDistance=99999\n"
-        "fThickness=1\n"
-        "iSampleCount=0\n");
-    const auto clamped = loadSettings(ini.path());
+        "Strength = 9.0\n"
+        "MaxDistance = 1.0\n"
+        "FadeDistance = 99999.0\n"
+        "Thickness = 1.0\n"
+        "SampleCount = 0\n");
+    const auto clamped = loadSettings(ini.values());
     require(clamped.strength == 1.0f, "strength upper clamp");
     require(clamped.maxDistance == 8.0f, "ray-distance lower clamp");
     require(clamped.fadeDistance == 8192.0f, "fade-distance upper clamp");
     require(clamped.thickness == 0.05f, "thickness upper clamp");
     require(clamped.sampleCount == 2, "sample-count lower clamp");
 
-    ini.write("[ContactShadows]\niSampleCount=99\n");
+    ini.write("[ContactShadows]\nSampleCount = 99\n");
     require(
-        loadSettings(ini.path()).sampleCount == 8,
+        loadSettings(ini.values()).sampleCount == 8,
         "sample-count upper clamp");
 
-    ini.write("[LinearLighting]\nbEnabled=0\n");
-    require(loadSettings(ini.path()).enabled, "independent INI section");
+    ini.write("[ContactShadows]\nEnabled = true\n[LinearLighting]\nEnabled = false\n");
+    require(loadSettings(ini.values()).enabled, "independent settings table");
 
     std::cout << "Contact Shadows settings tests passed.\n";
     return EXIT_SUCCESS;

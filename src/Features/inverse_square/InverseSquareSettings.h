@@ -1,5 +1,5 @@
 #pragma once
-#include <filesystem>
+#include "settings/SettingsFile.h"
 namespace csah::inverse_square
 {
     struct Settings
@@ -9,6 +9,6 @@ namespace csah::inverse_square
         float intensity{1};
         [[nodiscard]] bool operator==(const Settings&) const noexcept = default;
     };
-    [[nodiscard]] Settings loadSettings(const std::filesystem::path&) noexcept;
+    [[nodiscard]] Settings loadSettings(const settings_file::Values& values) noexcept;
     [[nodiscard]] Settings loadSettings() noexcept;
 }

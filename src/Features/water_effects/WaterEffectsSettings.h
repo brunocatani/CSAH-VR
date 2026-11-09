@@ -1,7 +1,7 @@
 #pragma once
 #include <algorithm>
 #include <cmath>
-#include <filesystem>
+#include "settings/SettingsFile.h"
 namespace csah::water_effects
 {
     struct Settings
@@ -29,6 +29,6 @@ namespace csah::water_effects
         s.reflectionFlatness=std::isfinite(s.reflectionFlatness)?std::clamp(s.reflectionFlatness,0.0f,1.0f):0;
         s.reflectionRoughness=std::isfinite(s.reflectionRoughness)?std::clamp(s.reflectionRoughness,0.0f,1.0f):0;return s;
     }
-    [[nodiscard]] Settings loadSettings(const std::filesystem::path& path) noexcept;
+    [[nodiscard]] Settings loadSettings(const settings_file::Values& values) noexcept;
     [[nodiscard]] Settings loadSettings() noexcept;
 }

@@ -92,7 +92,7 @@ if(CMAKE_SCRIPT_MODE_FILE)
     "\"id\": \"complex-parallax\""
     "PALM settings parallax control")
   cs_require_text("${PALM_SETTINGS_SOURCE}"
-    "\"key\": \"bEnableParallax\""
+    "\"key\": \"EnableParallax\""
     "PALM settings parallax binding")
   cs_verify_compiled_parallax(
     "${BASE_BINARY}" "base landscape complex parallax" FALSE)

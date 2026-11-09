@@ -1,13 +1,10 @@
 #pragma once
 
 #include "Features/complex_materials/ComplexParallaxSettings.h"
-
-#include <filesystem>
+#include "settings/SettingsFile.h"
 
 namespace csah::complex_materials
 {
-    [[nodiscard]] Settings loadSettings(
-        const std::filesystem::path& path) noexcept;
+    [[nodiscard]] Settings loadSettings(const settings_file::Values& values) noexcept;
     [[nodiscard]] Settings loadSettings() noexcept;
-    [[nodiscard]] bool saveSettings(const Settings& settings) noexcept;
 }

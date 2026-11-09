@@ -1,7 +1,7 @@
 #pragma once
 #include <algorithm>
 #include <cmath>
-#include <filesystem>
+#include "settings/SettingsFile.h"
 namespace csah::screen_space_gi
 {
     struct Settings
@@ -23,6 +23,6 @@ namespace csah::screen_space_gi
         s.aoPower=finite(s.aoPower,2,0,4);s.strength=finite(s.strength,1,0,4);
         return s;
     }
-    [[nodiscard]] Settings loadSettings(const std::filesystem::path& path) noexcept;
+    [[nodiscard]] Settings loadSettings(const settings_file::Values& values) noexcept;
     [[nodiscard]] Settings loadSettings() noexcept;
 }

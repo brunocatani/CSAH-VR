@@ -1,13 +1,10 @@
 #pragma once
 
 #include "Features/filmic_tonemapping/FilmicTonemappingSettings.h"
-
-#include <filesystem>
+#include "settings/SettingsFile.h"
 
 namespace csah::filmic_tonemapping
 {
-    [[nodiscard]] Settings loadSettings(
-        const std::filesystem::path& path) noexcept;
+    [[nodiscard]] Settings loadSettings(const settings_file::Values& values) noexcept;
     [[nodiscard]] Settings loadSettings() noexcept;
-    [[nodiscard]] bool saveSettings(const Settings& settings) noexcept;
 }

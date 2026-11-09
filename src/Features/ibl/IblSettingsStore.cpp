@@ -1,30 +1,25 @@
 #include "Features/ibl/IblSettingsStore.h"
+#include "settings/SettingsFile.h"
 
 #include "support/Logger.h"
-#include "support/SettingsPath.h"
 #include "settings/MasterSettings.h"
 
-#include <Windows.h>
-
 #include <algorithm>
-#include <cerrno>
 #include <cmath>
 #include <cwchar>
 #include <cwctype>
-#include <iterator>
 #include <string>
-#include <system_error>
 
 namespace csah::ibl
 {
     namespace
     {
-        constexpr auto kIblSection = L"ImageBasedLighting";
-        constexpr auto kDynamicCubemapsSection = L"DynamicCubemaps";
-        constexpr auto kEnabledKey = L"bEnabled";
-        constexpr auto kDynamicCubemapsEnabledKey = L"bEnabled";
-        constexpr auto kDiffuseEnabledKey = L"bDiffuseEnabled";
-        constexpr auto kDiffuseLevelKey = L"fDiffuseLevel";
+        constexpr std::string_view kIblSection = "ImageBasedLighting";
+        constexpr std::string_view kDynamicCubemapsSection = "DynamicCubemaps";
+        constexpr auto kEnabledKey = "Enabled";
+        constexpr auto kDynamicCubemapsEnabledKey = "Enabled";
+        constexpr auto kDiffuseEnabledKey = "DiffuseEnabled";
+        constexpr auto kDiffuseLevelKey = "DiffuseLevel";
 
         [[nodiscard]] std::wstring normalized(
             std::wstring_view text)
@@ -48,64 +43,21 @@ namespace csah::ibl
             return result;
         }
 
-
         [[nodiscard]] bool readBoolean(
-            const std::filesystem::path& path,
-            const wchar_t* section,
-            const wchar_t* key,
+            const settings_file::Values& values,
+            std::string_view section,
+            std::string_view key,
             bool fallback) noexcept
         {
-            wchar_t value[64]{};
-            const auto count = GetPrivateProfileStringW(
-                section,
-                key,
-                L"",
-                value,
-                static_cast<DWORD>(std::size(value)),
-                path.c_str());
-            if (count == 0) {
-                return fallback;
-            }
-            return parseBoolean(std::wstring_view(value, count)).value_or(
-                fallback);
+            return values.boolean(section, key, fallback);
         }
 
         [[nodiscard]] float readFloat(
-            const std::filesystem::path& path,
-            const wchar_t* key,
+            const settings_file::Values& values,
+            std::string_view key,
             float fallback) noexcept
         {
-            wchar_t value[64]{};
-            const auto count = GetPrivateProfileStringW(
-                kIblSection,
-                key,
-                L"",
-                value,
-                static_cast<DWORD>(std::size(value)),
-                path.c_str());
-            if (count == 0) {
-                return fallback;
-            }
-            wchar_t* end{};
-            errno = 0;
-            const auto parsed = std::wcstof(value, &end);
-            return errno != ERANGE && end != value && *end == L'\0' &&
-                    std::isfinite(parsed) ?
-                parsed :
-                fallback;
-        }
-
-        [[nodiscard]] bool writeValue(
-            const std::filesystem::path& path,
-            const wchar_t* section,
-            const wchar_t* key,
-            const wchar_t* value) noexcept
-        {
-            return WritePrivateProfileStringW(
-                section,
-                key,
-                value,
-                path.c_str()) != FALSE;
+            return values.number(kIblSection, key, fallback);
         }
     }
 
@@ -126,33 +78,24 @@ namespace csah::ibl
         return std::nullopt;
     }
 
-    Settings loadSettings(const std::filesystem::path& path) noexcept
+    Settings loadSettings(const settings_file::Values& values) noexcept
     {
         const Settings defaults{};
-        std::error_code pathError;
-        if (path.empty() ||
-            !std::filesystem::is_regular_file(path, pathError) || pathError) {
-            return defaults;
-        }
 
-        return master_settings::gate(path, sanitize({
-            .enabled = readBoolean(
-                path,
+        return master_settings::gate(values, sanitize({
+            .enabled = readBoolean(values,
                 kIblSection,
                 kEnabledKey,
                 defaults.enabled),
-            .dynamicCubemapsEnabled = readBoolean(
-                path,
+            .dynamicCubemapsEnabled = readBoolean(values,
                 kDynamicCubemapsSection,
                 kDynamicCubemapsEnabledKey,
                 defaults.dynamicCubemapsEnabled),
-            .diffuseEnabled = readBoolean(
-                path,
+            .diffuseEnabled = readBoolean(values,
                 kIblSection,
                 kDiffuseEnabledKey,
                 defaults.diffuseEnabled),
-            .diffuseLevel = readFloat(
-                path,
+            .diffuseLevel = readFloat(values,
                 kDiffuseLevelKey,
                 defaults.diffuseLevel),
         }));
@@ -160,58 +103,13 @@ namespace csah::ibl
 
     Settings loadSettings() noexcept
     {
-        const auto path = settings_path::resolveIniPath();
-        const auto result = loadSettings(path);
+        const auto result = loadSettings(settings_file::File::get().current());
         logging::info(
-            "Image Based Lighting settings loaded from '{}'; enabled={}, Dynamic Cubemaps enabled={}, diffuse enabled={}, diffuse level={}.",
-            path.string(),
+            "Image Based Lighting settings loaded; enabled={}, Dynamic Cubemaps enabled={}, diffuse enabled={}, diffuse level={}.",
             result.enabled,
             result.dynamicCubemapsEnabled,
             result.diffuseEnabled,
             result.diffuseLevel);
         return result;
-    }
-
-    bool saveSettings(const Settings& settings) noexcept
-    {
-        const auto path = settings_path::resolveIniPath();
-        if (!settings_path::ensureParentDirectory(path)) {
-            logging::error(
-                "CSAH settings directory is unavailable for '{}'.",
-                path.string());
-            return false;
-        }
-        const auto safe = sanitize(settings);
-        wchar_t diffuseLevel[64]{};
-        _snwprintf_s(
-            diffuseLevel,
-            std::size(diffuseLevel),
-            _TRUNCATE,
-            L"%.9g",
-            static_cast<double>(safe.diffuseLevel));
-        auto success = writeValue(
-            path,
-            kIblSection,
-            kEnabledKey,
-            safe.enabled ? L"1" : L"0");
-        success = writeValue(
-                      path,
-                      kDynamicCubemapsSection,
-                      kDynamicCubemapsEnabledKey,
-                      safe.dynamicCubemapsEnabled ? L"1" : L"0") &&
-            success;
-        success = writeValue(
-                      path,
-                      kIblSection,
-                      kDiffuseEnabledKey,
-                      safe.diffuseEnabled ? L"1" : L"0") &&
-            success;
-        success = writeValue(
-                      path,
-                      kIblSection,
-                      kDiffuseLevelKey,
-                      diffuseLevel) &&
-            success;
-        return success;
     }
 }

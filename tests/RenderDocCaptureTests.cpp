@@ -222,8 +222,8 @@ int main(int count, char** args)
         for (int i = 0; i < 3; ++i) frame();
         require(api->GetNumCaptures() == initial, "idle processing triggered a capture");
         std::filesystem::create_directories(directory);
-        const auto settings=directory/"fixture.ini";
-        {std::ofstream out(settings);out<<"[Skylighting]\nbEnabled=1\n";}
+        const auto settings=directory/"fixture.toml";
+        {std::ofstream out(settings);out<<"[Skylighting]\nEnabled = true\n";}
         require(csah::diagnostics::requestRenderDocCapture(directory.c_str(),settings.c_str()), "manual request failed");
         require(!csah::diagnostics::requestRenderDocCapture(directory.c_str()), "duplicate pending request accepted");
         csah::diagnostics::processRenderDocCapture();
@@ -239,10 +239,10 @@ int main(int count, char** args)
         bool matchingSettings=false;
         for(const auto& entry:std::filesystem::directory_iterator(directory)) {
             const auto name=entry.path().filename().string();
-            const std::string suffix=".settings.ini";
+            const std::string suffix=".settings.toml";
             if(name.ends_with(suffix) && capture.filename().string().starts_with(name.substr(0,name.size()-suffix.size()))) {
                 std::ifstream input(entry.path());const std::string contents((std::istreambuf_iterator<char>(input)),{});
-                matchingSettings=contents=="[Skylighting]\nbEnabled=1\n";
+                matchingSettings=contents=="[Skylighting]\nEnabled = true\n";
             }
         }
         require(matchingSettings,"captured frame has no matching settings sidecar");

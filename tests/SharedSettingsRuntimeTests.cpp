@@ -1,9 +1,8 @@
 #include "settings/SharedSettingsRuntime.h"
+#include "SettingsFixture.h"
 
 #include <cstdlib>
 #include <iostream>
-#include <filesystem>
-#include <fstream>
 
 namespace
 {
@@ -17,29 +16,24 @@ namespace
     }
 }
 
-int main(int argumentCount, char** arguments)
+int main()
 {
     using csah::shared_settings::Snapshot;
     using csah::shared_settings::diff;
 
     const Snapshot baseline{};
     require(!baseline.diagnostics.measureStereoSharing,"stereo measurement must default off");
-    if (argumentCount == 2) {
-        const auto directory = std::filesystem::absolute(arguments[1]);
-        std::filesystem::create_directories(directory);
-        const auto file = directory / "diagnostics-settings.ini";
-        {
-            std::ofstream output(file);
-            output << "[Diagnostics]\niGpuProfilingMode=4\nbMeasureStereoSharing=1\nbCaptureFrame=1\nsCaptureDirectory=F:/fixture/captures\n";
-        }
-        auto loaded = csah::diagnostics_settings::load(file);
+    {
+        SettingsFixture file("SharedSettingsRuntimeTests");
+        file.write("[Diagnostics]\nGpuProfilingMode = 4\nMeasureStereoSharing = true\nCaptureFrame = true\n");
+        const auto loaded = csah::diagnostics_settings::load(file.values());
         require(loaded.measureStereoSharing && loaded.gpuProfilingGroups == 4, "IBL profiling was lost");
-        require(WritePrivateProfileStringW(L"Diagnostics", L"bCaptureFrame", L"0", file.c_str()), "legacy capture setting write failed");
-        require(csah::diagnostics_settings::load(file)==loaded,"retired INI capture key still changes runtime settings");
-        require(WritePrivateProfileStringW(L"Diagnostics", L"iGpuProfilingMode", L"7", file.c_str()), "test settings write failed");
-        require(csah::diagnostics_settings::load(file).gpuProfilingGroups == 7, "all-feature profiling unavailable");
-        require(WritePrivateProfileStringW(L"Diagnostics", L"iGpuProfilingMode", L"99", file.c_str()), "test invalid settings write failed");
-        require(csah::diagnostics_settings::load(file).gpuProfilingGroups == 0, "invalid profiling selection must fail closed");
+        file.write("[Diagnostics]\nGpuProfilingMode = 4\nMeasureStereoSharing = true\nCaptureFrame = false\n");
+        require(csah::diagnostics_settings::load(file.values()) == loaded, "retired capture key still changes runtime settings");
+        file.write("[Diagnostics]\nGpuProfilingMode = 7\n");
+        require(csah::diagnostics_settings::load(file.values()).gpuProfilingGroups == 7, "all-feature profiling unavailable");
+        file.write("[Diagnostics]\nGpuProfilingMode = 99\n");
+        require(csah::diagnostics_settings::load(file.values()).gpuProfilingGroups == 0, "invalid profiling selection must fail closed");
     }
     require(!baseline.cloudShadows.enabled &&
             !baseline.volumetricLighting.enabled,

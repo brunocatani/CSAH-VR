@@ -72,7 +72,7 @@ require_token("${FILMIC_RUNTIME_SOURCE}"
 require_token("${FILMIC_SETTINGS_HEADER}"
   "useNativeAutoExposure" "the explicit native-adaptation policy")
 require_token("${FILMIC_SETTINGS_STORE_SOURCE}"
-  "FilmicTonemapping" "the persistent INI section")
+  "FilmicTonemapping" "the persistent settings table")
 require_token("${D3D11_HOOK_SOURCE}"
   "filmic_tonemapping::Runtime::get().onPixelShaderCreated"
   "shader identity registration")
@@ -88,11 +88,11 @@ require_token("${PLUGIN_SOURCE}"
 require_token("${PALM_SETTINGS_SOURCE}"
   "Filmic Tonemapping" "PALM settings control")
 require_token("${PALM_SETTINGS_SOURCE}"
-  "fExposureCompensationEV" "PALM settings exposure control")
+  "ExposureCompensationEV" "PALM settings exposure control")
 require_token("${PALM_SETTINGS_SOURCE}"
-  "fFilmicStrength" "PALM settings filmic-strength control")
+  "FilmicStrength" "PALM settings filmic-strength control")
 require_token("${PALM_SETTINGS_SOURCE}"
-  "fWhitePointScale" "PALM settings white-point control")
+  "WhitePointScale" "PALM settings white-point control")
 
 message(STATUS
   "Filmic Tonemapping contract verified: executing FO4VR base/fade HDR output family, native adaptation, scoped CB12, and PALM settings controls")

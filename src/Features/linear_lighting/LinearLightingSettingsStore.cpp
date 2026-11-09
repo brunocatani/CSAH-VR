@@ -1,226 +1,96 @@
 #include "Features/linear_lighting/LinearLightingSettingsStore.h"
+#include "settings/SettingsFile.h"
 
 #include "support/Logger.h"
-#include "support/SettingsPath.h"
 #include "settings/MasterSettings.h"
 
-#include <Windows.h>
-
-#include <cerrno>
 #include <cmath>
-#include <cwchar>
 #include <limits>
-#include <system_error>
 #include <string_view>
 
 namespace csah::linear_lighting
 {
     namespace
     {
-        constexpr auto kSection = L"LinearLighting";
+        constexpr std::string_view kSection = "LinearLighting";
 
         [[nodiscard]] float readFloat(
-            const std::filesystem::path& path,
-            const wchar_t* key,
+            const settings_file::Values& values,
+            std::string_view key,
             float fallback) noexcept
         {
-            wchar_t fallbackText[64]{};
-            _snwprintf_s(
-                fallbackText,
-                _countof(fallbackText),
-                _TRUNCATE,
-                L"%.9g",
-                static_cast<double>(fallback));
-            wchar_t valueText[64]{};
-            GetPrivateProfileStringW(
-                kSection,
-                key,
-                fallbackText,
-                valueText,
-                static_cast<DWORD>(_countof(valueText)),
-                path.c_str());
-
-            wchar_t* end{};
-            errno = 0;
-            const auto value = std::wcstof(valueText, &end);
-            if (errno == ERANGE || end == valueText || *end != L'\0' ||
-                !std::isfinite(value)) {
-                return fallback;
-            }
-            return value;
+            return values.number(kSection, key, fallback);
         }
 
         [[nodiscard]] bool readBool(
-            const std::filesystem::path& path,
-            const wchar_t* key,
+            const settings_file::Values& values,
+            std::string_view key,
             bool fallback) noexcept
         {
-            return GetPrivateProfileIntW(
-                       kSection,
-                       key,
-                       fallback ? 1 : 0,
-                       path.c_str()) != 0;
-        }
-
-        [[nodiscard]] bool writeValue(
-            const std::filesystem::path& path,
-            const wchar_t* key,
-            std::wstring_view value) noexcept
-        {
-            return WritePrivateProfileStringW(
-                       kSection,
-                       key,
-                       value.data(),
-                       path.c_str()) != FALSE;
-        }
-
-        [[nodiscard]] bool writeFloat(
-            const std::filesystem::path& path,
-            const wchar_t* key,
-            float value) noexcept
-        {
-            wchar_t text[64]{};
-            _snwprintf_s(
-                text,
-                _countof(text),
-                _TRUNCATE,
-                L"%.9g",
-                static_cast<double>(value));
-            return writeValue(path, key, text);
+            return values.boolean(kSection, key, fallback);
         }
     }
 
-    Settings loadSettings(const std::filesystem::path& path) noexcept
+    Settings loadSettings(const settings_file::Values& values) noexcept
     {
         const Settings defaults{};
         auto result = defaults;
-        std::error_code pathError;
-        if (path.empty() ||
-            !std::filesystem::is_regular_file(path, pathError) ||
-            pathError) {
-            return result;
-        }
-
-        result.enabled = readBool(path, L"bEnabled", defaults.enabled);
-        result.preserveNativeDarkness = readBool(
-            path,
-            L"bPreserveNativeDarkness",
+        result.enabled = readBool(values, "Enabled", defaults.enabled);
+        result.preserveNativeDarkness = readBool(values,
+            "PreserveNativeDarkness",
             defaults.preserveNativeDarkness);
-        result.lightGamma = readFloat(path, L"fLightGamma", defaults.lightGamma);
-        result.colorGamma = readFloat(path, L"fColorGamma", defaults.colorGamma);
-        result.emitColorGamma = readFloat(path, L"fEmitColorGamma", defaults.emitColorGamma);
-        result.glowmapGamma = readFloat(path, L"fGlowmapGamma", defaults.glowmapGamma);
-        result.ambientGamma = readFloat(path, L"fAmbientGamma", defaults.ambientGamma);
-        result.fogGamma = readFloat(path, L"fFogGamma", defaults.fogGamma);
-        result.fogAlphaGamma = readFloat(path, L"fFogAlphaGamma", defaults.fogAlphaGamma);
-        result.effectGamma = readFloat(path, L"fEffectGamma", defaults.effectGamma);
-        result.effectAlphaGamma = readFloat(path, L"fEffectAlphaGamma", defaults.effectAlphaGamma);
-        result.skyGamma = readFloat(path, L"fSkyGamma", defaults.skyGamma);
-        result.waterGamma = readFloat(path, L"fWaterGamma", defaults.waterGamma);
-        result.volumetricLightingGamma = readFloat(
-            path,
-            L"fVolumetricLightingGamma",
+        result.lightGamma = readFloat(values, "LightGamma", defaults.lightGamma);
+        result.colorGamma = readFloat(values, "ColorGamma", defaults.colorGamma);
+        result.emitColorGamma = readFloat(values, "EmitColorGamma", defaults.emitColorGamma);
+        result.glowmapGamma = readFloat(values, "GlowmapGamma", defaults.glowmapGamma);
+        result.ambientGamma = readFloat(values, "AmbientGamma", defaults.ambientGamma);
+        result.fogGamma = readFloat(values, "FogGamma", defaults.fogGamma);
+        result.fogAlphaGamma = readFloat(values, "FogAlphaGamma", defaults.fogAlphaGamma);
+        result.effectGamma = readFloat(values, "EffectGamma", defaults.effectGamma);
+        result.effectAlphaGamma = readFloat(values, "EffectAlphaGamma", defaults.effectAlphaGamma);
+        result.skyGamma = readFloat(values, "SkyGamma", defaults.skyGamma);
+        result.waterGamma = readFloat(values, "WaterGamma", defaults.waterGamma);
+        result.volumetricLightingGamma = readFloat(values,
+            "VolumetricLightingGamma",
             defaults.volumetricLightingGamma);
-        result.vanillaDiffuseColorMultiplier = readFloat(
-            path,
-            L"fVanillaDiffuseColorMultiplier",
+        result.vanillaDiffuseColorMultiplier = readFloat(values,
+            "VanillaDiffuseColorMultiplier",
             defaults.vanillaDiffuseColorMultiplier);
-        result.directionalLightMultiplier = readFloat(
-            path,
-            L"fDirectionalLightMultiplier",
+        result.directionalLightMultiplier = readFloat(values,
+            "DirectionalLightMultiplier",
             defaults.directionalLightMultiplier);
-        result.pointLightMultiplier = readFloat(
-            path,
-            L"fPointLightMultiplier",
+        result.pointLightMultiplier = readFloat(values,
+            "PointLightMultiplier",
             defaults.pointLightMultiplier);
-        result.ambientMultiplier = readFloat(
-            path,
-            L"fAmbientMultiplier",
+        result.ambientMultiplier = readFloat(values,
+            "AmbientMultiplier",
             defaults.ambientMultiplier);
-        result.emitColorMultiplier = readFloat(
-            path,
-            L"fEmitColorMultiplier",
+        result.emitColorMultiplier = readFloat(values,
+            "EmitColorMultiplier",
             defaults.emitColorMultiplier);
-        result.glowmapMultiplier = readFloat(
-            path,
-            L"fGlowmapMultiplier",
+        result.glowmapMultiplier = readFloat(values,
+            "GlowmapMultiplier",
             defaults.glowmapMultiplier);
-        result.effectLightingMultiplier = readFloat(
-            path,
-            L"fEffectLightingMultiplier",
+        result.effectLightingMultiplier = readFloat(values,
+            "EffectLightingMultiplier",
             defaults.effectLightingMultiplier);
-        result.membraneEffectMultiplier = readFloat(
-            path,
-            L"fMembraneEffectMultiplier",
+        result.membraneEffectMultiplier = readFloat(values,
+            "MembraneEffectMultiplier",
             defaults.membraneEffectMultiplier);
-        result.otherEffectMultiplier = readFloat(
-            path,
-            L"fOtherEffectMultiplier",
+        result.otherEffectMultiplier = readFloat(values,
+            "OtherEffectMultiplier",
             defaults.otherEffectMultiplier);
 
         result = sanitize(result);
-        return master_settings::gate(path, result);
+        return master_settings::gate(values, result);
     }
 
     Settings loadSettings() noexcept
     {
-        const auto path = settings_path::resolveIniPath();
-        std::error_code pathError;
-        if (path.empty() ||
-            !std::filesystem::is_regular_file(path, pathError) ||
-            pathError) {
-            logging::info(
-                "Linear Lighting settings file is absent; using disabled defaults.");
-            return {};
-        }
-        const auto result = loadSettings(path);
+        const auto result = loadSettings(settings_file::File::get().current());
         logging::info(
-            "Linear Lighting settings loaded from '{}'; enabled={}.",
-            path.string(),
+            "Linear Lighting settings loaded; enabled={}.",
             result.enabled);
         return result;
-    }
-
-    bool saveSettings(const Settings& settings) noexcept
-    {
-        const auto path = settings_path::resolveIniPath();
-        if (!settings_path::ensureParentDirectory(path)) {
-            logging::error(
-                "CSAH settings directory is unavailable for '{}'.",
-                path.string());
-            return false;
-        }
-        const auto safe = sanitize(settings);
-        bool success = writeValue(path, L"bEnabled", safe.enabled ? L"1" : L"0");
-        success = writeValue(
-                      path,
-                      L"bPreserveNativeDarkness",
-                      safe.preserveNativeDarkness ? L"1" : L"0") &&
-            success;
-#define WRITE_SETTING(KEY, FIELD) \
-        success = writeFloat(path, KEY, safe.FIELD) && success
-        WRITE_SETTING(L"fLightGamma", lightGamma);
-        WRITE_SETTING(L"fColorGamma", colorGamma);
-        WRITE_SETTING(L"fEmitColorGamma", emitColorGamma);
-        WRITE_SETTING(L"fGlowmapGamma", glowmapGamma);
-        WRITE_SETTING(L"fAmbientGamma", ambientGamma);
-        WRITE_SETTING(L"fFogGamma", fogGamma);
-        WRITE_SETTING(L"fFogAlphaGamma", fogAlphaGamma);
-        WRITE_SETTING(L"fEffectGamma", effectGamma);
-        WRITE_SETTING(L"fEffectAlphaGamma", effectAlphaGamma);
-        WRITE_SETTING(L"fSkyGamma", skyGamma);
-        WRITE_SETTING(L"fWaterGamma", waterGamma);
-        WRITE_SETTING(L"fVolumetricLightingGamma", volumetricLightingGamma);
-        WRITE_SETTING(L"fVanillaDiffuseColorMultiplier", vanillaDiffuseColorMultiplier);
-        WRITE_SETTING(L"fDirectionalLightMultiplier", directionalLightMultiplier);
-        WRITE_SETTING(L"fPointLightMultiplier", pointLightMultiplier);
-        WRITE_SETTING(L"fAmbientMultiplier", ambientMultiplier);
-        WRITE_SETTING(L"fEmitColorMultiplier", emitColorMultiplier);
-        WRITE_SETTING(L"fGlowmapMultiplier", glowmapMultiplier);
-        WRITE_SETTING(L"fEffectLightingMultiplier", effectLightingMultiplier);
-        WRITE_SETTING(L"fMembraneEffectMultiplier", membraneEffectMultiplier);
-        WRITE_SETTING(L"fOtherEffectMultiplier", otherEffectMultiplier);
-#undef WRITE_SETTING
-        return success;
     }
 }

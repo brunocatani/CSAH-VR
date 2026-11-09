@@ -18,7 +18,7 @@ file(READ "${SHARED_SETTINGS_HEADER}" sharedSettingsHeader)
 
 string(JSON schemaVersion ERROR_VARIABLE jsonError
   GET "${manifest}" schemaVersion)
-if(NOT jsonError STREQUAL "NOTFOUND" OR NOT schemaVersion EQUAL 1)
+if(NOT jsonError STREQUAL "NOTFOUND" OR NOT schemaVersion EQUAL 2)
   message(FATAL_ERROR
     "CSAH PALM settings manifest is invalid: ${jsonError}")
 endif()
@@ -69,25 +69,27 @@ foreach(tabIndex RANGE 0 ${lastTab})
         string(JSON bindingType GET "${manifest}" ${controlPath} binding type)
         string(JSON bindingRoot GET "${manifest}" ${controlPath} binding root)
         string(JSON bindingPath GET "${manifest}" ${controlPath} binding path)
-        string(JSON bindingSection GET "${manifest}" ${controlPath} binding section)
+        string(JSON bindingTable GET "${manifest}" ${controlPath} binding table)
+        string(JSON bindingValue GET "${manifest}" ${controlPath} binding value)
         string(JSON bindingKey GET "${manifest}" ${controlPath} binding key)
-        if((bindingKey STREQUAL "bEnabled" OR controlId IN_LIST mainFeatureGates)
+        if((bindingKey STREQUAL "Enabled" OR controlId IN_LIST mainFeatureGates)
            AND NOT tabId STREQUAL "features")
           message(FATAL_ERROR
             "Main feature toggle '${controlId}' must stay on a Features page, not '${tabId}'")
         endif()
-        set(bindingId "${bindingRoot}/${bindingPath}/${bindingSection}/${bindingKey}")
+        set(bindingId "${bindingRoot}/${bindingPath}/${bindingTable}/${bindingKey}")
         if(bindingId IN_LIST bindingIds)
           message(FATAL_ERROR "PALM setting has duplicate controls: '${bindingId}'")
         endif()
         list(APPEND bindingIds "${bindingId}")
-        if(NOT bindingType STREQUAL "ini" OR
+        if(NOT bindingType STREQUAL "toml" OR
            NOT bindingRoot STREQUAL "documents" OR
            NOT bindingPath STREQUAL
-             "Mods_Config/CSAH/CSAH.ini" OR
-           bindingSection STREQUAL "" OR bindingKey STREQUAL "")
+             "Mods_Config/CSAH/CSAH.toml" OR
+           bindingTable STREQUAL "" OR bindingKey STREQUAL "" OR
+           NOT bindingValue MATCHES "^(boolean|integer|float)$")
           message(FATAL_ERROR
-            "PALM settings control '${controlId}' lost its shared-INI ownership contract")
+            "PALM settings control '${controlId}' lost its CSAH.toml ownership contract")
         endif()
       endforeach()
     endforeach()

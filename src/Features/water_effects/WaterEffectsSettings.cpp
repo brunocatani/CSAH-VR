@@ -1,41 +1,23 @@
 #include "Features/water_effects/WaterEffectsSettings.h"
-#include "Features/contact_shadows/ContactShadowSettingsStore.h"
 #include "settings/MasterSettings.h"
-#include "support/SettingsPath.h"
-#include <Windows.h>
-#include <iterator>
-#include <string_view>
-#include <cstdlib>
 namespace csah::water_effects
 {
-    Settings loadSettings(const std::filesystem::path& path) noexcept
+    Settings loadSettings(const settings_file::Values& values) noexcept
     {
+        constexpr std::string_view kSection = "WaterEffects";
         Settings settings;
-        if(path.empty()) return settings;
-        wchar_t value[64]{};
-        auto count=GetPrivateProfileStringW(L"WaterEffects",L"bEnabled",L"",value,static_cast<DWORD>(std::size(value)),path.c_str());
-        if(count) settings.enabled=contact_shadows::parseBoolean(std::wstring_view(value,count)).value_or(settings.enabled);
-        count=GetPrivateProfileStringW(L"WaterEffects",L"bEnableParallax",L"",value,static_cast<DWORD>(std::size(value)),path.c_str());
-        if(count) settings.parallax=contact_shadows::parseBoolean(std::wstring_view(value,count)).value_or(settings.parallax);
-        count=GetPrivateProfileStringW(L"WaterEffects",L"bEnableCaustics",L"",value,static_cast<DWORD>(std::size(value)),path.c_str());
-        if(count) settings.caustics=contact_shadows::parseBoolean(std::wstring_view(value,count)).value_or(settings.caustics);
-        count=GetPrivateProfileStringW(L"WaterEffects",L"bEnableReflections",L"",value,static_cast<DWORD>(std::size(value)),path.c_str());
-        if(count) settings.reflections=contact_shadows::parseBoolean(std::wstring_view(value,count)).value_or(settings.reflections);
-        count=GetPrivateProfileStringW(L"WaterEffects",L"fParallaxScale",L"",value,static_cast<DWORD>(std::size(value)),path.c_str());
-        if(count) {wchar_t* end{};auto number=std::wcstof(value,&end);if(end!=value && *end==0) settings.parallaxScale=number;}
-        count=GetPrivateProfileStringW(L"WaterEffects",L"fCausticStrength",L"",value,static_cast<DWORD>(std::size(value)),path.c_str());
-        if(count) {wchar_t* end{};auto number=std::wcstof(value,&end);if(end!=value && *end==0) settings.causticStrength=number;}
-        count=GetPrivateProfileStringW(L"WaterEffects",L"fReflectionStrength",L"",value,static_cast<DWORD>(std::size(value)),path.c_str());
-        if(count) {wchar_t* end{};auto number=std::wcstof(value,&end);if(end!=value && *end==0) settings.reflectionStrength=number;}
-        count=GetPrivateProfileStringW(L"WaterEffects",L"fReflectionDistance",L"",value,static_cast<DWORD>(std::size(value)),path.c_str());
-        if(count) {wchar_t* end{};auto number=std::wcstof(value,&end);if(end!=value && *end==0) settings.reflectionDistance=number;}
-        count=GetPrivateProfileStringW(L"WaterEffects",L"bEnableScreenSpaceReflections",L"",value,static_cast<DWORD>(std::size(value)),path.c_str());
-        if(count) settings.screenReflections=contact_shadows::parseBoolean(std::wstring_view(value,count)).value_or(settings.screenReflections);
-        count=GetPrivateProfileStringW(L"WaterEffects",L"fReflectionFlatness",L"",value,static_cast<DWORD>(std::size(value)),path.c_str());
-        if(count) {wchar_t* end{};auto number=std::wcstof(value,&end);if(end!=value && *end==0) settings.reflectionFlatness=number;}
-        count=GetPrivateProfileStringW(L"WaterEffects",L"fReflectionRoughness",L"",value,static_cast<DWORD>(std::size(value)),path.c_str());
-        if(count) {wchar_t* end{};auto number=std::wcstof(value,&end);if(end!=value && *end==0) settings.reflectionRoughness=number;}
-        return master_settings::gate(path,sanitize(settings));
+        settings.enabled = values.boolean(kSection, "Enabled", settings.enabled);
+        settings.parallax = values.boolean(kSection, "EnableParallax", settings.parallax);
+        settings.caustics = values.boolean(kSection, "EnableCaustics", settings.caustics);
+        settings.reflections = values.boolean(kSection, "EnableReflections", settings.reflections);
+        settings.parallaxScale = values.number(kSection, "ParallaxScale", settings.parallaxScale);
+        settings.causticStrength = values.number(kSection, "CausticStrength", settings.causticStrength);
+        settings.reflectionStrength = values.number(kSection, "ReflectionStrength", settings.reflectionStrength);
+        settings.reflectionDistance = values.number(kSection, "ReflectionDistance", settings.reflectionDistance);
+        settings.screenReflections = values.boolean(kSection, "EnableScreenSpaceReflections", settings.screenReflections);
+        settings.reflectionFlatness = values.number(kSection, "ReflectionFlatness", settings.reflectionFlatness);
+        settings.reflectionRoughness = values.number(kSection, "ReflectionRoughness", settings.reflectionRoughness);
+        return master_settings::gate(values, sanitize(settings));
     }
-    Settings loadSettings() noexcept {return loadSettings(settings_path::resolveIniPath());}
+    Settings loadSettings() noexcept { return loadSettings(settings_file::File::get().current()); }
 }

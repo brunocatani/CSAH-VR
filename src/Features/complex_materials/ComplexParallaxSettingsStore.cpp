@@ -1,15 +1,10 @@
 #include "Features/complex_materials/ComplexParallaxSettingsStore.h"
+#include "settings/SettingsFile.h"
 
 #include "support/Logger.h"
-#include "support/SettingsPath.h"
 #include "settings/MasterSettings.h"
 
-#include <Windows.h>
-
-#include <cerrno>
 #include <cmath>
-#include <cwchar>
-#include <filesystem>
 #include <string>
 #include <string_view>
 
@@ -17,117 +12,48 @@ namespace csah::complex_materials
 {
     namespace
     {
-        constexpr auto kSection = L"ComplexMaterials";
+        constexpr std::string_view kSection = "ComplexMaterials";
 
         [[nodiscard]] bool readBool(
-            const std::filesystem::path& path,
-            const wchar_t* key,
+            const settings_file::Values& values,
+            std::string_view key,
             bool fallback) noexcept
         {
-            return GetPrivateProfileIntW(
-                       kSection,
-                       key,
-                       fallback ? 1 : 0,
-                       path.c_str()) != 0;
+            return values.boolean(kSection, key, fallback);
         }
 
         [[nodiscard]] std::int32_t readInt(
-            const std::filesystem::path& path,
-            const wchar_t* key,
+            const settings_file::Values& values,
+            std::string_view key,
             std::int32_t fallback) noexcept
         {
-            return static_cast<std::int32_t>(GetPrivateProfileIntW(
-                kSection,
-                key,
-                fallback,
-                path.c_str()));
+            return values.integer(kSection, key, fallback);
         }
 
         [[nodiscard]] float readFloat(
-            const std::filesystem::path& path,
-            const wchar_t* key,
+            const settings_file::Values& values,
+            std::string_view key,
             float fallback) noexcept
         {
-            wchar_t fallbackText[64]{};
-            _snwprintf_s(
-                fallbackText,
-                _countof(fallbackText),
-                _TRUNCATE,
-                L"%.9g",
-                static_cast<double>(fallback));
-            wchar_t valueText[64]{};
-            GetPrivateProfileStringW(
-                kSection,
-                key,
-                fallbackText,
-                valueText,
-                static_cast<DWORD>(_countof(valueText)),
-                path.c_str());
-            wchar_t* end{};
-            errno = 0;
-            const auto value = std::wcstof(valueText, &end);
-            return errno == ERANGE || end == valueText || *end != L'\0' ||
-                    !std::isfinite(value) ?
-                fallback :
-                value;
-        }
-
-        [[nodiscard]] bool writeValue(
-            const std::filesystem::path& path,
-            const wchar_t* key,
-            std::wstring_view value) noexcept
-        {
-            return WritePrivateProfileStringW(
-                       kSection,
-                       key,
-                       value.data(),
-                       path.c_str()) != FALSE;
-        }
-
-        [[nodiscard]] bool writeFloat(
-            const std::filesystem::path& path,
-            const wchar_t* key,
-            float value) noexcept
-        {
-            wchar_t text[64]{};
-            _snwprintf_s(
-                text,
-                _countof(text),
-                _TRUNCATE,
-                L"%.9g",
-                static_cast<double>(value));
-            return writeValue(path, key, text);
+            return values.number(kSection, key, fallback);
         }
     }
 
-    Settings loadSettings(const std::filesystem::path& path) noexcept
+    Settings loadSettings(const settings_file::Values& values) noexcept
     {
         const Settings defaults{};
         auto result = defaults;
-        std::error_code error;
-        if (path.empty() || !std::filesystem::is_regular_file(path, error) ||
-            error) {
-            return result;
-        }
-
-        result.environmentResponseEnabled = readBool(
-            path,
-            L"bEnableEnvironmentResponse",
+        result.environmentResponseEnabled = readBool(values,
+            "EnableEnvironmentResponse",
             defaults.environmentResponseEnabled);
-        result.parallaxEnabled = readBool(
-            path, L"bEnableParallax", defaults.parallaxEnabled);
-        result.parallaxQuality = readInt(
-            path, L"iParallaxQuality", defaults.parallaxQuality);
-        result.parallaxDepth = readFloat(
-            path, L"fParallaxDepth", defaults.parallaxDepth);
-        result.grazingClamp = readFloat(
-            path, L"fParallaxGrazingClamp", defaults.grazingClamp);
-        result.fadeStart = readFloat(
-            path, L"fParallaxFadeStart", defaults.fadeStart);
-        result.fadeEnd = readFloat(
-            path, L"fParallaxFadeEnd", defaults.fadeEnd);
+        result.parallaxEnabled = readBool(values, "EnableParallax", defaults.parallaxEnabled);
+        result.parallaxQuality = readInt(values, "ParallaxQuality", defaults.parallaxQuality);
+        result.parallaxDepth = readFloat(values, "ParallaxDepth", defaults.parallaxDepth);
+        result.grazingClamp = readFloat(values, "ParallaxGrazingClamp", defaults.grazingClamp);
+        result.fadeStart = readFloat(values, "ParallaxFadeStart", defaults.fadeStart);
+        result.fadeEnd = readFloat(values, "ParallaxFadeEnd", defaults.fadeEnd);
         result = sanitize(result);
-        if (!master_settings::enabled(path)) {
+        if (!master_settings::enabled(values)) {
             result.environmentResponseEnabled = false;
             result.parallaxEnabled = false;
         }
@@ -136,59 +62,12 @@ namespace csah::complex_materials
 
     Settings loadSettings() noexcept
     {
-        const auto path = settings_path::resolveIniPath();
-        std::error_code error;
-        if (path.empty() || !std::filesystem::is_regular_file(path, error) ||
-            error) {
-            logging::info(
-                "Complex Materials settings file is absent; using fail-closed environment response and parallax-enabled defaults.");
-            return {};
-        }
-        const auto result = loadSettings(path);
+        const auto result = loadSettings(settings_file::File::get().current());
         logging::info(
-            "Complex Materials settings loaded from '{}'; environment response enabled={}, parallax enabled={}, quality={}.",
-            path.string(),
+            "Complex Materials settings loaded; environment response enabled={}, parallax enabled={}, quality={}.",
             result.environmentResponseEnabled,
             result.parallaxEnabled,
             result.parallaxQuality);
         return result;
-    }
-
-    bool saveSettings(const Settings& settings) noexcept
-    {
-        const auto path = settings_path::resolveIniPath();
-        if (!settings_path::ensureParentDirectory(path)) {
-            logging::error(
-                "CSAH settings directory is unavailable for '{}'.",
-                path.string());
-            return false;
-        }
-        const auto safe = sanitize(settings);
-        bool success = writeValue(
-            path,
-            L"bEnableEnvironmentResponse",
-            safe.environmentResponseEnabled ? L"1" : L"0");
-        success = writeValue(
-            path,
-            L"bEnableParallax",
-            safe.parallaxEnabled ? L"1" : L"0") && success;
-        success = writeValue(
-                      path,
-                      L"iParallaxQuality",
-                      std::to_wstring(safe.parallaxQuality)) &&
-            success;
-        success = writeFloat(
-                      path, L"fParallaxDepth", safe.parallaxDepth) &&
-            success;
-        success = writeFloat(
-                      path, L"fParallaxGrazingClamp", safe.grazingClamp) &&
-            success;
-        success = writeFloat(
-                      path, L"fParallaxFadeStart", safe.fadeStart) &&
-            success;
-        success = writeFloat(
-                      path, L"fParallaxFadeEnd", safe.fadeEnd) &&
-            success;
-        return success;
     }
 }

@@ -291,18 +291,18 @@ endif()
 
 
 foreach(required IN ITEMS
-    "bEnabled"
-    "iMode"
-    "iModelPreset"
-    "bPostSharpening"
-    "bMotionVectorRepair"
-    "fSharpness"
-    "fCenterWidth"
-    "fCenterHeight"
-    "fCenterFeatherPixels"
-    "bVisualizeCenter"
-    "bHardResetOnLoad"
-    "bVerboseDiagnostics")
+    "Enabled"
+    "Mode"
+    "ModelPreset"
+    "PostSharpening"
+    "MotionVectorRepair"
+    "Sharpness"
+    "CenterWidth"
+    "CenterHeight"
+    "CenterFeatherPixels"
+    "VisualizeCenter"
+    "HardResetOnLoad"
+    "VerboseDiagnostics")
   string(FIND "${settings}" "${required}" found)
   if(found EQUAL -1)
     message(FATAL_ERROR

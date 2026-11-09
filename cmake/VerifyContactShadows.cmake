@@ -369,14 +369,13 @@ if(NOT drawScopeCount EQUAL 4)
 endif()
 
 foreach(required IN ITEMS
-    "bEnabled"
-    "bFoveated"
-    "fStrength"
-    "fMaxDistance"
-    "fFadeDistance"
-    "fThickness"
-    "iSampleCount"
-    "parseBoolean")
+    "Enabled"
+    "Foveated"
+    "Strength"
+    "MaxDistance"
+    "FadeDistance"
+    "Thickness"
+    "SampleCount")
   string(FIND
     "${settingsHeader}${settingsStoreSource}${settingsStoreHeader}"
     "${required}" found)
@@ -389,14 +388,14 @@ endforeach()
 foreach(required IN ITEMS
     "\"id\": \"contact-shadows\""
     "\"id\": \"contact-foveated\""
-    "\"section\": \"ContactShadows\""
-    "\"key\": \"bEnabled\""
-    "\"key\": \"bFoveated\""
-    "\"key\": \"fStrength\""
-    "\"key\": \"fMaxDistance\""
-    "\"key\": \"fFadeDistance\""
-    "\"key\": \"fThickness\""
-    "\"key\": \"iSampleCount\"")
+    "\"table\": \"ContactShadows\""
+    "\"key\": \"Enabled\""
+    "\"key\": \"Foveated\""
+    "\"key\": \"Strength\""
+    "\"key\": \"MaxDistance\""
+    "\"key\": \"FadeDistance\""
+    "\"key\": \"Thickness\""
+    "\"key\": \"SampleCount\"")
   string(FIND "${palmSettings}" "${required}" found)
   if(found EQUAL -1)
     message(FATAL_ERROR

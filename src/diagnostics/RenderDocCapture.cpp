@@ -4,6 +4,7 @@
 #include "../../extern/RenderDoc/renderdoc_app.h"
 #include <RobCoPALM/Client.h>
 #include <RobCoPALM/Developer.h>
+#include <RPS/Settings/Store.h>
 
 #include <array>
 #include <filesystem>
@@ -42,16 +43,18 @@ namespace csah::diagnostics
         }
     }
 
-    void initializeDeveloperCapture(const wchar_t* csahIniPath) noexcept
+    void initializeDeveloperCapture(const bool renderDocCapture, const std::filesystem::path& settingsDirectory) noexcept
     {
         try {
-            if(!csahIniPath || !*csahIniPath)return;
             // RenderDoc disables NVAPI, so Streamline then rejects DLSS/DLAA.
             // The backend therefore needs its own off-by-default switch: PALM
             // Developer mode alone must never cost the player DLAA.
-            if(GetPrivateProfileIntW(L"Diagnostics",L"bRenderDocCapture",0,csahIniPath)==0)return;
-            const auto palmIni=std::filesystem::path(csahIniPath).parent_path().parent_path()/L"RobCo_PALM"/L"PALM.ini";
-            if(GetPrivateProfileIntW(L"Developer",L"bEnabled",0,palmIni.c_str())==0)return;
+            if(!renderDocCapture || settingsDirectory.empty())return;
+            // Only reads PALM.toml; PALM alone organizes and writes it.
+            RPS::Settings::Store palm({settingsDirectory.parent_path()/L"RobCo_PALM","RobCo PALM","PALM.toml",{},{},{}},
+                {{"Developer","Enabled","","",RPS::Settings::Group::Player,RPS::Settings::ValueType::Boolean,"false"}});
+            palm.load(false);
+            if(const auto* developer=palm.find("Developer","Enabled");!developer || developer->value!="true")return;
             std::array<wchar_t,1024> programFiles{};
             const auto count=GetEnvironmentVariableW(L"ProgramFiles",programFiles.data(),static_cast<DWORD>(programFiles.size()));
             if(!count || count>=programFiles.size()) {logging::warn("Developer GPU capture could not resolve the installed Program Files directory.");return;}
@@ -77,10 +80,10 @@ namespace csah::diagnostics
         }catch(...){logging::warn("CSAH Developer action registration failed.");}
     }
 
-    void serviceDeveloperCapture(const wchar_t* csahIniPath) noexcept
+    void serviceDeveloperCapture(const wchar_t* settingsPath) noexcept
     {
         if(state().wheelRequest.exchange(false,std::memory_order_acq_rel))
-            (void)requestRenderDocCapture(L"F:/fo4dev/misc/CSAH-lighting-captures",csahIniPath);
+            (void)requestRenderDocCapture(L"F:/fo4dev/misc/CSAH-lighting-captures",settingsPath);
     }
 
     bool initializeRenderDocCapture(const wchar_t* modulePath) noexcept
@@ -109,7 +112,7 @@ namespace csah::diagnostics
             api->SetCaptureKeys(nullptr, 0);
             api->SetFocusToggleKeys(nullptr, 0);
             api->MaskOverlayBits(0, 0);
-            logging::warn("RenderDoc capture backend loaded by CSAH.ini [Diagnostics] bRenderDocCapture=1 with PALM Developer mode; RenderDoc disables NVAPI, so DLAA/DLSS stay unavailable this session. Set bRenderDocCapture=0 and restart to unload it.");
+            logging::warn("RenderDoc capture backend loaded by CSAH.toml [Diagnostics] RenderDocCapture = true with PALM Developer mode; RenderDoc disables NVAPI, so DLAA/DLSS stay unavailable this session. Set RenderDocCapture = false and restart to unload it.");
             return true;
         } catch (...) {
             logging::warn("GPU data capture startup could not load the configured backend.");
@@ -167,7 +170,7 @@ namespace csah::diagnostics
                 return false;
             }
             if (settingsPath && *settingsPath) {
-                std::filesystem::copy_file(settingsPath, prefix + L".settings.ini", error);
+                std::filesystem::copy_file(settingsPath, prefix + L".settings.toml", error);
                 if (error) {
                     logging::warn("GPU data capture rejected: could not save the settings sidecar: {}.", error.message());
                     return false;

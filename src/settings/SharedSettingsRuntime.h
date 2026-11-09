@@ -159,7 +159,7 @@ namespace csah::shared_settings
         };
     }
 
-    // Starts one bounded monitor for the shared CSAH INI. The
+    // Starts one bounded monitor for CSAH.toml. The
     // controller is process-lifetime owned, performs no work on render hooks,
     // and coalesces multi-key writers before publishing settings.
     [[nodiscard]] bool startMonitor() noexcept;

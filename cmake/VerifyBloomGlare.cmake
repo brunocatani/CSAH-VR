@@ -77,15 +77,14 @@ foreach(required IN ITEMS
 endforeach()
 
 foreach(required IN ITEMS
-    "kBloomSection = L\"Bloom\""
-    "kGlareSection = L\"PhysicalGlare\""
-    "L\"iFftResolution\""
-    "L\"iApertureMode\""
-    "L\"fKernelScale\""
-    "settings_path::resolveIniPath()")
+    "kBloomSection = \"Bloom\""
+    "kGlareSection = \"PhysicalGlare\""
+    "\"FftResolution\""
+    "\"ApertureMode\""
+    "\"KernelScale\"")
   string(FIND "${settingsStore}" "${required}" found)
   if(found EQUAL -1)
-    message(FATAL_ERROR "Bloom/Glare INI regression: missing '${required}'")
+    message(FATAL_ERROR "Bloom/Glare settings-file regression: missing '${required}'")
   endif()
 endforeach()
 
@@ -198,7 +197,7 @@ endforeach()
 foreach(required IN ITEMS
     "bloom_glare::Settings bloomGlare"
     "bool bloomGlare"
-    "bloom_glare::loadSettings(path)"
+    "bloom_glare::loadSettings(values)"
     "bloom_glare::Runtime::get().applySettings(next.bloomGlare)")
   string(FIND "${sharedSettings}${sharedSettingsHeader}" "${required}" found)
   if(found EQUAL -1)
@@ -217,11 +216,11 @@ endforeach()
 
 foreach(required IN ITEMS
     "\"id\": \"bloom\""
-    "\"section\": \"Bloom\""
+    "\"table\": \"Bloom\""
     "\"id\": \"physical-glare\""
-    "\"section\": \"PhysicalGlare\""
-    "\"key\": \"iFftResolution\""
-    "\"key\": \"fChromaticSpread\"")
+    "\"table\": \"PhysicalGlare\""
+    "\"key\": \"FftResolution\""
+    "\"key\": \"ChromaticSpread\"")
   string(FIND "${palmSettings}" "${required}" found)
   if(found EQUAL -1)
     message(FATAL_ERROR "Bloom/Glare PALM settings regression: missing '${required}'")

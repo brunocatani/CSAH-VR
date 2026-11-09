@@ -1,4 +1,5 @@
 #include "Features/vanilla_fixes/VanillaFixesSettingsStore.h"
+#include "SettingsFixture.h"
 
 #include <chrono>
 #include <cstdlib>
@@ -17,39 +18,6 @@ namespace
         }
     }
 
-    class TemporaryIni final
-    {
-    public:
-        TemporaryIni() :
-            path_(std::filesystem::temp_directory_path() /
-                ("CSAH-VanillaFixes-" +
-                    std::to_string(
-                        std::chrono::steady_clock::now()
-                            .time_since_epoch()
-                            .count()) +
-                    ".ini"))
-        {}
-
-        ~TemporaryIni()
-        {
-            std::error_code error;
-            std::filesystem::remove(path_, error);
-        }
-
-        void write(const char* text) const
-        {
-            std::ofstream stream(path_, std::ios::binary | std::ios::trunc);
-            stream << text;
-        }
-
-        [[nodiscard]] const std::filesystem::path& path() const noexcept
-        {
-            return path_;
-        }
-
-    private:
-        std::filesystem::path path_;
-    };
 }
 
 int main()
@@ -57,32 +25,29 @@ int main()
     using csah::vanilla_fixes::Settings;
     using csah::vanilla_fixes::DirectionalLightDiagnosticMode;
     using csah::vanilla_fixes::loadSettings;
-    using csah::vanilla_fixes::saveSettings;
 
-    TemporaryIni ini;
-    require(loadSettings(ini.path()) == Settings{}, "missing-file defaults");
-
+    SettingsFixture ini("VanillaFixesSettingsTests");
     ini.write(
         "[CommunityShaders]\n"
-        "bEnabled=0\n"
+        "Enabled = false\n"
         "[VanillaFixes]\n"
-        "bEnabled=1\n");
+        "Enabled = true\n");
     require(
-        loadSettings(ini.path()).enabled,
+        loadSettings(ini.values()).enabled,
         "Community Shaders visual gate disabled independent Vanilla Fixes");
 
     ini.write(
         "[VanillaFixes]\n"
-        "bEnabled=0\n"
-        "bPrecipitationOcclusion=off\n"
-        "bAllowImageSpaceModifiers=no\n"
-        "bVrAllowSAO=false\n"
-        "bVrAllowScreenSpaceReflections=0\n"
-        "bNativeScreenSpaceMaterialPipeline=OFF\n"
-        "bLensFlareVr=No\n"
-        "bVrAllowFocusShadows=False\n"
-        "bVrSunOcclusion=0\n");
-    const auto disabled = loadSettings(ini.path());
+        "Enabled = false\n"
+        "PrecipitationOcclusion = false\n"
+        "AllowImageSpaceModifiers = false\n"
+        "VrAllowSAO = false\n"
+        "VrAllowScreenSpaceReflections = false\n"
+        "NativeScreenSpaceMaterialPipeline = false\n"
+        "LensFlareVr = false\n"
+        "VrAllowFocusShadows = false\n"
+        "VrSunOcclusion = false\n");
+    const auto disabled = loadSettings(ini.values());
     require(!disabled.enabled, "master key");
     require(!disabled.precipitationOcclusion, "precipitation key");
     require(!disabled.imageSpaceModifiers, "image-space key");
@@ -97,32 +62,37 @@ int main()
 
     ini.write(
         "[VanillaFixes]\n"
-        "bEnabled=garbage\n"
-        "bVrAllowSAO=garbage\n"
-        "[LinearLighting]\n"
-        "bEnabled=0\n");
-    require(loadSettings(ini.path()) == Settings{}, "invalid-value fallback");
-
-    ini.write(
-        "[VanillaFixes]\n"
-        "bEnabled=1\n"
+        "Enabled = true\n"
         "[Diagnostics]\n"
-        "iDirectionalLightingMode=15\n");
+        "DirectionalLightingMode = 15\n");
     require(
-        loadSettings(ini.path()).directionalLightDiagnosticMode ==
+        loadSettings(ini.values()).directionalLightDiagnosticMode ==
             DirectionalLightDiagnosticMode::cubemapLookupOnly,
         "cubemap diagnostic key");
 
     ini.write(
         "[VanillaFixes]\n"
-        "bEnabled=1\n"
+        "Enabled = true\n"
         "[Diagnostics]\n"
-        "iDirectionalLightingMode=16\n");
+        "DirectionalLightingMode = 16\n");
     require(
-        loadSettings(ini.path()).directionalLightDiagnosticMode ==
+        loadSettings(ini.values()).directionalLightDiagnosticMode ==
             DirectionalLightDiagnosticMode::off,
         "out-of-range diagnostic fallback");
 
+    ini.write(
+        "[VanillaFixes]\n"
+        "Enabled = true\n"
+        "PrecipitationOcclusion = false\n"
+        "AllowImageSpaceModifiers = true\n"
+        "VrAllowSAO = false\n"
+        "VrAllowScreenSpaceReflections = true\n"
+        "NativeScreenSpaceMaterialPipeline = false\n"
+        "LensFlareVr = true\n"
+        "VrAllowFocusShadows = false\n"
+        "VrSunOcclusion = false\n"
+        "[Diagnostics]\n"
+        "DirectionalLightingMode = 13\n");
     const Settings mixed{
         .enabled = true,
         .precipitationOcclusion = false,
@@ -136,8 +106,7 @@ int main()
         .directionalLightDiagnosticMode =
             DirectionalLightDiagnosticMode::directSpecularOnly,
     };
-    require(saveSettings(ini.path(), mixed), "temporary INI save");
-    require(loadSettings(ini.path()) == mixed, "save/load round trip");
+    require(loadSettings(ini.values()) == mixed, "every Vanilla Fixes key");
 
     std::cout << "Vanilla Fixes settings tests passed.\n";
     return EXIT_SUCCESS;

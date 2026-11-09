@@ -1,4 +1,5 @@
 #include "Features/dlaa/DlaaSettingsStore.h"
+#include "SettingsFixture.h"
 
 #include <chrono>
 #include <cmath>
@@ -19,39 +20,6 @@ namespace
         return condition;
     }
 
-    class TemporaryIni final
-    {
-    public:
-        TemporaryIni() :
-            path_(std::filesystem::temp_directory_path() /
-                ("CSAH-Upscaling-" +
-                    std::to_string(
-                        std::chrono::steady_clock::now()
-                            .time_since_epoch()
-                            .count()) +
-                    ".ini"))
-        {}
-
-        ~TemporaryIni()
-        {
-            std::error_code error;
-            std::filesystem::remove(path_, error);
-        }
-
-        void write(const char* text) const
-        {
-            std::ofstream stream(path_, std::ios::binary | std::ios::trunc);
-            stream << text;
-        }
-
-        [[nodiscard]] const std::filesystem::path& path() const noexcept
-        {
-            return path_;
-        }
-
-    private:
-        std::filesystem::path path_;
-    };
 }
 
 int main()
@@ -185,25 +153,25 @@ int main()
             false),
         "DLSS rejected an actively scaled render viewport");
 
-    TemporaryIni ini;
+    SettingsFixture ini("UpscalingSettingsTests");
     ini.write(
         "[CommunityShaders]\n"
-        "bEnabled=0\n"
+        "Enabled = false\n"
         "[DLAA]\n"
-        "bEnabled=1\n"
-        "iMode=2\n");
-    const auto independent = loadSettings(ini.path());
+        "Enabled = true\n"
+        "Mode = 2\n");
+    const auto independent = loadSettings(ini.values());
     valid &= expect(
         independent.enabled && independent.mode == Mode::dlssBalanced,
         "Community Shaders visual gate disabled independent DLAA/DLSS");
 
     ini.write(
         "[CommunityShaders]\n"
-        "bEnabled=1\n"
+        "Enabled = true\n"
         "[DLAA]\n"
-        "bEnabled=0\n");
+        "Enabled = false\n");
     valid &= expect(
-        !loadSettings(ini.path()).enabled,
+        !loadSettings(ini.values()).enabled,
         "DLAA/DLSS ignored its independent master gate");
     return valid ? 0 : 1;
 }

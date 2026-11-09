@@ -41,7 +41,7 @@
 #include "settings/DiagnosticsSettings.h"
 #include "settings/MasterSettings.h"
 #include "support/Logger.h"
-#include "support/SettingsPath.h"
+#include "settings/SettingsFile.h"
 
 #include <atomic>
 #include <chrono>
@@ -60,7 +60,7 @@ namespace csah::shared_settings
         using namespace std::chrono_literals;
 
         constexpr auto kPollInterval = 200ms;
-        constexpr std::uintmax_t kMaximumIniBytes = 1024u * 1024u;
+        constexpr std::uintmax_t kMaximumFileBytes = 1024u * 1024u;
         constexpr std::uint32_t kRequiredStableObservations = 2;
 
         struct FileSignature final
@@ -87,42 +87,42 @@ namespace csah::shared_settings
             const auto writeTime =
                 std::filesystem::last_write_time(path, timeError);
             const auto size = std::filesystem::file_size(path, sizeError);
-            if (timeError || sizeError || size > kMaximumIniBytes) {
+            if (timeError || sizeError || size > kMaximumFileBytes) {
                 return std::nullopt;
             }
             return FileSignature{ .writeTime = writeTime, .size = size };
         }
 
         [[nodiscard]] Snapshot loadSnapshot(
-            const std::filesystem::path& path) noexcept
+            const settings_file::Values& values) noexcept
         {
             return {
-                .masterEnabled = master_settings::enabled(path),
-                .diagnostics = diagnostics_settings::load(path),
-                .linearLighting = linear_lighting::loadSettings(path),
-                .dlaa = dlaa::loadSettings(path),
+                .masterEnabled = master_settings::enabled(values),
+                .diagnostics = diagnostics_settings::load(values),
+                .linearLighting = linear_lighting::loadSettings(values),
+                .dlaa = dlaa::loadSettings(values),
                 .filmicTonemapping =
-                    filmic_tonemapping::loadSettings(path),
-                .bloomGlare = bloom_glare::loadSettings(path),
-                .ibl = ibl::loadSettings(path),
+                    filmic_tonemapping::loadSettings(values),
+                .bloomGlare = bloom_glare::loadSettings(values),
+                .ibl = ibl::loadSettings(values),
                 .complexMaterials =
-                    complex_materials::loadSettings(path),
-                .contactShadows = contact_shadows::loadSettings(path),
-                .basicWetness = basic_wetness::loadSettings(path),
-                .lodBlending = lod_blending::loadSettings(path),
-                .terrainVariation = terrain_variation::loadSettings(path),
-                .screenSpaceGI = screen_space_gi::loadSettings(path),
-                .waterEffects = water_effects::loadSettings(path),
-                .terrainShadows = terrain_shadows::loadSettings(path),
-                .inverseSquare = inverse_square::loadSettings(path),
-                .cloudShadows = cloud_shadows::loadSettings(path),
+                    complex_materials::loadSettings(values),
+                .contactShadows = contact_shadows::loadSettings(values),
+                .basicWetness = basic_wetness::loadSettings(values),
+                .lodBlending = lod_blending::loadSettings(values),
+                .terrainVariation = terrain_variation::loadSettings(values),
+                .screenSpaceGI = screen_space_gi::loadSettings(values),
+                .waterEffects = water_effects::loadSettings(values),
+                .terrainShadows = terrain_shadows::loadSettings(values),
+                .inverseSquare = inverse_square::loadSettings(values),
+                .cloudShadows = cloud_shadows::loadSettings(values),
                 .volumetricLighting =
-                    volumetric_lighting::loadSettings(path),
-                .vanillaFixes = vanilla_fixes::loadSettings(path),
-                .nativeShadows = native_shadows::loadSettings(path),
-                .pbr = pbr::loadSettings(path),
-                .skylighting = skylighting::loadSettings(path),
-                .skySync = sky_sync::loadSettings(path),
+                    volumetric_lighting::loadSettings(values),
+                .vanillaFixes = vanilla_fixes::loadSettings(values),
+                .nativeShadows = native_shadows::loadSettings(values),
+                .pbr = pbr::loadSettings(values),
+                .skylighting = skylighting::loadSettings(values),
+                .skySync = sky_sync::loadSettings(values),
             };
         }
 
@@ -217,12 +217,12 @@ namespace csah::shared_settings
                     return true;
                 }
 
-                configPath_ = settings_path::resolveIniPath();
+                configPath_ = settings_file::File::get().path();
                 if (configPath_.empty()) {
                     started_.store(false, std::memory_order_release);
                     return false;
                 }
-                active_ = loadSnapshot(configPath_);
+                active_ = loadSnapshot(settings_file::File::get().current());
                 render::GpuTimingProfiler::setOnDemandGroups(
                     active_.diagnostics.gpuProfilingGroups | (active_.diagnostics.measureStereoSharing ? 8u : 0u));
                 diagnostics::stereo_measurement::Runtime::get().setEnabled(active_.diagnostics.measureStereoSharing);
@@ -247,7 +247,7 @@ namespace csah::shared_settings
                 }
 
                 logging::info(
-                    "Shared CSAH INI monitor started for '{}'; the visual suite, DLAA/DLSS, Vanilla Fixes, and Native Shadows retain independent master gates, with Native Shadows/Vanilla Fixes master changes restart-only.",
+                    "CSAH.toml monitor started for '{}'; the visual suite, DLAA/DLSS, Vanilla Fixes, and Native Shadows retain independent master gates, with Native Shadows/Vanilla Fixes master changes restart-only.",
                     configPath_.string());
                 return true;
             }
@@ -298,7 +298,11 @@ namespace csah::shared_settings
                         return;
                     }
 
-                    auto next = loadSnapshot(configPath_);
+                    std::vector<std::string> report;
+                    auto next = loadSnapshot(settings_file::File::get().reload(report));
+                    for (const auto& problem : report) {
+                        logging::warn("CSAH.toml: {}", problem);
+                    }
                     const auto stable = readSignature(configPath_);
                     if (!stable || *stable != *observed) {
                         pending_ = stable;
@@ -330,17 +334,17 @@ namespace csah::shared_settings
                             std::memory_order_relaxed) +
                         1;
                     logging::info(
-                        "Shared CSAH INI reload #{} accepted: live feature groups={}, startup-native restart pending={}.",
+                        "CSAH.toml reload #{} accepted: live feature groups={}, startup-native restart pending={}.",
                         reloadNumber,
                         changes.liveFeatureCount(),
                         changes.nativeShadows || changes.vanillaFixesGate);
                 } catch (const std::exception& error) {
                     logging::warn(
-                        "Shared settings monitor rejected an INI reload: {}.",
+                        "Shared settings monitor rejected a CSAH.toml reload: {}.",
                         error.what());
                 } catch (...) {
                     logging::warn(
-                        "Shared settings monitor rejected an INI reload.");
+                        "Shared settings monitor rejected a CSAH.toml reload.");
                 }
             }
 

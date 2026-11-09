@@ -1,5 +1,5 @@
 #pragma once
-#include <filesystem>
+#include "settings/SettingsFile.h"
 namespace csah::terrain_shadows
 {
     struct Settings
@@ -8,6 +8,6 @@ namespace csah::terrain_shadows
         float strength{1};
         [[nodiscard]] bool operator==(const Settings&) const noexcept = default;
     };
-    [[nodiscard]] Settings loadSettings(const std::filesystem::path& path) noexcept;
+    [[nodiscard]] Settings loadSettings(const settings_file::Values& values) noexcept;
     [[nodiscard]] Settings loadSettings() noexcept;
 }

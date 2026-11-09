@@ -1,16 +1,13 @@
 #pragma once
 
-#include <Windows.h>
+#include "settings/SettingsFile.h"
 
-#include <algorithm>
-#include <array>
 #include <cstdint>
-#include <filesystem>
 
 namespace csah::diagnostics_settings
 {
-    inline constexpr auto kSection = L"Diagnostics";
-    inline constexpr auto kGpuProfilingModeKey = L"iGpuProfilingMode";
+    inline constexpr std::string_view kSection = "Diagnostics";
+    inline constexpr std::string_view kGpuProfilingModeKey = "GpuProfilingMode";
 
     struct Settings final
     {
@@ -21,22 +18,12 @@ namespace csah::diagnostics_settings
             const Settings&) const noexcept = default;
     };
 
-    [[nodiscard]] inline Settings load(
-        const std::filesystem::path& path) noexcept
+    [[nodiscard]] inline Settings load(const settings_file::Values& values) noexcept
     {
-        if (path.empty()) {
-            return {};
-        }
-        const auto value = static_cast<int>(GetPrivateProfileIntW(
-            kSection,
-            kGpuProfilingModeKey,
-            0,
-            path.c_str()));
-        Settings result{
-            .gpuProfilingGroups = static_cast<std::uint32_t>(
-                value >= 0 && value <= 7 ? value : 0),
-            .measureStereoSharing = GetPrivateProfileIntW(kSection,L"bMeasureStereoSharing",0,path.c_str()) != 0,
+        const auto value = values.integer(kSection, kGpuProfilingModeKey, 0);
+        return {
+            .gpuProfilingGroups = static_cast<std::uint32_t>(value >= 0 && value <= 7 ? value : 0),
+            .measureStereoSharing = values.boolean(kSection, "MeasureStereoSharing", false),
         };
-        return result;
     }
 }

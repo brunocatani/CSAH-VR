@@ -267,7 +267,6 @@ namespace csah::vanilla_fixes
                 }
                 (void)installSunOcclusionNativeHook();
                 apply(settings);
-                (void)saveSettings(settings);
                 try {
                     policyMaintenanceThread_ = std::jthread(
                         [this](const std::stop_token stopToken) noexcept {

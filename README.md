@@ -21,7 +21,7 @@ The included features are listed individually below. Incomplete or unconfirmed e
 - **Diffuse IBL** — Adds environment-derived diffuse bounce lighting. Can be expensive in dense scenes.
 - **Skylighting** — Uses a shared world-space probe field to occlude sky light beneath roofs, trees, and overhangs. Probe quality requires a restart; visibility and zenith controls apply live.
 - **Sky Sync / Moon Lighting** — Aligns directional lighting and shadows with the Sun by day and Fallout's climate-enabled Moon by night.
-- **Cloud Shadows — Not working.** Disabled by default in the plugin and automatically created INI.
+- **Cloud Shadows — Not working.** Disabled by default in the plugin and the automatically created settings file.
 
 ### Materials
 
@@ -29,9 +29,9 @@ The included features are listed individually below. Incomplete or unconfirmed e
 - **Authored PBR Materials** — Supports content-mod manifests pairing base-colour textures with roughness, metalness, ambient-occlusion, and specular data. Textures stream when encountered; authored content still requires visual testing. See the material format below.
 - **Complex Metal Response** — Enables complex-material environment response when suitable assets and IBL data are available. A visible result remains unconfirmed with ordinary texture replacements.
 - **Complex Parallax** — Adds surface depth to assets authored for the complex-material texture contract, with quality, depth, grazing-angle, and distance-fade controls.
-- **Wrapped Grass Lighting — Not working.** Disabled by default in the plugin and automatically created INI.
-- **Hair Specular — Not working.** Disabled by default in the plugin and automatically created INI.
-- **Subsurface Scattering — Not working.** Disabled by default in the plugin and automatically created INI.
+- **Wrapped Grass Lighting — Not working.** Disabled by default in the plugin and the automatically created settings file.
+- **Hair Specular — Not working.** Disabled by default in the plugin and the automatically created settings file.
+- **Subsurface Scattering — Not working.** Disabled by default in the plugin and the automatically created settings file.
 - **Basic Wetness** — Applies a manually selected wet appearance through diffuse darkening, specular response, and roughness. Material coverage is experimental; this is not a complete weather-driven wetness system.
 
 ### PBR model controls
@@ -51,7 +51,7 @@ The included features are listed individually below. Incomplete or unconfirmed e
 - **Native Shadow Fixes** — Provides independently controlled native-shadow corrections, with fixed shadow distance, cascade blending, and orthographic filtering. Changes require a restart.
 - **Extended Directional Cascades** — Extends the native directional-shadow cascade setup. Requires a restart.
 - **Tiled Deferred Lighting** — Controls the native tiled deferred-lighting path through the native-shadow settings. Requires a restart.
-- **Volumetric Lighting / Godrays — Not working.** Disabled by default in the plugin and automatically created INI.
+- **Volumetric Lighting / Godrays — Not working.** Disabled by default in the plugin and the automatically created settings file.
 
 ### Tonemapping and optics
 
@@ -84,7 +84,7 @@ The included features are listed individually below. Incomplete or unconfirmed e
 
 ### Configuration and diagnostics
 
-- **Live INI Reload** — Applies supported INI edits during play. Settings that require a restart are identified in the configuration section below.
+- **Live Settings Reload** — Applies supported settings edits during play. Settings that require a restart are identified in the configuration section below.
 - **CSAH Visual Suite** — Switches the visual suite independently of DLAA/DLSS, Vanilla Fixes, and Native Shadow Fixes.
 - **GPU Performance Profiling** — Records GPU timing and CPU submission measurements for selected feature groups.
 - **Exclusive Lighting Diagnostic** — Isolates lighting and reflection components for investigation while preserving saved feature settings.
@@ -113,23 +113,23 @@ Install the mod ZIP through MO2 and launch the game. CSAH VR creates its setting
    ```
 
    Keep the bundled Streamline DLLs together and preserve the archive's folder structure.
-4. Launch Fallout 4 VR through F4SEVR. The mod creates `CSAH.ini` automatically; edit that file to configure its features as described below.
+4. Launch Fallout 4 VR through F4SEVR. The mod creates `CSAH.toml` automatically; edit that file or use RobCo PALM to configure its features as described below.
 
 ## Configuration
 
 The active settings file is in your Windows Documents folder:
 
 ```text
-Documents/My Games/Fallout4VR/Mods_Config/CSAH/CSAH.ini
+Documents/My Games/Fallout4VR/Mods_Config/CSAH/CSAH.toml
 ```
 
-The plugin creates this file automatically on first launch when neither a current nor a legacy INI exists. Existing settings are preserved. To configure a feature, edit its settings in this INI; boolean settings use `0` for off and `1` for on. Missing keys in an existing file use compiled defaults. Most feature changes reload during play; **Native Shadows settings, Skylighting probe quality, and the Vanilla Fixes master switch require a game restart**.
+Every start writes each missing option at its default, grouped by feature with its help above it. Booleans are `true` or `false`; your own notes are kept when they start with a single `#` on the lines above an option. A value of the wrong type is reported in `CSAH.log` and that option keeps its last value. RobCo PALM's CSAH page edits the same file. Most feature changes reload during play; **Native Shadows settings, Skylighting probe quality, and the Vanilla Fixes master switch require a game restart**.
 
 The **CSAH Visual Suite** switch controls the lighting, material, and output effects. **DLAA/DLSS, Vanilla Fixes, and Native Shadows have independent switches** and keep their own state when the visual suite is disabled.
 
 The first-run gameplay preset enables **Linear Lighting**, which the PBR pipeline requires. Cloud Shadows, Hair Specular, Wrapped Grass Lighting, Subsurface Scattering, and Volumetric Lighting / Godrays are disabled by default because they are not working. Quality settings are fixed choices: the mod does not automatically lower visual quality to meet an FPS target.
 
-On first launch, CSAH moves an existing `Mods_Config/FO4VRCommunityShaders/FO4VRCommunityShaders.ini` to the new location if `CSAH.ini` does not already exist. The migration preserves the file byte for byte, including values, comments, and encoding. An existing CSAH file takes precedence. If migration fails, the plugin reports the error and stops loading instead of silently replacing your settings with defaults. The existing `[CommunityShaders]` section name remains part of the INI format so saved feature switches remain compatible.
+The first start after an update carries every value you changed in `Mods_Config/CSAH/CSAH.ini`, or in the older `Mods_Config/FO4VRCommunityShaders/FO4VRCommunityShaders.ini`, into `CSAH.toml` and deletes the INI. Values equal to their old defaults follow the current defaults. Section names stay the same and keys lose their type letter, for example `[DLAA] iMode` becomes `[DLAA] Mode`.
 
 When upgrading from 0.0.3 Alpha, replace the entire old mod installation before installing CSAH. Do not enable both versions together; the old DLL was named `fo4vr-community-shaders.dll`.
 
@@ -174,7 +174,7 @@ For an F4SE loading problem, also include `f4sevr.log` from the same directory a
 
 ## Building from source
 
-The build requires **Visual Studio 2022 with the v143 C++ toolset**, a Windows SDK containing `fxc.exe`, **CMake 4.2 or newer**, Python 3, vcpkg, CommonLibF4VR, and the **NVIDIA Streamline 2.12.0 SDK** with its runtime DLLs and license files. Dependencies from vcpkg use the `x64-windows-static` triplet.
+The build requires **Visual Studio 2022 with the v143 C++ toolset**, a Windows SDK containing `fxc.exe`, **CMake 4.2 or newer**, Python 3, vcpkg, CommonLibF4VR, **RPS Framework** (built, so its staged CMake package exists under `build-fast/stage/lib/cmake/RPSFramework`; it reads and writes `CSAH.toml`), and the **NVIDIA Streamline 2.12.0 SDK** with its runtime DLLs and license files. Dependencies from vcpkg use the `x64-windows-static` triplet.
 
 Clone this repository with its CommonLibF4VR submodule:
 
@@ -183,11 +183,11 @@ git clone --recurse-submodules https://github.com/brunocatani/CSAH-VR.git
 cd CSAH-VR
 ```
 
-The checked-in presets expect vcpkg at `C:/vcpkg`. Adjust the toolchain and `VCPKG_ROOT` through a local preset if your installation differs. Point CMake at the initialized CommonLibF4VR checkout and your Streamline SDK:
+The checked-in presets expect vcpkg at `C:/vcpkg`. Adjust the toolchain and `VCPKG_ROOT` through a local preset if your installation differs. Point CMake at the initialized CommonLibF4VR checkout, RPS Framework's staged package and your Streamline SDK:
 
 ```powershell
 $env:VCPKG_ROOT = "C:/vcpkg"
-cmake --preset fast -DCOMMON_LIB_F4VR_PATH="$PWD/extern/CommonLibF4VR" -DSTREAMLINE_SDK_ROOT="C:/SDKs/streamline-sdk-v2.12.0"
+cmake --preset fast -DCOMMON_LIB_F4VR_PATH="$PWD/extern/CommonLibF4VR" -DSTREAMLINE_SDK_ROOT="C:/SDKs/streamline-sdk-v2.12.0" -DRPSFramework_DIR="C:/src/RPS_Framework/build-fast/stage/lib/cmake/RPSFramework"
 cmake --build build-fast --config Release -- /m:1 /p:CL_MPCount=2
 ```
 
@@ -197,7 +197,7 @@ To build and run the existing tests:
 
 ```powershell
 $env:VCPKG_ROOT = "C:/vcpkg"
-cmake --preset tests -DCOMMON_LIB_F4VR_PATH="$PWD/extern/CommonLibF4VR" -DSTREAMLINE_SDK_ROOT="C:/SDKs/streamline-sdk-v2.12.0"
+cmake --preset tests -DCOMMON_LIB_F4VR_PATH="$PWD/extern/CommonLibF4VR" -DSTREAMLINE_SDK_ROOT="C:/SDKs/streamline-sdk-v2.12.0" -DRPSFramework_DIR="C:/src/RPS_Framework/build-fast/stage/lib/cmake/RPSFramework"
 cmake --build build-tests --config Release -- /m:1 /p:CL_MPCount=2
 ctest --test-dir build-tests -C Release -j 4 --output-on-failure
 ```

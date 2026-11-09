@@ -221,11 +221,11 @@ endif()
 
 foreach(required IN ITEMS
     "Quality quality{ Quality::high }"
-    "bEnabled"
-    "iQuality"
-    "fMinDiffuseVisibility"
-    "fMinSpecularVisibility"
-    "fMaxZenithDegrees")
+    "Enabled"
+    "Quality"
+    "MinDiffuseVisibility"
+    "MinSpecularVisibility"
+    "MaxZenithDegrees")
   string(FIND "${settingsHeader}\n${settingsStore}" "${required}" found)
   if(found EQUAL -1)
     message(FATAL_ERROR
@@ -355,7 +355,7 @@ endforeach()
 
 foreach(required IN ITEMS
     "skylighting::Runtime::get().applySettings"
-    ".skylighting = skylighting::loadSettings(path)")
+    ".skylighting = skylighting::loadSettings(values)")
   string(FIND "${sharedSettings}\n${sharedSettingsHeader}" "${required}" found)
   if(found EQUAL -1)
     message(FATAL_ERROR

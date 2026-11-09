@@ -101,8 +101,18 @@ set(RENDERER_HOOK_SOURCE
 set(DFPREPASS_HOOK_SOURCE
   "${SOURCE_DIR}/render/BSDFPrePassShaderHook.cpp")
 include("${ROOT_DIR}/cmake/VerifyFo4VrRendererHook.cmake")
-set(SETTINGS_PATH_SOURCE "${SOURCE_DIR}/support/SettingsPath.cpp")
-set(SETTINGS_PATH_HEADER "${SOURCE_DIR}/support/SettingsPath.h")
+# CSAH.toml through RPS Framework's settings store (its staged package, named
+# by RPSFramework_DIR). Feature settings headers name settings_file::Values, so
+# every target sees the store's headers; targets that compile
+# SETTINGS_FILE_SOURCES link RPS::Settings.
+set(RPSFramework_DIR "" CACHE PATH "RPS Framework staged package (build-fast/stage/lib/cmake/RPSFramework)")
+find_package(RPSFramework CONFIG REQUIRED)
+get_target_property(RPS_SETTINGS_INCLUDE_DIRS RPS::Settings INTERFACE_INCLUDE_DIRECTORIES)
+include_directories(${RPS_SETTINGS_INCLUDE_DIRS})
+set(SETTINGS_FILE_SOURCES
+  "${SOURCE_DIR}/settings/SettingsFile.cpp"
+  "${SOURCE_DIR}/settings/SettingsFile.h"
+  "${SOURCE_DIR}/settings/SettingsDefinitions.cpp")
 set(SHARED_SETTINGS_RUNTIME_SOURCE
   "${SOURCE_DIR}/settings/SharedSettingsRuntime.cpp")
 set(SHARED_SETTINGS_RUNTIME_HEADER
@@ -719,8 +729,7 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
   "${AUTHORED_PBR_VERIFY_SCRIPT}"
   "${ROOT_DIR}/cmake/VerifyFo4VrRendererHook.cmake"
   "${ROOT_DIR}/cmake/TestVerifyFo4VrRendererHookNegative.cmake"
-  "${SETTINGS_PATH_SOURCE}"
-  "${SETTINGS_PATH_HEADER}"
+  ${SETTINGS_FILE_SOURCES}
   "${SHARED_SETTINGS_RUNTIME_SOURCE}"
   "${SHARED_SETTINGS_RUNTIME_HEADER}"
   "${PALM_SETTINGS_VERIFY_SCRIPT}"
@@ -2472,8 +2481,7 @@ add_library(${PROJECT_NAME} SHARED
   "${DFLIGHT_AMBIENT_GENERATED_CONTRACTS}"
   "${SOURCE_DIR}/Features/linear_lighting/LinearLightingSettingsStore.cpp"
   "${SOURCE_DIR}/Features/linear_lighting/LinearLightingSettingsStore.h"
-  "${SETTINGS_PATH_SOURCE}"
-  "${SETTINGS_PATH_HEADER}"
+  ${SETTINGS_FILE_SOURCES}
   "${SHARED_SETTINGS_RUNTIME_SOURCE}"
   "${SHARED_SETTINGS_RUNTIME_HEADER}"
   "${SOURCE_DIR}/render/BSLightingGeometryHook.cpp"
@@ -2636,6 +2644,7 @@ find_package(minhook CONFIG REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
 target_link_libraries(${PROJECT_NAME} PRIVATE
   CSAHCore
+  RPS::Settings
   CommonLibF4::CommonLibF4
   minhook::minhook
   nlohmann_json::nlohmann_json
@@ -2789,8 +2798,8 @@ if(BUILD_CSAH_TESTS)
     "${DLAA_SETTINGS_STORE_SOURCE}"
     "${DLAA_SOURCE_DIR}/DlaaSettingsStore.h"
     "${DLAA_SOURCE_DIR}/DlaaSettings.h"
-    "${SETTINGS_PATH_SOURCE}"
-    "${SETTINGS_PATH_HEADER}")
+    ${SETTINGS_FILE_SOURCES})
+  target_link_libraries(CSAHUpscalingSettingsTests PRIVATE RPS::Settings)
   target_compile_features(
     CSAHUpscalingSettingsTests PRIVATE cxx_std_23)
   target_compile_definitions(
@@ -2828,28 +2837,12 @@ if(BUILD_CSAH_TESTS)
   add_test(NAME CSAH.LinearLightingSettings
     COMMAND CSAHLinearLightingSettingsTests)
 
-  add_executable(CSAHSettingsPathTests
-    "${ROOT_DIR}/tests/SettingsPathTests.cpp"
-    "${SETTINGS_PATH_SOURCE}"
-    "${SETTINGS_PATH_HEADER}")
-  target_compile_features(
-    CSAHSettingsPathTests PRIVATE cxx_std_23)
-  target_compile_definitions(
-    CSAHSettingsPathTests PRIVATE
-    WIN32_LEAN_AND_MEAN NOMINMAX)
-  target_include_directories(
-    CSAHSettingsPathTests PRIVATE "${SOURCE_DIR}")
-  target_compile_options(
-    CSAHSettingsPathTests PRIVATE
-    /sdl /utf-8 /permissive- /Zc:__cplusplus /Zc:preprocessor /W4)
-  target_link_libraries(
-    CSAHSettingsPathTests PRIVATE shell32)
-  add_test(NAME CSAH.SettingsPath
-    COMMAND CSAHSettingsPathTests)
 
   add_executable(CSAHSharedSettingsRuntimeTests
     "${ROOT_DIR}/tests/SharedSettingsRuntimeTests.cpp"
-    "${SHARED_SETTINGS_RUNTIME_HEADER}")
+    "${SHARED_SETTINGS_RUNTIME_HEADER}"
+    ${SETTINGS_FILE_SOURCES})
+  target_link_libraries(CSAHSharedSettingsRuntimeTests PRIVATE RPS::Settings)
   target_compile_features(
     CSAHSharedSettingsRuntimeTests PRIVATE cxx_std_23)
   target_include_directories(
@@ -2858,7 +2851,19 @@ if(BUILD_CSAH_TESTS)
     CSAHSharedSettingsRuntimeTests PRIVATE
     /sdl /utf-8 /permissive- /Zc:__cplusplus /Zc:preprocessor /W4)
   add_test(NAME CSAH.SharedSettingsRuntime
-    COMMAND CSAHSharedSettingsRuntimeTests "${CMAKE_BINARY_DIR}/test-output/settings")
+    COMMAND CSAHSharedSettingsRuntimeTests)
+
+  # CSAH.toml: PALM's catalog binds only declared options with their types,
+  # and CSAH.ini's changed values carry over once before the INI is deleted.
+  add_executable(CSAHSettingsFileTests
+    "${ROOT_DIR}/tests/SettingsFileTests.cpp"
+    ${SETTINGS_FILE_SOURCES})
+  target_compile_features(CSAHSettingsFileTests PRIVATE cxx_std_23)
+  target_include_directories(CSAHSettingsFileTests PRIVATE "${SOURCE_DIR}")
+  target_compile_options(CSAHSettingsFileTests PRIVATE /utf-8 /permissive-)
+  target_link_libraries(CSAHSettingsFileTests PRIVATE RPS::Settings nlohmann_json::nlohmann_json shell32)
+  add_test(NAME CSAH.SettingsFile
+    COMMAND CSAHSettingsFileTests "${ROOT_DIR}/settings/PALMSettings.json")
 
   add_executable(CSAHFixedShaderBindingLookupTests
     "${ROOT_DIR}/tests/FixedShaderBindingLookupTests.cpp")
@@ -2975,8 +2980,8 @@ if(BUILD_CSAH_TESTS)
     "${CONTACT_SHADOW_SETTINGS_STORE_SOURCE}"
     "${CONTACT_SHADOW_SETTINGS_STORE_HEADER}"
     "${CONTACT_SHADOW_SETTINGS_HEADER}"
-    "${SETTINGS_PATH_SOURCE}"
-    "${SETTINGS_PATH_HEADER}")
+    ${SETTINGS_FILE_SOURCES})
+  target_link_libraries(CSAHContactShadowSettingsTests PRIVATE RPS::Settings)
   target_compile_features(
     CSAHContactShadowSettingsTests PRIVATE cxx_std_23)
   target_compile_definitions(
@@ -3003,8 +3008,8 @@ if(BUILD_CSAH_TESTS)
     "${CONTACT_SHADOW_SETTINGS_STORE_SOURCE}"
     "${CONTACT_SHADOW_SETTINGS_STORE_HEADER}"
     "${CONTACT_SHADOW_SETTINGS_HEADER}"
-    "${SETTINGS_PATH_SOURCE}"
-    "${SETTINGS_PATH_HEADER}")
+    ${SETTINGS_FILE_SOURCES})
+  target_link_libraries(CSAHVolumetricLightingSettingsTests PRIVATE RPS::Settings)
   target_compile_features(
     CSAHVolumetricLightingSettingsTests PRIVATE cxx_std_23)
   target_compile_definitions(
@@ -3069,8 +3074,8 @@ if(BUILD_CSAH_TESTS)
     "${VANILLA_SETTINGS_STORE_SOURCE}"
     "${VANILLA_FIXES_SOURCE_DIR}/VanillaFixesSettingsStore.h"
     "${VANILLA_FIXES_SOURCE_DIR}/VanillaFixesSettings.h"
-    "${SETTINGS_PATH_SOURCE}"
-    "${SETTINGS_PATH_HEADER}")
+    ${SETTINGS_FILE_SOURCES})
+  target_link_libraries(CSAHVanillaFixesSettingsTests PRIVATE RPS::Settings)
   target_compile_features(
     CSAHVanillaFixesSettingsTests PRIVATE cxx_std_23)
   target_compile_definitions(
@@ -3094,8 +3099,8 @@ if(BUILD_CSAH_TESTS)
     "${NATIVE_SHADOW_SETTINGS_STORE_SOURCE}"
     "${NATIVE_SHADOW_SETTINGS_STORE_HEADER}"
     "${NATIVE_SHADOW_SETTINGS_HEADER}"
-    "${SETTINGS_PATH_SOURCE}"
-    "${SETTINGS_PATH_HEADER}")
+    ${SETTINGS_FILE_SOURCES})
+  target_link_libraries(CSAHNativeShadowSettingsTests PRIVATE RPS::Settings)
   target_compile_features(
     CSAHNativeShadowSettingsTests PRIVATE cxx_std_23)
   target_compile_definitions(
@@ -3578,7 +3583,7 @@ if(BUILD_CSAH_TESTS)
   target_include_directories(CSAHRenderDocCaptureTests PRIVATE "${SOURCE_DIR}" "${ROOT_DIR}/extern/RenderDoc")
   target_include_directories(CSAHRenderDocCaptureTests PRIVATE "${PALM_INCLUDE_DIR}")
   target_precompile_headers(CSAHRenderDocCaptureTests PRIVATE "${SOURCE_DIR}/PCH.h")
-  target_link_libraries(CSAHRenderDocCaptureTests PRIVATE CommonLibF4::CommonLibF4 d3d11 d3dcompiler dxguid shell32 spdlog::spdlog minhook::minhook)
+  target_link_libraries(CSAHRenderDocCaptureTests PRIVATE RPS::Settings CommonLibF4::CommonLibF4 d3d11 d3dcompiler dxguid shell32 spdlog::spdlog minhook::minhook)
   if(EXISTS "$ENV{ProgramFiles}/RenderDoc/renderdoc.dll")
     add_test(NAME CSAH.RenderDocCapture COMMAND CSAHRenderDocCaptureTests
       "${CMAKE_BINARY_DIR}/test-output/renderdoc" "$ENV{ProgramFiles}/RenderDoc/renderdoc.dll")
@@ -3593,8 +3598,8 @@ if(BUILD_CSAH_TESTS)
     "${IBL_SETTINGS_STORE_SOURCE}"
     "${IBL_SETTINGS_STORE_HEADER}"
     "${IBL_SETTINGS_HEADER}"
-    "${SETTINGS_PATH_SOURCE}"
-    "${SETTINGS_PATH_HEADER}")
+    ${SETTINGS_FILE_SOURCES})
+  target_link_libraries(CSAHIblSettingsTests PRIVATE RPS::Settings)
   target_compile_features(
     CSAHIblSettingsTests PRIVATE cxx_std_23)
   target_compile_definitions(
@@ -3635,8 +3640,8 @@ if(BUILD_CSAH_TESTS)
     "${CONTACT_SHADOW_SETTINGS_STORE_SOURCE}"
     "${CONTACT_SHADOW_SETTINGS_STORE_HEADER}"
     "${CONTACT_SHADOW_SETTINGS_HEADER}"
-    "${SETTINGS_PATH_SOURCE}"
-    "${SETTINGS_PATH_HEADER}")
+    ${SETTINGS_FILE_SOURCES})
+  target_link_libraries(CSAHPbrSettingsTests PRIVATE RPS::Settings)
   target_compile_features(
     CSAHPbrSettingsTests PRIVATE cxx_std_23)
   target_compile_definitions(
@@ -3946,6 +3951,26 @@ if(BUILD_CSAH_TESTS)
   target_precompile_headers(CSAHIblCompactCaptureTests PRIVATE "${SOURCE_DIR}/PCH.h")
   target_link_libraries(CSAHIblCompactCaptureTests PRIVATE CommonLibF4::CommonLibF4 d3d11 d3dcompiler dxguid shell32 spdlog::spdlog)
   add_test(NAME CSAH.IblCompactCapture COMMAND CSAHIblCompactCaptureTests "${ROOT_DIR}")
+
+  # Settings tests write their CSAH.toml fixtures beside the build, never in the system temporary folder.
+  target_compile_definitions(CSAHContactShadowSettingsTests PRIVATE
+    CSAH_TEST_SETTINGS_DIR="${CMAKE_BINARY_DIR}/test-output/settings-file")
+  target_compile_definitions(CSAHIblSettingsTests PRIVATE
+    CSAH_TEST_SETTINGS_DIR="${CMAKE_BINARY_DIR}/test-output/settings-file")
+  target_compile_definitions(CSAHNativeShadowSettingsTests PRIVATE
+    CSAH_TEST_SETTINGS_DIR="${CMAKE_BINARY_DIR}/test-output/settings-file")
+  target_compile_definitions(CSAHPbrSettingsTests PRIVATE
+    CSAH_TEST_SETTINGS_DIR="${CMAKE_BINARY_DIR}/test-output/settings-file")
+  target_compile_definitions(CSAHUpscalingSettingsTests PRIVATE
+    CSAH_TEST_SETTINGS_DIR="${CMAKE_BINARY_DIR}/test-output/settings-file")
+  target_compile_definitions(CSAHVanillaFixesSettingsTests PRIVATE
+    CSAH_TEST_SETTINGS_DIR="${CMAKE_BINARY_DIR}/test-output/settings-file")
+  target_compile_definitions(CSAHVolumetricLightingSettingsTests PRIVATE
+    CSAH_TEST_SETTINGS_DIR="${CMAKE_BINARY_DIR}/test-output/settings-file")
+  target_compile_definitions(CSAHSharedSettingsRuntimeTests PRIVATE
+    CSAH_TEST_SETTINGS_DIR="${CMAKE_BINARY_DIR}/test-output/settings-file")
+  target_compile_definitions(CSAHSettingsFileTests PRIVATE
+    CSAH_TEST_SETTINGS_DIR="${CMAKE_BINARY_DIR}/test-output/settings-file")
 endif()
 
 # Tests share build-fast but stay out of the default build, so building and deploying the

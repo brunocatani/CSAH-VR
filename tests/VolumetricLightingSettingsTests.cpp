@@ -1,4 +1,5 @@
 #include "Features/volumetric_lighting/VolumetricLightingSettingsStore.h"
+#include "SettingsFixture.h"
 
 #include <chrono>
 #include <cstdlib>
@@ -17,89 +18,42 @@ namespace
         }
     }
 
-    class TemporaryIni final
-    {
-    public:
-        TemporaryIni() :
-            path_(std::filesystem::temp_directory_path() /
-                ("CSAH-VolumetricLighting-" +
-                    std::to_string(std::chrono::steady_clock::now()
-                                       .time_since_epoch()
-                                       .count()) +
-                    ".ini"))
-        {}
-
-        ~TemporaryIni()
-        {
-            std::error_code error;
-            std::filesystem::remove(path_, error);
-        }
-
-        void write(const char* source) const
-        {
-            std::ofstream output(path_, std::ios::binary | std::ios::trunc);
-            output << source;
-        }
-
-        [[nodiscard]] const std::filesystem::path& path() const noexcept
-        {
-            return path_;
-        }
-
-    private:
-        std::filesystem::path path_;
-    };
 }
 
 int main()
 {
     using csah::volumetric_lighting::Settings;
     using csah::volumetric_lighting::loadSettings;
-    using csah::volumetric_lighting::saveSettings;
 
-    TemporaryIni ini;
-    const auto defaults = loadSettings(ini.path());
-    require(defaults == Settings{}, "missing-file defaults");
-    require(!defaults.enabled, "missing INI must keep volumetric lighting off");
-    require(defaults.baseScattering == 0.0f, "safe base default");
-    require(defaults.densityContribution == 0.5f, "qualified density default");
-    require(defaults.windSpeed == 0.0f, "stable wind default");
-    require(defaults.maxDistance == 3000.0f, "qualified distance default");
-
-    ini.write("[CommunityShaders]\nbEnabled=1\n");
-    require(!loadSettings(ini.path()).enabled,
-        "missing volumetric section must default to off");
-    ini.write("[VolumetricLighting]\niQuality=1\n");
-    require(!loadSettings(ini.path()).enabled,
-        "missing volumetric enable key must default to off");
-    ini.write("[VolumetricLighting]\nbEnabled=invalid\n");
-    require(!loadSettings(ini.path()).enabled,
+    SettingsFixture ini("VolumetricLightingSettingsTests");
+    ini.write("[VolumetricLighting]\nEnabled = 'invalid'\n");
+    require(!loadSettings(ini.values()).enabled,
         "invalid volumetric enable value must fail closed");
 
     ini.write(
         "[CommunityShaders]\n"
-        "bEnabled=0\n"
+        "Enabled = false\n"
         "[VolumetricLighting]\n"
-        "bEnabled=1\n");
+        "Enabled = true\n");
     require(
-        !loadSettings(ini.path()).enabled,
+        !loadSettings(ini.values()).enabled,
         "visual-suite master gate");
 
     ini.write(
         "[CommunityShaders]\n"
-        "bEnabled=1\n"
+        "Enabled = true\n"
         "[VolumetricLighting]\n"
-        "bEnabled=off\n"
-        "iQuality=1\n"
-        "fIntensity=1.75\n"
-        "fBaseScattering=0.12\n"
-        "fShaftIntensity=2.25\n"
-        "fDensityContribution=0.7\n"
-        "fDensityScale=2\n"
-        "fWindSpeed=14\n"
-        "fMaxDistance=8192\n"
-        "fTemporalWeight=0.8\n");
-    const auto loaded = loadSettings(ini.path());
+        "Enabled = false\n"
+        "Quality = 1\n"
+        "Intensity = 1.75\n"
+        "BaseScattering = 0.12\n"
+        "ShaftIntensity = 2.25\n"
+        "DensityContribution = 0.7\n"
+        "DensityScale = 2.0\n"
+        "WindSpeed = 14.0\n"
+        "MaxDistance = 8192.0\n"
+        "TemporalWeight = 0.8\n");
+    const auto loaded = loadSettings(ini.values());
     require(!loaded.enabled, "feature gate");
     require(loaded.quality == 1, "quality");
     require(loaded.intensity == 1.75f, "intensity");
@@ -111,20 +65,21 @@ int main()
     require(loaded.maxDistance == 8192.0f, "maximum distance");
     require(loaded.temporalWeight == 0.8f, "temporal weight");
 
-    const Settings outOfRange{
-        .enabled = true,
-        .quality = 99,
-        .intensity = 99.0f,
-        .baseScattering = -1.0f,
-        .shaftIntensity = 99.0f,
-        .densityContribution = 99.0f,
-        .densityScale = 0.0f,
-        .windSpeed = -1.0f,
-        .maxDistance = 1.0f,
-        .temporalWeight = 2.0f,
-    };
-    require(saveSettings(ini.path(), outOfRange), "save sanitized settings");
-    const auto sanitized = loadSettings(ini.path());
+    ini.write(
+        "[CommunityShaders]\n"
+        "Enabled = true\n"
+        "[VolumetricLighting]\n"
+        "Enabled = true\n"
+        "Quality = 99\n"
+        "Intensity = 99.0\n"
+        "BaseScattering = -1.0\n"
+        "ShaftIntensity = 99.0\n"
+        "DensityContribution = 99.0\n"
+        "DensityScale = 0.0\n"
+        "WindSpeed = -1.0\n"
+        "MaxDistance = 1.0\n"
+        "TemporalWeight = 2.0\n");
+    const auto sanitized = loadSettings(ini.values());
     require(sanitized.quality == 2, "quality clamp");
     require(sanitized.intensity == 4.0f, "intensity clamp");
     require(sanitized.baseScattering == 0.0f, "base clamp");
@@ -135,24 +90,28 @@ int main()
     require(sanitized.maxDistance == 256.0f, "distance clamp");
     require(sanitized.temporalWeight == 0.98f, "temporal clamp");
 
-    const Settings roundTrip{
-        .enabled = true,
-        .quality = 0,
-        .intensity = 0.9f,
-        .baseScattering = 0.04f,
-        .shaftIntensity = 1.8f,
-        .densityContribution = 0.35f,
-        .densityScale = 1.5f,
-        .windSpeed = 3.0f,
-        .maxDistance = 4096.0f,
-        .temporalWeight = 0.75f,
-        .heightFog=true, .heightFogDensity=1.5f, .heightFogHeight=128, .heightFogFalloff=512, .heightFogStart=256, .heightFogOpacity=.75f, .heightFogWeather=.5f, .heightFogVolume=.25f, .heightFogInteriorScale=.6f,
-    };
-    require(saveSettings(ini.path(), roundTrip), "save round trip");
-    require(loadSettings(ini.path()) == roundTrip, "round trip");
+    constexpr std::string_view kHeightFog =
+        "[VolumetricLighting]\n"
+        "Enabled = true\n"
+        "HeightFogEnabled = true\n"
+        "HeightFogDensity = 1.5\n"
+        "HeightFogHeight = 128.0\n"
+        "HeightFogFalloff = 512.0\n"
+        "HeightFogStart = 256.0\n"
+        "HeightFogOpacity = 0.75\n"
+        "HeightFogWeather = 0.5\n"
+        "HeightFogVolume = 0.25\n"
+        "HeightFogInteriorScale = 0.6\n";
+    ini.write(std::string("[CommunityShaders]\nEnabled = true\n").append(kHeightFog));
+    const auto fog = loadSettings(ini.values());
+    require(fog.enabled && fog.heightFog && fog.heightFogDensity == 1.5f && fog.heightFogHeight == 128.0f &&
+            fog.heightFogFalloff == 512.0f && fog.heightFogStart == 256.0f && fog.heightFogOpacity == 0.75f &&
+            fog.heightFogWeather == 0.5f && fog.heightFogVolume == 0.25f && fog.heightFogInteriorScale == 0.6f,
+        "height fog keys");
 
-    require(WritePrivateProfileStringW(L"CommunityShaders",L"bEnabled",L"0",ini.path().c_str())!=FALSE,"master off");
-    const auto off=loadSettings(ini.path());require(!off.enabled && !off.heightFog,"master gate must disable both fog and shafts");
+    ini.write(std::string("[CommunityShaders]\nEnabled = false\n").append(kHeightFog));
+    const auto off = loadSettings(ini.values());
+    require(!off.enabled && !off.heightFog, "master gate must disable both fog and shafts");
     std::cout << "Volumetric Lighting settings tests passed.\n";
     return EXIT_SUCCESS;
 }

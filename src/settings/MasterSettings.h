@@ -1,25 +1,15 @@
 #pragma once
 
-#include <Windows.h>
-
-#include <filesystem>
+#include "settings/SettingsFile.h"
 
 namespace csah::master_settings
 {
-    inline constexpr auto kSection = L"CommunityShaders";
-    inline constexpr auto kEnabledKey = L"bEnabled";
+    inline constexpr std::string_view kSection = "CommunityShaders";
+    inline constexpr std::string_view kEnabledKey = "Enabled";
 
-    [[nodiscard]] inline bool enabled(
-        const std::filesystem::path& path) noexcept
+    [[nodiscard]] inline bool enabled(const settings_file::Values& values) noexcept
     {
-        if (path.empty()) {
-            return true;
-        }
-        return GetPrivateProfileIntW(
-                   kSection,
-                   kEnabledKey,
-                   1,
-                   path.c_str()) != 0;
+        return values.boolean(kSection, kEnabledKey, true);
     }
 
     // Applies only to CSAH visual features. DLAA/DLSS,
@@ -27,10 +17,10 @@ namespace csah::master_settings
     // deliberately do not call this helper.
     template <class Settings>
     [[nodiscard]] Settings gate(
-        const std::filesystem::path& path,
+        const settings_file::Values& values,
         Settings settings) noexcept
     {
-        if (!enabled(path)) {
+        if (!enabled(values)) {
             settings.enabled = false;
         }
         return settings;

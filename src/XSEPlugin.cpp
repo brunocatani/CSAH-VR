@@ -51,7 +51,7 @@
 #include "render/BSLightingGeometryHook.h"
 #include "render/D3D11Hooks.h"
 #include "support/Logger.h"
-#include "support/SettingsPath.h"
+#include "settings/SettingsFile.h"
 #include "settings/SharedSettingsRuntime.h"
 
 #include <MinHook.h>
@@ -375,25 +375,20 @@ extern "C" __declspec(dllexport) bool F4SEAPI F4SEPlugin_Load(
         }
         F4SE::Init(a_f4se, false);
 
-        const auto iniPath = csah::settings_path::resolveIniPath();
-        std::error_code migrationError;
-        const auto migration = csah::settings_path::initializeIni(
-            iniPath, migrationError);
-        if (migration == csah::settings_path::SetupResult::failed) {
+        // Organizes CSAH.toml; the first start carries CSAH.ini's changed
+        // values over and deletes it.
+        auto& settingsFile = csah::settings_file::File::get();
+        std::vector<std::string> settingsReport;
+        if (!settingsFile.startup(settingsReport)) {
             csah::logging::critical(
-                "CSAH VR settings setup failed for '{}': {}. Existing settings were not replaced; plugin remains unloaded.",
-                iniPath.string(), migrationError.message());
+                "CSAH VR settings are unavailable ({}); plugin remains unloaded.",
+                settingsReport.empty() ? std::string("unknown error") : settingsReport.back());
             return false;
         }
-        if (migration == csah::settings_path::SetupResult::migrated) {
-            csah::logging::info(
-                "Migrated existing settings to '{}'; values and formatting preserved.",
-                iniPath.string());
+        for (const auto& line : settingsReport) {
+            csah::logging::info("CSAH.toml: {}", line);
         }
-        if (migration == csah::settings_path::SetupResult::created) {
-            csah::logging::info(
-                "Created first-run CSAH VR settings at '{}'.", iniPath.string());
-        }
+        csah::logging::info("CSAH VR settings read from '{}'.", settingsFile.path().string());
 
         const auto minHookStatus = MH_Initialize();
         if (minHookStatus != MH_OK &&
@@ -486,7 +481,9 @@ extern "C" __declspec(dllexport) bool F4SEAPI F4SEPlugin_Load(
             csah::logging::warn(
                 "Vanilla Fixes engine-gate contract was rejected; shader fixes remain available, but engine-gate ownership stays fail-closed.");
         }
-        csah::diagnostics::initializeDeveloperCapture(iniPath.c_str());
+        csah::diagnostics::initializeDeveloperCapture(
+            settingsFile.current().boolean("Diagnostics", "RenderDocCapture", false),
+            settingsFile.path().parent_path());
         if (!csah::render::installEarlyD3D11Hooks()) {
             csah::logging::warn(
                 "Verified D3D11 bootstrap was not installed; plugin remains loaded but all rendering stays vanilla.");

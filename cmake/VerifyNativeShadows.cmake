@@ -79,11 +79,11 @@ foreach(required IN ITEMS
 endforeach()
 
 foreach(required IN ITEMS
-    "bExtendedDirectionalCascades"
-    "bTiledDeferredLighting"
-    "fDirectionalShadowDistance"
-    "fCascadeBlendDistance"
-    "iOrthographicShadowFilter"
+    "ExtendedDirectionalCascades"
+    "TiledDeferredLighting"
+    "DirectionalShadowDistance"
+    "CascadeBlendDistance"
+    "OrthographicShadowFilter"
     "std::clamp(result.directionalShadowDistance, 3000.0f, 50000.0f)")
   string(FIND "${settings}${store}" "${required}" found)
   if(found EQUAL -1)

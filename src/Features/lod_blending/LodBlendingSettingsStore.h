@@ -1,8 +1,8 @@
 #pragma once
 #include "Features/lod_blending/LodBlendingSettings.h"
-#include <filesystem>
+#include "settings/SettingsFile.h"
 namespace csah::lod_blending
 {
-    [[nodiscard]] Settings loadSettings(const std::filesystem::path& path) noexcept;
+    [[nodiscard]] Settings loadSettings(const settings_file::Values& values) noexcept;
     [[nodiscard]] Settings loadSettings() noexcept;
 }

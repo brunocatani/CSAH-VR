@@ -1,4 +1,5 @@
 #include "Features/pbr/PbrSettingsStore.h"
+#include "SettingsFixture.h"
 
 #include <chrono>
 #include <cmath>
@@ -18,55 +19,21 @@ namespace
         }
     }
 
-    class TemporaryIni final
-    {
-    public:
-        TemporaryIni() :
-            path_(std::filesystem::temp_directory_path() /
-                ("CSAH-PbrSettings-" +
-                    std::to_string(
-                        std::chrono::steady_clock::now()
-                            .time_since_epoch()
-                            .count()) +
-                    ".ini"))
-        {}
-
-        ~TemporaryIni()
-        {
-            std::error_code error;
-            std::filesystem::remove(path_, error);
-        }
-
-        void write(const char* text) const
-        {
-            std::ofstream stream(path_, std::ios::binary | std::ios::trunc);
-            stream << text;
-        }
-
-        [[nodiscard]] const std::filesystem::path& path() const noexcept
-        {
-            return path_;
-        }
-
-    private:
-        std::filesystem::path path_;
-    };
 }
 
 int main()
 {
     using csah::pbr::loadSettings;
 
-    TemporaryIni ini;
-    require(loadSettings(ini.path()).enabled, "missing file default");
+    SettingsFixture ini("PbrSettingsTests");
     ini.write(
         "[PBR]\n"
-        "bEnabled=0\n"
-        "bDirectGGX=0\n"
-        "bEnvironmentFresnel=0\n"
-        "fRoughnessMultiplier=1.5\n"
-        "fBaseF0Multiplier=0.5\n");
-    const auto configured = loadSettings(ini.path());
+        "Enabled = false\n"
+        "DirectGGX = false\n"
+        "EnvironmentFresnel = false\n"
+        "RoughnessMultiplier = 1.5\n"
+        "BaseF0Multiplier = 0.5\n");
+    const auto configured = loadSettings(ini.values());
     require(!configured.enabled, "disabled owned key");
     require(!configured.directGgx, "direct GGX key");
     require(!configured.environmentFresnel, "environment Fresnel key");
@@ -77,18 +44,18 @@ int main()
 
     ini.write(
         "[CommunityShaders]\n"
-        "bEnabled=0\n"
+        "Enabled = false\n"
         "[PBR]\n"
-        "bEnabled=1\n");
-    require(!loadSettings(ini.path()).enabled,
+        "Enabled = true\n");
+    require(!loadSettings(ini.values()).enabled,
         "Community Shaders master gate did not disable PBR");
 
     ini.write(
         "[PBR]\n"
-        "fRoughnessMultiplier=99\n"
-        "fMinimumF0=-1\n"
-        "fDirectLightingScale=99\n");
-    const auto clamped = loadSettings(ini.path());
+        "RoughnessMultiplier = 99.0\n"
+        "MinimumF0 = -1.0\n"
+        "DirectLightingScale = 99.0\n");
+    const auto clamped = loadSettings(ini.values());
     require(clamped.roughnessMultiplier == 4.0f,
         "roughness upper clamp");
     require(clamped.minimumF0 == 0.0f, "minimum F0 lower clamp");

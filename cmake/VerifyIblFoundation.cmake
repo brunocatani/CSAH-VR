@@ -220,16 +220,12 @@ if(diffuseSessionGate EQUAL -1)
 endif()
 
 foreach(required IN ITEMS
-    "kIblSection = L\"ImageBasedLighting\""
-    "kDynamicCubemapsSection = L\"DynamicCubemaps\""
-    "kEnabledKey = L\"bEnabled\""
-    "kDynamicCubemapsEnabledKey = L\"bEnabled\""
-    "kDiffuseEnabledKey = L\"bDiffuseEnabled\""
-    "kDiffuseLevelKey = L\"fDiffuseLevel\""
-    "GetPrivateProfileStringW"
-    "WritePrivateProfileStringW"
-    "parseBoolean"
-    "settings_path::resolveIniPath()")
+    "kIblSection = \"ImageBasedLighting\""
+    "kDynamicCubemapsSection = \"DynamicCubemaps\""
+    "kEnabledKey = \"Enabled\""
+    "kDynamicCubemapsEnabledKey = \"Enabled\""
+    "kDiffuseEnabledKey = \"DiffuseEnabled\""
+    "kDiffuseLevelKey = \"DiffuseLevel\"")
   string(FIND
     "${iblSettingsHeader}${iblSettingsStoreSource}${iblSettingsStoreHeader}"
     "${required}" found)
@@ -244,9 +240,9 @@ foreach(required IN ITEMS
     "\"id\": \"dynamic-cubemaps\""
     "\"id\": \"diffuse-ibl\""
     "\"id\": \"diffuse-ibl-level\""
-    "\"section\": \"ImageBasedLighting\""
-    "\"key\": \"bDiffuseEnabled\""
-    "\"key\": \"fDiffuseLevel\"")
+    "\"table\": \"ImageBasedLighting\""
+    "\"key\": \"DiffuseEnabled\""
+    "\"key\": \"DiffuseLevel\"")
   string(FIND "${palmSettings}" "${required}" found)
   if(found EQUAL -1)
     message(FATAL_ERROR
