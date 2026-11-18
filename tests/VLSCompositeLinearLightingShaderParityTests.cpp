@@ -276,7 +276,7 @@ VSOutput VSMain(uint vertexId : SV_VertexID)
     Pixel expectedEnabled(const Settings& settings)
     {
         const auto power =
-            std::pow(std::abs(kSourcePower[0]), settings.volumetricLightingGamma);
+            std::pow(std::abs(kSourcePower[0]), settings.volumetricLightingGamma / 2.2F);
         return {
             power * kCompositeColor[0],
             power * kCompositeColor[1],

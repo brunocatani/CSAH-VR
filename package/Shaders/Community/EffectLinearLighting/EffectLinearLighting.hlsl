@@ -172,7 +172,9 @@ Texture2D<float4> EffectDepthTestTexture : register(t8);
 float4 LinearLightingEffectVertexColor(float4 color)
 {
     if (enableLinearLighting != 0u) {
-        return float4(LinearLightingEffect(color.xyz), color.w);
+        return float4(
+            LinearLightingEffect(color.xyz),
+            exp2(log2(color.w) * 2.2f));
     }
     return exp2(log2(color) * 2.2f);
 }
@@ -181,7 +183,9 @@ float4 LinearLightingEffectVertexColor(float4 color)
 float4 LinearLightingEffectPipboyColor(float4 color)
 {
     if (enableLinearLighting != 0u) {
-        return float4(LinearLightingEffect(color.xyz), color.w);
+        return float4(
+            LinearLightingEffect(color.xyz),
+            exp2(log2(color.w) * 2.2f));
     }
     return exp2(log2(color) * 2.2f);
 }
@@ -254,9 +258,7 @@ float3 EffectLightingColor(float3 modelPosition, uint eyeIndex)
     float4 distanceFade = 1.0f.xxxx -
         saturate(distance * EffectPointLightInverseRadius) *
         saturate(distance * EffectPointLightInverseRadius);
-    if (enableLinearLighting == 0u) {
-        distanceFade = exp2(log2(distanceFade) * 2.2f);
-    }
+    distanceFade = exp2(log2(distanceFade) * 2.2f);
 
     const float4 safeDistance = max(distance, 0.001f.xxxx);
     const float4 lightDirectionX = deltaX / safeDistance;
@@ -307,7 +309,7 @@ float4 PSMain(EffectPixelInput input) : SV_Target0
     float pipboyAlpha = EffectPipboyTexture.Sample(
         EffectPipboySampler,
         input.texCoord.xy).w;
-    if (EffectPipboyControls.y == 0.0f && enableLinearLighting == 0u) {
+    if (EffectPipboyControls.y == 0.0f) {
         pipboyAlpha = exp2(log2(pipboyAlpha) * 2.2f);
     }
     const bool usePipboyAlpha = EffectAlphaTest.w != 0.0f;
@@ -412,7 +414,7 @@ float4 PSMain(EffectPixelInput input) : SV_Target0
 #if (EFFECT_TECHNIQUE & 0x00008000) != 0
     baseColor.w = 1.0f;
 #endif
-    baseColor.xyz = LinearLightingEffect(baseColor.xyz);
+    baseColor.xyz = LinearLightingEffectTexture(baseColor.xyz);
 #if (EFFECT_TECHNIQUE & 0x1) != 0
     const float4 vertexColor =
         LinearLightingEffectVertexColor(input.vertexColor);
@@ -434,7 +436,7 @@ float4 PSMain(EffectPixelInput input) : SV_Target0
         float2(
             pow(abs(textureColor.y), 1.0f / 2.2f),
             grayscaleColorY)).xyz;
-    baseColor.xyz = LinearLightingEffect(
+    baseColor.xyz = LinearLightingEffectTexture(
         grayscaleColor * EffectMembraneVariables.z);
 #endif
 
@@ -512,7 +514,7 @@ float4 PSMain(EffectPixelInput input) : SV_Target0
         input.texCoord.xy);
 #endif
 #if (EFFECT_TECHNIQUE & 0x00002004) == 0x4
-    baseColor.xyz *= LinearLightingEffect(textureColor.xyz);
+    baseColor.xyz *= LinearLightingEffectTexture(textureColor.xyz);
 #endif
 #if (EFFECT_TECHNIQUE & 0x00004004) == 0x4
     baseColor.w *= textureColor.w;
@@ -552,7 +554,7 @@ float4 PSMain(EffectPixelInput input) : SV_Target0
         EffectGrayscaleTexture.Sample(
             EffectGrayscaleSampler,
             grayscaleColorCoordinate).xyz;
-    baseColor.xyz = LinearLightingEffect(grayscaleColor);
+    baseColor.xyz = LinearLightingEffectTexture(grayscaleColor);
 #endif
 #if (EFFECT_TECHNIQUE & 0x00004000) != 0
 #if (EFFECT_TECHNIQUE & 0x00400000) != 0
@@ -606,7 +608,7 @@ float4 PSMain(EffectPixelInput input) : SV_Target0
         EffectSampler,
         input.texCoord.xy);
 #endif
-    baseColor.xyz *= LinearLightingEffect(textureColor.xyz);
+    baseColor.xyz *= LinearLightingEffectTexture(textureColor.xyz);
     baseColor.w *= textureColor.w;
 #endif
 #if (EFFECT_TECHNIQUE & 0x1000) != 0
@@ -639,7 +641,7 @@ float4 PSMain(EffectPixelInput input) : SV_Target0
     const float3 environmentReflectionVector = reflect(
         input.environmentViewVector.xyz,
         environmentNormal);
-    const float3 environmentColor = LinearLightingEffect(
+    const float3 environmentColor = LinearLightingEffectTexture(
         EffectEnvironmentTexture.Sample(
             EffectEnvironmentSampler,
             environmentReflectionVector).xyz);

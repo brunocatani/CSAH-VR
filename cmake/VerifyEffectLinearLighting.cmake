@@ -53,7 +53,7 @@ endforeach()
 
 foreach(required IN ITEMS
     "#include \"../LinearLighting/LinearLighting.hlsli\""
-    "LinearLightingEffect(baseColor.xyz)"
+    "LinearLightingEffectTexture(baseColor.xyz)"
     "LinearLightingEffectMaterialColor(EffectBaseColor.xyz)"
     "LinearLightingEffectMaterialColor(baseColor.xyz)"
     "LinearLightingEffectGeometryColor("

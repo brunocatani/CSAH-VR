@@ -234,8 +234,9 @@ sample_indexable(texture2d)(float,float,float,float) r2.xyz, v1.zwzz, t9.xyzw, s
 movc r0.xyz, r1.xxxx, r2.xyzx, r0.xyzx
 eq r0.w, cb2[5].w, l(-1.000000)
 movc r0.w, r0.w, l(1.000000), r3.y
+mul r1.zw, cb5[1].xxxy, l(0.000000, 0.000000, 0.454545, 0.454545)
 log r2.xyz, |r0.xyzx|
-mul r2.xyz, r2.xyzx, cb5[1].xxxx
+mul r2.xyz, r1.zzzz, r2.xyzx
 exp r2.xyz, r2.xyzx
 mul r2.xyz, r2.xyzx, cb5[3].wwww
 movc r2.xyz, cb5[0].xxxx, r2.xyzx, r0.xyzx
@@ -246,7 +247,7 @@ mul o0.xyz, r0.xyzx, r0.wwww
 max r0.x, cb8[0].x, l(0.000010)
 div r0.xyz, cb2[1].xyzx, r0.xxxx
 log r0.xyz, |r0.xyzx|
-mul r0.xyz, r0.xyzx, cb5[1].yyyy
+mul r0.xyz, r0.xyzx, r1.wwww
 exp r0.xyz, r0.xyzx
 mul r0.xyz, r0.xyzx, cb8[0].xxxx
 mul r0.xyz, r0.xyzx, cb5[4].wwww
@@ -257,4 +258,4 @@ mul o3.z, cb2[0].w, l(0.010000)
 mov o3.w, r1.y
 mov o4.w, r1.y
 ret 
-// Approximately 113 instruction slots used
+// Approximately 114 instruction slots used

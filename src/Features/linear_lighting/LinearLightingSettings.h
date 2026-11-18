@@ -8,38 +8,37 @@
 
 namespace csah::linear_lighting
 {
+    // FO4VR lights in linear space natively. Each response is relative to the
+    // game's own decode (sRGB texture views, pow 2.2 in its shaders and CPU
+    // producers): 2.2 reproduces the game, lower brightens dark values,
+    // higher darkens them.
     constexpr float kNativeLightingResponseGamma = 2.2f;
 
     struct Settings
     {
         bool enabled{ false };
-        // Skyrim's 1.8 response is retained for authored material colours.
-        // Fallout's native light, ambient, fog, and sky producers use 2.2;
-        // preserving that floor prevents low encoded values from being
-        // amplified several times more than their daytime counterparts.
-        bool preserveNativeDarkness{ true };
 
-        float lightGamma{ 1.8f };
-        float colorGamma{ 1.8f };
-        float emitColorGamma{ 1.8f };
-        float glowmapGamma{ 1.8f };
-        float ambientGamma{ 1.8f };
-        float fogGamma{ 1.97f };
-        float fogAlphaGamma{ 1.8f };
-        float effectGamma{ 1.4f };
-        float effectAlphaGamma{ 1.55f };
-        float skyGamma{ 1.8f };
-        float waterGamma{ 1.8f };
-        float volumetricLightingGamma{ 1.8f };
+        float lightGamma{ kNativeLightingResponseGamma };
+        float colorGamma{ kNativeLightingResponseGamma };
+        float emitColorGamma{ kNativeLightingResponseGamma };
+        float glowmapGamma{ kNativeLightingResponseGamma };
+        float ambientGamma{ kNativeLightingResponseGamma };
+        float fogGamma{ kNativeLightingResponseGamma };
+        float fogAlphaGamma{ kNativeLightingResponseGamma };
+        float effectGamma{ kNativeLightingResponseGamma };
+        float effectAlphaGamma{ kNativeLightingResponseGamma };
+        float skyGamma{ kNativeLightingResponseGamma };
+        float waterGamma{ kNativeLightingResponseGamma };
+        float volumetricLightingGamma{ kNativeLightingResponseGamma };
 
         float vanillaDiffuseColorMultiplier{ 1.0f };
         float directionalLightMultiplier{ 1.0f };
         float pointLightMultiplier{ 1.0f };
         float ambientMultiplier{ 1.0f };
         float emitColorMultiplier{ 1.0f };
-        float glowmapMultiplier{ 0.66f };
+        float glowmapMultiplier{ 1.0f };
 
-        float effectLightingMultiplier{ 0.32f };
+        float effectLightingMultiplier{ 1.0f };
         float membraneEffectMultiplier{ 1.0f };
         float otherEffectMultiplier{ 1.0f };
 
@@ -51,25 +50,25 @@ namespace csah::linear_lighting
         std::uint32_t enableLinearLighting{};
         std::uint32_t isDirectionalLightLinear{};
         float directionalLightRuntimeMultiplier{ 1.0f };
-        float lightGamma{ 1.8f };
-        float colorGamma{ 1.8f };
-        float emitColorGamma{ 1.8f };
-        float glowmapGamma{ 1.8f };
-        float ambientGamma{ 1.8f };
-        float fogGamma{ 1.97f };
-        float fogAlphaGamma{ 1.8f };
-        float effectGamma{ 1.4f };
-        float effectAlphaGamma{ 1.55f };
-        float skyGamma{ 1.8f };
-        float waterGamma{ 1.8f };
-        float volumetricLightingGamma{ 1.8f };
+        float lightGamma{ kNativeLightingResponseGamma };
+        float colorGamma{ kNativeLightingResponseGamma };
+        float emitColorGamma{ kNativeLightingResponseGamma };
+        float glowmapGamma{ kNativeLightingResponseGamma };
+        float ambientGamma{ kNativeLightingResponseGamma };
+        float fogGamma{ kNativeLightingResponseGamma };
+        float fogAlphaGamma{ kNativeLightingResponseGamma };
+        float effectGamma{ kNativeLightingResponseGamma };
+        float effectAlphaGamma{ kNativeLightingResponseGamma };
+        float skyGamma{ kNativeLightingResponseGamma };
+        float waterGamma{ kNativeLightingResponseGamma };
+        float volumetricLightingGamma{ kNativeLightingResponseGamma };
         float vanillaDiffuseColorMultiplier{ 1.0f };
         float directionalLightMultiplier{ 1.0f };
         float pointLightMultiplier{ 1.0f };
         float ambientMultiplier{ 1.0f };
         float emitColorMultiplier{ 1.0f };
-        float glowmapMultiplier{ 0.66f };
-        float effectLightingMultiplier{ 0.32f };
+        float glowmapMultiplier{ 1.0f };
+        float effectLightingMultiplier{ 1.0f };
         float membraneEffectMultiplier{ 1.0f };
         // Fixed compatibility slots. The active FO4VR Effect domain has no
         // independently selectable Blood, Projected, or Deferred contract,
@@ -102,15 +101,6 @@ namespace csah::linear_lighting
     static_assert(offsetof(FrameData, complexParallax) == 112);
 
     [[nodiscard]] Settings sanitize(const Settings& settings) noexcept;
-
-    [[nodiscard]] constexpr float calibratedLightingResponseGamma(
-        bool preserveNativeDarkness,
-        float configuredGamma) noexcept
-    {
-        return preserveNativeDarkness &&
-                configuredGamma < kNativeLightingResponseGamma ?
-            kNativeLightingResponseGamma : configuredGamma;
-    }
 
     [[nodiscard]] FrameData makeFrameData(
         const Settings& settings,

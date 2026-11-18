@@ -247,15 +247,16 @@ if_nz r0.x
 endif 
 eq r0.y, cb2[5].w, l(-1.000000)
 movc r0.y, r0.y, l(1.000000), r2.w
+mul r0.zw, cb5[1].xxxy, l(0.000000, 0.000000, 0.454545, 0.454545)
 log r2.xyz, |r1.xyzx|
-mul r2.xyz, r2.xyzx, cb5[1].xxxx
+mul r2.xyz, r0.zzzz, r2.xyzx
 exp r2.xyz, r2.xyzx
 mul r2.xyz, r2.xyzx, cb5[3].wwww
 movc r2.xyz, cb5[0].xxxx, r2.xyzx, r1.xyzx
 mul r3.xyz, r1.xyzx, cb5[3].wwww
 movc r1.xyz, cb5[0].xxxx, r3.xyzx, r1.xyzx
-movc r0.xzw, r0.xxxx, r2.xxyz, r1.xxyz
-mul o0.xyz, r0.xzwx, r0.yyyy
+movc r1.xyz, r0.xxxx, r2.xyzx, r1.xyzx
+mul o0.xyz, r0.yyyy, r1.xyzx
 ishl r0.x, v9.x, l(2)
 iadd r1.xyzw, r0.xxxx, l(66, 63, 64, 54)
 mov r2.xyz, v7.xyzx
@@ -264,17 +265,17 @@ dp4 r0.y, cb12[r1.x + 0].xyzw, r2.xyzw
 dp4 r1.x, cb12[r1.y + 0].xyzw, r2.xyzw
 dp4 r1.y, cb12[r1.z + 0].xyzw, r2.xyzw
 div r0.yz, r1.xxyx, r0.yyyy
-dp4 r0.w, cb12[r1.w + 0].xyzw, r2.xyzw
-iadd r1.xy, r0.xxxx, l(51, 52, 0, 0)
-dp4 r3.x, cb12[r1.x + 0].xyzw, r2.xyzw
-dp4 r3.y, cb12[r1.y + 0].xyzw, r2.xyzw
-div r0.xw, r3.xxxy, r0.wwww
-add r0.xy, -r0.xwxx, r0.yzyy
+dp4 r1.x, cb12[r1.w + 0].xyzw, r2.xyzw
+iadd r1.yz, r0.xxxx, l(0, 51, 52, 0)
+dp4 r3.x, cb12[r1.y + 0].xyzw, r2.xyzw
+dp4 r3.y, cb12[r1.z + 0].xyzw, r2.xyzw
+div r1.xy, r3.xyxx, r1.xxxx
+add r0.xy, r0.yzyy, -r1.xyxx
 mul o5.xy, r0.xyxx, l(-0.500000, 0.500000, 0.000000, 0.000000)
 max r0.x, cb8[0].x, l(0.000010)
 div r0.xyz, cb2[1].xyzx, r0.xxxx
 log r0.xyz, |r0.xyzx|
-mul r0.xyz, r0.xyzx, cb5[1].yyyy
+mul r0.xyz, r0.xyzx, r0.wwww
 exp r0.xyz, r0.xyzx
 mul r0.xyz, r0.xyzx, cb8[0].xxxx
 mul r0.xyz, r0.xyzx, cb5[4].wwww
@@ -283,4 +284,4 @@ mov o0.w, cb2[0].z
 mul o3.z, cb2[0].w, l(0.010000)
 mov o3.w, l(1.000000)
 ret 
-// Approximately 129 instruction slots used
+// Approximately 130 instruction slots used

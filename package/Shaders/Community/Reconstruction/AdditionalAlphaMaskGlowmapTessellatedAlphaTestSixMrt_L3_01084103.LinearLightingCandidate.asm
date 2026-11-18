@@ -282,15 +282,16 @@ movc r0.yz, r1.xxyx, r0.yyzy, cb2[0].xxyx
 mul r3.y, r0.x, r0.z
 mul r3.x, r2.z, r0.y
 sample_indexable(texture2d)(float,float,float,float) r0.xyz, v1.xyxx, t3.xyzw, s3
-log r1.xyz, |r0.xyzx|
-mul r1.xyz, r1.xyzx, cb5[1].zzzz
-exp r1.xyz, r1.xyzx
-mul r1.xyz, r1.xyzx, cb5[5].xxxx
-movc r0.xyz, cb5[0].xxxx, r1.xyzx, r0.xyzx
+mul r1.xy, cb5[1].zyzz, l(0.454545, 0.454545, 0.000000, 0.000000)
+log r2.xyz, |r0.xyzx|
+mul r1.xzw, r1.xxxx, r2.xxyz
+exp r1.xzw, r1.xxzw
+mul r1.xzw, r1.xxzw, cb5[5].xxxx
+movc r0.xyz, cb5[0].xxxx, r1.xzwx, r0.xyzx
 max r0.w, cb8[0].x, l(0.000010)
-div r1.xyz, cb2[1].xyzx, r0.wwww
-log r1.xyz, |r1.xyzx|
-mul r1.xyz, r1.xyzx, cb5[1].yyyy
+div r1.xzw, cb2[1].xxyz, r0.wwww
+log r1.xzw, |r1.xxzw|
+mul r1.xyz, r1.xzwx, r1.yyyy
 exp r1.xyz, r1.xyzx
 mul r1.xyz, r1.xyzx, cb8[0].xxxx
 mul r1.xyz, r1.xyzx, cb5[4].wwww
@@ -315,4 +316,4 @@ mov o0.w, cb2[0].z
 mul r3.w, cb2[0].w, l(0.010000)
 mov o3.xyzw, r3.xywz
 ret
-// Approximately 160 instruction slots used
+// Approximately 161 instruction slots used

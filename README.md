@@ -14,8 +14,7 @@ The included features are listed individually below. Incomplete or unconfirmed e
 
 ### Lighting
 
-- **Linear Lighting** — Evaluates supported lighting and material colour operations in linear space. Includes separate response and intensity controls for direct light, ambient light, emission, fog, sky, water, and effects. Enabled in the first-run gameplay preset.
-- **Preserve Native Darkness** — Preserves Fallout's darker response for native light, ambient, fog, and sky, keeping nights and unlit areas from becoming uniformly brighter.
+- **Linear Lighting** — Fallout 4 VR already lights in linear space, so at its defaults this feature reproduces the game exactly. Its response and intensity controls for direct light, ambient light, colour, emission, glowmaps, fog, sky, water, effects and volumetric lighting adjust the image from there: a response of 2.2 matches the game, lower brightens dark values, higher darkens them. Enabled in the first-run gameplay preset.
 - **Image Based Lighting** — Supplies a shared stereo environment to the reflection and diffuse-lighting features.
 - **Dynamic Cubemaps** — Uses the captured scene environment for position-aware reflections, with each material's native cubemap retained when capture confidence is insufficient. Reflection placement and stereo behavior remain experimental.
 - **Diffuse IBL** — Adds environment-derived diffuse bounce lighting. Can be expensive in dense scenes.
@@ -130,6 +129,8 @@ The **CSAH Visual Suite** switch controls the lighting, material, and output eff
 The first-run gameplay preset enables **Linear Lighting**, which the PBR pipeline requires. Cloud Shadows, Hair Specular, Wrapped Grass Lighting, Subsurface Scattering, and Volumetric Lighting / Godrays are disabled by default because they are not working. Quality settings are fixed choices: the mod does not automatically lower visual quality to meet an FPS target.
 
 The first start after an update carries every value you changed in `Mods_Config/CSAH/CSAH.ini`, or in the older `Mods_Config/FO4VRCommunityShaders/FO4VRCommunityShaders.ini`, into `CSAH.toml` and deletes the INI. Values equal to their old defaults follow the current defaults. Section names stay the same and keys lose their type letter, for example `[DLAA] iMode` becomes `[DLAA] Mode`.
+
+Linear Lighting's former `*Gamma` keys, `PreserveNativeDarkness`, `GlowmapMultiplier` and `EffectLightingMultiplier` decoded colours a second time on top of the game's own decode and are retired: CSAH turns them into comments, and their replacements (`*Response`, `GlowmapScale`, `EffectLightingScale`) start at values that match the game.
 
 When upgrading from 0.0.3 Alpha, replace the entire old mod installation before installing CSAH. Do not enable both versions together; the old DLL was named `fo4vr-community-shaders.dll`.
 

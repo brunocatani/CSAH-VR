@@ -212,8 +212,9 @@ mul o3.y, r0.x, r0.z
 mul o3.x, r2.z, r0.y
 max r0.x, cb8[0].x, l(0.000010)
 div r0.xyz, cb2[1].xyzx, r0.xxxx
+mul r1.x, cb5[1].y, l(0.454545)
 log r0.xyz, |r0.xyzx|
-mul r0.xyz, r0.xyzx, cb5[1].yyyy
+mul r0.xyz, r0.xyzx, r1.xxxx
 exp r0.xyz, r0.xyzx
 mul r0.xyz, r0.xyzx, cb8[0].xxxx
 mul r0.xyz, r0.xyzx, cb5[4].wwww
@@ -224,4 +225,4 @@ mul o3.z, cb2[0].w, l(0.010000)
 mov o3.w, r0.w
 mov o4.w, r0.w
 ret 
-// Approximately 94 instruction slots used
+// Approximately 95 instruction slots used

@@ -300,16 +300,17 @@ lt r0.w, r0.w, l(0.000000)
 discard_nz r0.w
 eq r0.w, cb2[6].w, l(-1.000000)
 movc r0.w, r0.w, l(1.000000), r3.y
-log r1.yzw, |r0.xxyz|
-mul r1.yzw, r1.yyzw, cb5[1].xxxx
-exp r1.yzw, r1.yyzw
-mul r1.yzw, r1.yyzw, cb5[3].wwww
-movc r0.xyz, cb5[0].xxxx, r1.yzwy, r0.xyzx
+mul r1.yz, cb5[1].xxyx, l(0.000000, 0.454545, 0.454545, 0.000000)
+log r2.xyz, |r0.xyzx|
+mul r2.xyz, r1.yyyy, r2.xyzx
+exp r2.xyz, r2.xyzx
+mul r2.xyz, r2.xyzx, cb5[3].wwww
+movc r0.xyz, cb5[0].xxxx, r2.xyzx, r0.xyzx
 mul o0.xyz, r0.xyzx, r0.wwww
 max r0.x, cb8[0].x, l(0.000010)
 div r0.xyz, cb2[1].xyzx, r0.xxxx
 log r0.xyz, |r0.xyzx|
-mul r0.xyz, r0.xyzx, cb5[1].yyyy
+mul r0.xyz, r0.xyzx, r1.zzzz
 exp r0.xyz, r0.xyzx
 mul r0.xyz, r0.xyzx, cb8[0].xxxx
 mul r0.xyz, r0.xyzx, cb5[4].wwww
@@ -320,4 +321,4 @@ mul o3.z, cb2[0].w, l(0.010000)
 mov o3.w, r1.x
 mov o4.w, r1.x
 ret 
-// Approximately 161 instruction slots used
+// Approximately 162 instruction slots used

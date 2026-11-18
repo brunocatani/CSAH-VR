@@ -293,16 +293,16 @@ VSOutput VSMain(uint vertexId : SV_VertexID)
         Pixel result{};
         for (std::size_t channel = 0; channel < 3; ++channel) {
             const float diffuse =
-                std::pow(std::abs(kDiffuse[channel]), settings.colorGamma) *
+                std::pow(std::abs(kDiffuse[channel]), settings.colorGamma / 2.2F) *
                 settings.vanillaDiffuseColorMultiplier;
             const float directionalInput =
                 kDirectional[channel] / kRuntimeDirectionalScale;
             const float directional =
-                std::pow(std::abs(directionalInput), settings.lightGamma) *
+                std::pow(std::abs(directionalInput), settings.lightGamma / 2.2F) *
                 settings.directionalLightMultiplier *
                 kRuntimeDirectionalScale;
             const float ambient =
-                std::pow(std::abs(kAmbient[channel]), settings.ambientGamma) *
+                std::pow(std::abs(kAmbient[channel]), settings.ambientGamma / 2.2F) *
                 settings.ambientMultiplier;
             const float surface = diffuse *
                 (kDirectionalAmount * directional + ambient);
@@ -311,7 +311,7 @@ VSOutput VSMain(uint vertexId : SV_VertexID)
                     std::abs(kFog[channel]),
                     settings.fogGamma / 2.2F);
             const float fogAlpha =
-                std::pow(std::abs(kFogAmount), settings.fogAlphaGamma);
+                std::pow(std::abs(kFogAmount), settings.fogAlphaGamma / 2.2F);
             result[channel] =
                 std::lerp(surface, fog, fogAlpha) * kAmbient[3];
         }
@@ -353,7 +353,12 @@ VSOutput VSMain(uint vertexId : SV_VertexID)
         disabledSettings.enabled = false;
         Settings enabledSettings = disabledSettings;
         enabledSettings.enabled = true;
-        enabledSettings.preserveNativeDarkness = false;
+        Settings nativeSettings = enabledSettings;
+        enabledSettings.colorGamma = 1.8F;
+        enabledSettings.lightGamma = 1.7F;
+        enabledSettings.ambientGamma = 2.6F;
+        enabledSettings.fogGamma = 1.9F;
+        enabledSettings.fogAlphaGamma = 2.4F;
         enabledSettings.vanillaDiffuseColorMultiplier = 1.1F;
         enabledSettings.directionalLightMultiplier = 0.9F;
         enabledSettings.ambientMultiplier = 1.2F;
@@ -365,6 +370,10 @@ VSOutput VSMain(uint vertexId : SV_VertexID)
             createConstantBuffer(device.Get(), disabledFrame);
         const auto enabledFrameBuffer =
             createConstantBuffer(device.Get(), enabledFrame);
+        const FrameData nativeFrame = makeFrameData(
+            nativeSettings, true, false, kRuntimeDirectionalScale);
+        const auto nativeFrameBuffer =
+            createConstantBuffer(device.Get(), nativeFrame);
 
         const auto texture = createTexture(device.Get());
         D3D11_SAMPLER_DESC samplerDescription{};
@@ -419,8 +428,19 @@ VSOutput VSMain(uint vertexId : SV_VertexID)
             texture.Get(),
             sampler.Get());
 
+        const auto native = render(
+            device.Get(),
+            context.Get(),
+            vertexShader.Get(),
+            replacementShader.Get(),
+            distantTreeBuffer.Get(),
+            nativeFrameBuffer.Get(),
+            texture.Get(),
+            sampler.Get());
+
         bool passed = true;
         passed &= compare(disabled, vanilla, "disabled parity");
+        passed &= compare(native, vanilla, "enabled default parity");
         passed &= compare(enabled, expectedEnabled(enabledSettings), "enabled model");
         if (!passed) {
             return 1;

@@ -75,22 +75,15 @@ int main()
     passed &= expect(enabledState.enabled,
         "enabled settings did not activate DFLight producers");
     passed &= expect(
-        nearlyEqual(enabledState.directionalGamma, kVanillaDFLightGamma) &&
-            nearlyEqual(enabledState.ambientGamma, kVanillaDFLightGamma),
-        "DFLight producers did not preserve Fallout's darkness response");
+        nearlyEqual(enabledState.directionalGamma, 1.8f) &&
+            nearlyEqual(enabledState.ambientGamma, 1.7f),
+        "DFLight producers did not publish the configured responses");
     passed &= expect(
         nearlyEqual(
             enabledState.directionalMultiplier,
             0.5f) &&
             nearlyEqual(enabledState.ambientMultiplier, 0.75f),
         "FO4VR DFLight producer multipliers were not retained at engine scale");
-
-    enabled.preserveNativeDarkness = false;
-    const auto artisticState = makeDFLightProducerState(enabled);
-    passed &= expect(
-        nearlyEqual(artisticState.directionalGamma, 1.8f) &&
-            nearlyEqual(artisticState.ambientGamma, 1.7f),
-        "disabled darkness calibration did not restore custom producer gamma");
 
     return passed ? EXIT_SUCCESS : EXIT_FAILURE;
 }

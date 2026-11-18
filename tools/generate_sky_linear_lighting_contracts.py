@@ -138,7 +138,7 @@ def compile_candidates(
         "skyGamma / kLinearLightingVanillaProducerGamma",
         "float3 LinearLightingSkyCloudColor(float3 color)",
         "float3(0.2126f, 0.7152f, 0.0722f)",
-        "const float linearLuminance = pow(luminance, skyGamma);",
+        "const float linearLuminance = LinearLightingResponse(luminance, skyGamma);",
         "linearLuminance / max(luminance, 1e-5f)",
     ):
         if required not in include_text:

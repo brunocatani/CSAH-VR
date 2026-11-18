@@ -399,9 +399,9 @@ namespace
     constexpr LinearLightingCase kIdentityCase{
         "enabled-identity",
         true,
-        1.0F,
-        1.0F,
-        1.0F,
+        2.2F,
+        2.2F,
+        2.2F,
         1.0F,
         1.0F,
         1.0F,
@@ -2010,7 +2010,7 @@ VSOutput VSMain(uint vertexId : SV_VertexID)
         float gamma,
         float multiplier)
     {
-        return std::pow(std::abs(value), gamma) * multiplier;
+        return std::pow(std::abs(value), gamma / 2.2F) * multiplier;
     }
 
     [[nodiscard]] float decodedDiffuseValue(

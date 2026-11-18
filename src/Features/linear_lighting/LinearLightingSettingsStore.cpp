@@ -36,22 +36,19 @@ namespace csah::linear_lighting
         const Settings defaults{};
         auto result = defaults;
         result.enabled = readBool(values, "Enabled", defaults.enabled);
-        result.preserveNativeDarkness = readBool(values,
-            "PreserveNativeDarkness",
-            defaults.preserveNativeDarkness);
-        result.lightGamma = readFloat(values, "LightGamma", defaults.lightGamma);
-        result.colorGamma = readFloat(values, "ColorGamma", defaults.colorGamma);
-        result.emitColorGamma = readFloat(values, "EmitColorGamma", defaults.emitColorGamma);
-        result.glowmapGamma = readFloat(values, "GlowmapGamma", defaults.glowmapGamma);
-        result.ambientGamma = readFloat(values, "AmbientGamma", defaults.ambientGamma);
-        result.fogGamma = readFloat(values, "FogGamma", defaults.fogGamma);
-        result.fogAlphaGamma = readFloat(values, "FogAlphaGamma", defaults.fogAlphaGamma);
-        result.effectGamma = readFloat(values, "EffectGamma", defaults.effectGamma);
-        result.effectAlphaGamma = readFloat(values, "EffectAlphaGamma", defaults.effectAlphaGamma);
-        result.skyGamma = readFloat(values, "SkyGamma", defaults.skyGamma);
-        result.waterGamma = readFloat(values, "WaterGamma", defaults.waterGamma);
+        result.lightGamma = readFloat(values, "LightResponse", defaults.lightGamma);
+        result.colorGamma = readFloat(values, "ColorResponse", defaults.colorGamma);
+        result.emitColorGamma = readFloat(values, "EmitColorResponse", defaults.emitColorGamma);
+        result.glowmapGamma = readFloat(values, "GlowmapResponse", defaults.glowmapGamma);
+        result.ambientGamma = readFloat(values, "AmbientResponse", defaults.ambientGamma);
+        result.fogGamma = readFloat(values, "FogResponse", defaults.fogGamma);
+        result.fogAlphaGamma = readFloat(values, "FogAlphaResponse", defaults.fogAlphaGamma);
+        result.effectGamma = readFloat(values, "EffectResponse", defaults.effectGamma);
+        result.effectAlphaGamma = readFloat(values, "EffectAlphaResponse", defaults.effectAlphaGamma);
+        result.skyGamma = readFloat(values, "SkyResponse", defaults.skyGamma);
+        result.waterGamma = readFloat(values, "WaterResponse", defaults.waterGamma);
         result.volumetricLightingGamma = readFloat(values,
-            "VolumetricLightingGamma",
+            "VolumetricLightingResponse",
             defaults.volumetricLightingGamma);
         result.vanillaDiffuseColorMultiplier = readFloat(values,
             "VanillaDiffuseColorMultiplier",
@@ -69,10 +66,10 @@ namespace csah::linear_lighting
             "EmitColorMultiplier",
             defaults.emitColorMultiplier);
         result.glowmapMultiplier = readFloat(values,
-            "GlowmapMultiplier",
+            "GlowmapScale",
             defaults.glowmapMultiplier);
         result.effectLightingMultiplier = readFloat(values,
-            "EffectLightingMultiplier",
+            "EffectLightingScale",
             defaults.effectLightingMultiplier);
         result.membraneEffectMultiplier = readFloat(values,
             "MembraneEffectMultiplier",

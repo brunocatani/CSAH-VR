@@ -1987,154 +1987,6 @@ VSOutput VSMain(uint vertexId : SV_VertexID)
         return result;
     }
 
-    Pixel expectedEnabled(
-        const EffectContract& contract,
-        const Settings& settings,
-        const Pixel& pipboyControls = kPipboyControlsConverted,
-        bool usePipboyAlpha = true,
-        bool uiMaskColorIsLinear = false,
-        std::uint32_t eyeIndex = 0)
-    {
-        if (contract.membrane()) {
-            return expectedMembrane(contract, &settings);
-        }
-        if (contract.uiMaskRects()) {
-            auto alpha = kTextureColor[3] *
-                kBaseColor[3] * kPropertyColor[3];
-            if (contract.pipboy() && usePipboyAlpha) {
-                alpha = kPipboyTexture[3];
-                if (pipboyControls[0] != 0.0F) {
-                    alpha *= kBaseColor[3];
-                }
-                alpha *= pipboyControls[2];
-            }
-            alpha = std::pow(
-                std::abs(alpha * expectedUIMaskFactor()),
-                settings.effectAlphaGamma);
-
-            Pixel result{};
-            for (std::size_t channel = 0; channel < 3; ++channel) {
-                result[channel] = (uiMaskColorIsLinear ?
-                    kUIMaskColor[channel] :
-                    std::pow(
-                        std::abs(kUIMaskColor[channel]),
-                        settings.effectGamma)) *
-                    settings.otherEffectMultiplier;
-                if (contract.premultipliedAlpha()) {
-                    result[channel] *= alpha;
-                }
-            }
-            result[3] = alpha;
-            return result;
-        }
-
-        const auto& textureColor = effectTextureSample(contract);
-        Pixel result{};
-        auto rawAlpha = contract.grayscaleAlpha() ?
-            grayscaleAlphaSample(contract) :
-            kBaseColor[3] *
-                (contract.vertexColored() ? kVertexColor[3] : 1.0F) *
-                (contract.usesBaseTextureAlpha() ? textureColor[3] : 1.0F) *
-                kPropertyColor[3];
-        if (contract.soft() &&
-            (!contract.grayscaleAlpha() || contract.particleDistortion())) {
-            rawAlpha *= expectedSoftFade();
-        }
-        if (contract.falloff() && !contract.grayscaleAlpha()) {
-            rawAlpha *= kGrayscaleInput;
-        }
-        auto pipboyColor = kPipboyTexture;
-        if (contract.pipboy() && pipboyControls[1] == 0.0F) {
-            for (std::size_t channel = 0; channel < 3; ++channel) {
-                pipboyColor[channel] = std::pow(
-                    std::abs(pipboyColor[channel]),
-                    settings.effectGamma);
-            }
-        }
-        auto compositeRawAlpha = rawAlpha;
-        if (contract.pipboy()) {
-            compositeRawAlpha = usePipboyAlpha ? pipboyColor[3] : rawAlpha;
-            if (usePipboyAlpha && pipboyControls[0] != 0.0F) {
-                compositeRawAlpha *= kBaseColor[3];
-            }
-            compositeRawAlpha *=
-                usePipboyAlpha ? pipboyControls[2] : 1.0F;
-        }
-        const auto outputAlpha =
-            std::pow(
-                std::abs(compositeRawAlpha),
-                settings.effectAlphaGamma);
-        const auto fogFactor =
-            std::pow(std::abs(kFogParam[3]), settings.fogAlphaGamma);
-        const auto grayscaleColor = grayscaleColorSample(contract);
-        for (std::size_t channel = 0; channel < 3; ++channel) {
-            float base{};
-            if (contract.grayscaleColor()) {
-                base = std::pow(
-                    std::abs(grayscaleColor[channel] * kBaseColorScale),
-                    settings.effectGamma);
-            } else {
-                base = std::pow(
-                    std::abs(kBaseColor[channel]),
-                    settings.effectGamma / 2.2F);
-                if (contract.vertexColored()) {
-                    base *= std::pow(
-                        std::abs(kVertexColor[channel]),
-                        settings.effectGamma);
-                }
-                if (contract.textured()) {
-                    base *= std::pow(
-                        std::abs(textureColor[channel]),
-                        settings.effectGamma);
-                }
-            }
-            if (contract.rgbFalloff() && !contract.grayscaleColor()) {
-                base *= kGrayscaleInput;
-            }
-            if (contract.environmentMap()) {
-                base += expectedEnvironmentColor(
-                    eyeIndex, &settings)[channel];
-            }
-            const auto property = contract.lighting() ?
-                expectedLightingColor(eyeIndex, &settings)[channel] :
-                std::pow(
-                    std::abs(kPropertyColor[channel]),
-                    settings.effectGamma / settings.lightGamma);
-            const auto lightColor =
-                (base + kLightingInfluence * (property * base - base)) *
-                settings.otherEffectMultiplier;
-            if (contract.additive()) {
-                result[channel] = lightColor * (1.0F - fogFactor);
-            } else if (contract.multiplyBlend()) {
-                const auto multiplyFogFactor =
-                    std::clamp(1.5F * fogFactor, 0.0F, 1.0F);
-                const auto foggedColor = lightColor +
-                    multiplyFogFactor * (1.0F - lightColor);
-                result[channel] =
-                    1.0F + outputAlpha * (foggedColor - 1.0F);
-            } else {
-                const auto fogColor =
-                    std::pow(
-                        std::abs(kFogParam[channel]),
-                        settings.fogGamma / 2.2F);
-                result[channel] = lightColor +
-                    fogFactor * (fogColor - lightColor);
-            }
-            if (contract.pipboy()) {
-                result[channel] += pipboyColor[channel] *
-                    pipboyControls[3] * settings.otherEffectMultiplier;
-                if (usePipboyAlpha && pipboyControls[0] != 0.0F) {
-                    result[channel] *= kBaseColor[3];
-                }
-            }
-            if (contract.premultipliedAlpha()) {
-                result[channel] *= outputAlpha;
-            }
-        }
-        result[3] = outputAlpha;
-        return result;
-    }
-
     int run(const std::filesystem::path& root)
     {
         D3D_FEATURE_LEVEL featureLevel{};
@@ -2208,16 +2060,6 @@ VSOutput VSMain(uint vertexId : SV_VertexID)
         disabledSettings.enabled = false;
         Settings enabledSettings = disabledSettings;
         enabledSettings.enabled = true;
-        enabledSettings.preserveNativeDarkness = false;
-        enabledSettings.effectGamma = 1.65F;
-        enabledSettings.effectAlphaGamma = 1.3F;
-        enabledSettings.lightGamma = 1.7F;
-        enabledSettings.fogGamma = 1.85F;
-        enabledSettings.fogAlphaGamma = 1.45F;
-        enabledSettings.pointLightMultiplier = 0.85F;
-        enabledSettings.effectLightingMultiplier = 0.4F;
-        enabledSettings.membraneEffectMultiplier = 1.35F;
-        enabledSettings.otherEffectMultiplier = 1.25F;
         const FrameData disabledFrame =
             makeFrameData(disabledSettings, true, false, 1.0F);
         const FrameData enabledFrame =
@@ -2493,8 +2335,8 @@ VSOutput VSMain(uint vertexId : SV_VertexID)
                 label + " disabled parity");
             passed &= compare(
                 enabled,
-                expectedEnabled(contract, enabledSettings),
-                label + " enabled model");
+                expectedVanilla(contract),
+                label + " enabled default parity");
             if (contract.lighting() || contract.environmentMap()) {
                 auto* rightEyeVertexShader =
                     selectVertexShader(contract, true);
@@ -2537,9 +2379,8 @@ VSOutput VSMain(uint vertexId : SV_VertexID)
                     label + " right-eye disabled parity");
                 passed &= compare(
                     rightEyeEnabled,
-                    expectedEnabled(
+                    expectedVanilla(
                         contract,
-                        enabledSettings,
                         kPipboyControlsConverted,
                         true,
                         false,
@@ -2585,9 +2426,8 @@ VSOutput VSMain(uint vertexId : SV_VertexID)
                     label + " linear UI-mask color disabled parity");
                 passed &= compare(
                     enabledLinearColor,
-                    expectedEnabled(
+                    expectedVanilla(
                         contract,
-                        enabledSettings,
                         kPipboyControlsConverted,
                         true,
                         true),
@@ -2687,9 +2527,8 @@ VSOutput VSMain(uint vertexId : SV_VertexID)
                     label + " raw Pipboy disabled parity");
                 passed &= compare(
                     enabledRawPipboy,
-                    expectedEnabled(
+                    expectedVanilla(
                         contract,
-                        enabledSettings,
                         kPipboyControlsRaw,
                         false),
                     label + " raw Pipboy enabled model");

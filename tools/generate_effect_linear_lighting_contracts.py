@@ -684,7 +684,7 @@ def compile_candidates(
     source_text = source.read_text(encoding="utf-8")
     required_source = (
         '#include "../LinearLighting/LinearLighting.hlsli"',
-        "LinearLightingEffect(baseColor.xyz)",
+        "LinearLightingEffectTexture(baseColor.xyz)",
         "LinearLightingEffectMaterialColor(EffectBaseColor.xyz)",
         "LinearLightingEffectMaterialColor(baseColor.xyz)",
         "LinearLightingEffectGeometryColor(",

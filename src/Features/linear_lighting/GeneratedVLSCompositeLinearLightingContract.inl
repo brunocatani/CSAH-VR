@@ -14,12 +14,12 @@ constexpr VLSCompositeShaderContractDefinition kVLSCompositeShaderContract{
         },
     },
     {
-        2840,
+        2868,
         {
-            std::byte{ 0x4A }, std::byte{ 0xD5 }, std::byte{ 0xC2 }, std::byte{ 0x21 },
-            std::byte{ 0x43 }, std::byte{ 0x0F }, std::byte{ 0xBC }, std::byte{ 0x1B },
-            std::byte{ 0x95 }, std::byte{ 0xFA }, std::byte{ 0x01 }, std::byte{ 0x4C },
-            std::byte{ 0x4D }, std::byte{ 0x73 }, std::byte{ 0x60 }, std::byte{ 0x1F },
+            std::byte{ 0xDC }, std::byte{ 0x58 }, std::byte{ 0x4F }, std::byte{ 0x8B },
+            std::byte{ 0xAF }, std::byte{ 0x1E }, std::byte{ 0xEA }, std::byte{ 0xD3 },
+            std::byte{ 0xAA }, std::byte{ 0xD0 }, std::byte{ 0x00 }, std::byte{ 0x5F },
+            std::byte{ 0x82 }, std::byte{ 0x4A }, std::byte{ 0xEA }, std::byte{ 0x6D },
         },
     },
 };

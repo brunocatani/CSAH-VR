@@ -22,9 +22,7 @@ namespace csah::linear_lighting
         }
         return {
             .enabled = true,
-            .gamma = calibratedLightingResponseGamma(
-                safe.preserveNativeDarkness,
-                safe.lightGamma),
+            .gamma = safe.lightGamma,
             // FO4VR's tiled-light compute shaders consume record color at
             // engine scale and contain no reciprocal-PI normalization.
             .colorMultiplier = safe.pointLightMultiplier,

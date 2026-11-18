@@ -2601,26 +2601,18 @@ namespace csah::linear_lighting
     void Runtime::applySettings(const Settings& settings) noexcept
     {
         auto next = sanitize(settings);
-        const auto previousAmbientGamma = calibratedLightingResponseGamma(
-            settings_.preserveNativeDarkness,
-            settings_.ambientGamma);
-        const auto nextAmbientGamma = calibratedLightingResponseGamma(
-            next.preserveNativeDarkness,
-            next.ambientGamma);
+        const auto previousAmbientGamma = settings_.ambientGamma;
+        const auto nextAmbientGamma = next.ambientGamma;
         if (nextAmbientGamma != previousAmbientGamma && device_ &&
             !rebuildDFLightAmbientReplacements(nextAmbientGamma)) {
             logging::error(
                 "DFLight ambient gamma update failed to rebuild every observed replacement; retaining gamma {} while applying the remaining settings.",
                 previousAmbientGamma);
             next.ambientGamma = settings_.ambientGamma;
-            next.preserveNativeDarkness = settings_.preserveNativeDarkness;
         }
         settings_ = next;
         dFLightAmbientGammaBits_.store(
-            std::bit_cast<std::uint32_t>(
-                calibratedLightingResponseGamma(
-                    settings_.preserveNativeDarkness,
-                    settings_.ambientGamma)),
+            std::bit_cast<std::uint32_t>(settings_.ambientGamma),
             std::memory_order_release);
         enabled_.store(settings_.enabled, std::memory_order_release);
         render::setDFPrePassLinearLightingEnabled(settings_.enabled);

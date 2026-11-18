@@ -381,7 +381,7 @@ VSOutput VSMain(uint vertexId : SV_VertexID)
 
     float sky(float value, float gamma)
     {
-        return std::pow(std::abs(value), gamma);
+        return std::pow(std::abs(value), gamma / kSkyProducerGamma);
     }
 
     float skyProducerColor(float value, float gamma)
@@ -401,7 +401,7 @@ VSOutput VSMain(uint vertexId : SV_VertexID)
         for (std::size_t channel = 0; channel < 3; ++channel) {
             luminance += std::abs(color[channel]) * luminanceWeights[channel];
         }
-        const float scale = std::pow(luminance, gamma) /
+        const float scale = std::pow(luminance, gamma / kSkyProducerGamma) /
             std::max(luminance, 1.0e-5F);
         return {
             std::abs(color[0]) * scale,
@@ -529,13 +529,12 @@ VSOutput VSMain(uint vertexId : SV_VertexID)
         disabledSettings.skyGamma = kSkyGamma;
         Settings enabledSettings = disabledSettings;
         enabledSettings.enabled = true;
-        enabledSettings.preserveNativeDarkness = false;
         const FrameData disabledFrame = makeFrameData(
             disabledSettings, true, false, 1.0F);
         const FrameData enabledFrame = makeFrameData(
             enabledSettings, true, false, 1.0F);
         Settings nativeNightSettings = enabledSettings;
-        nativeNightSettings.preserveNativeDarkness = true;
+        nativeNightSettings.skyGamma = kNativeSkyGamma;
         const FrameData nativeNightFrame = makeFrameData(
             nativeNightSettings, true, false, 1.0F);
 
@@ -612,9 +611,7 @@ VSOutput VSMain(uint vertexId : SV_VertexID)
                 label + " enabled color");
             passed &= compare(enabled[1], vanilla[1], label + " enabled motion");
             passed &= compare(
-                nativeNight[0],
-                expectedEnabled(descriptor, kNativeSkyGamma),
-                label + " native-night color");
+                nativeNight[0], vanilla[0], label + " native response color");
             passed &= compare(
                 nativeNight[1], vanilla[1], label + " native-night motion");
         }

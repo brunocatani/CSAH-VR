@@ -93,7 +93,7 @@ int main(int argc, char** argv)
     require(values.number("DLAA", "Sharpness", -1.0f) == 0.5f, "changed value carried over");
     require(values.boolean("ContactShadows", "Enabled", false), "changed boolean carried over");
     require(!values.boolean("Bloom", "Enabled", true), "older INI value carried over");
-    require(values.number("LinearLighting", "LightGamma", -1.0f) == 1.8f, "old default follows the current default");
+    require(values.number("LinearLighting", "LightResponse", -1.0f) == 2.2f, "a retired gamma key does not carry into its response");
 
     fs::remove_all(root, ignored);
     std::cout << "CSAH settings file tests passed.\n";

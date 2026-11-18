@@ -438,7 +438,6 @@ float4 VSMain(uint vertexId : SV_VertexID) : SV_POSITION0
         disabledSettings.enabled = false;
         Settings enabledSettings = disabledSettings;
         enabledSettings.enabled = true;
-        enabledSettings.preserveNativeDarkness = false;
         enabledSettings.lightGamma = 1.65F;
         enabledSettings.fogGamma = 1.93F;
         enabledSettings.fogAlphaGamma = 1.47F;
@@ -496,11 +495,11 @@ float4 VSMain(uint vertexId : SV_VertexID) : SV_POSITION0
             disabledShallowDeep[1], kDeepColor, "disabled deep parity");
         passed &= compare(
             enabledShallowDeep[0],
-            expectedEnabled(kShallowColor, enabledSettings.waterGamma),
+            expectedEnabled(kShallowColor, enabledSettings.waterGamma / 2.2F),
             "enabled shallow model");
         passed &= compare(
             enabledShallowDeep[1],
-            expectedEnabled(kDeepColor, enabledSettings.waterGamma),
+            expectedEnabled(kDeepColor, enabledSettings.waterGamma / 2.2F),
             "enabled deep model");
         passed &= compare(disabledSun[0], kSunColor, "disabled sun parity");
         passed &= compare(
@@ -516,11 +515,11 @@ float4 VSMain(uint vertexId : SV_VertexID) : SV_POSITION0
             disabledFog[1], kFogFarColor, "disabled far fog parity");
         passed &= compare(
             enabledFog[0],
-            expectedEnabled(kFogNearColor, enabledSettings.fogGamma),
+            expectedEnabled(kFogNearColor, enabledSettings.fogGamma / 2.2F),
             "enabled near fog model");
         passed &= compare(
             enabledFog[1],
-            expectedEnabled(kFogFarColor, enabledSettings.fogGamma),
+            expectedEnabled(kFogFarColor, enabledSettings.fogGamma / 2.2F),
             "enabled far fog model");
         passed &= compare(
             disabledPointLight[0],
@@ -540,7 +539,7 @@ float4 VSMain(uint vertexId : SV_VertexID) : SV_POSITION0
             kFogAlphaSource[0],
         };
         const float transformedFogAlpha = std::pow(
-            std::abs(kFogAlphaSource[0]), enabledSettings.fogAlphaGamma);
+            std::abs(kFogAlphaSource[0]), enabledSettings.fogAlphaGamma / 2.2F);
         const Pixel enabledFogAlphaExpected{
             transformedFogAlpha,
             transformedFogAlpha,

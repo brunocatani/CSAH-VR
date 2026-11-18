@@ -328,7 +328,7 @@ VSOutput VSMain(uint vertexId : SV_VertexID)
                 kGrayscale[channel] :
                 kSource[channel] * kVertexColor[channel];
             result[channel] =
-                std::pow(std::abs(baseColor), settings.colorGamma) *
+                std::pow(std::abs(baseColor), settings.colorGamma / 2.2F) *
                 settings.vanillaDiffuseColorMultiplier * kColorScale;
         }
         return result;

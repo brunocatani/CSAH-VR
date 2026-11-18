@@ -22,7 +22,7 @@ namespace csah::linear_lighting
 
         [[nodiscard]] float sanitizeGamma(float value, float fallback) noexcept
         {
-            return sanitizeValue(value, fallback, 0.1f, 3.0f);
+            return sanitizeValue(value, fallback, 0.1f, 4.4f);
         }
 
         [[nodiscard]] float sanitizeMultiplier(
@@ -100,24 +100,16 @@ namespace csah::linear_lighting
             1.0f,
             0.0f,
             100.0f);
-        data.lightGamma = calibratedLightingResponseGamma(
-            safe.preserveNativeDarkness,
-            safe.lightGamma);
+        data.lightGamma = safe.lightGamma;
         data.colorGamma = safe.colorGamma;
         data.emitColorGamma = safe.emitColorGamma;
         data.glowmapGamma = safe.glowmapGamma;
-        data.ambientGamma = calibratedLightingResponseGamma(
-            safe.preserveNativeDarkness,
-            safe.ambientGamma);
-        data.fogGamma = calibratedLightingResponseGamma(
-            safe.preserveNativeDarkness,
-            safe.fogGamma);
+        data.ambientGamma = safe.ambientGamma;
+        data.fogGamma = safe.fogGamma;
         data.fogAlphaGamma = safe.fogAlphaGamma;
         data.effectGamma = safe.effectGamma;
         data.effectAlphaGamma = safe.effectAlphaGamma;
-        data.skyGamma = calibratedLightingResponseGamma(
-            safe.preserveNativeDarkness,
-            safe.skyGamma);
+        data.skyGamma = safe.skyGamma;
         data.waterGamma = safe.waterGamma;
         data.volumetricLightingGamma = safe.volumetricLightingGamma;
         data.vanillaDiffuseColorMultiplier = safe.vanillaDiffuseColorMultiplier;

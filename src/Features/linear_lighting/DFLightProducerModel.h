@@ -51,17 +51,13 @@ namespace csah::linear_lighting
         }
         return {
             .enabled = true,
-            .directionalGamma = calibratedLightingResponseGamma(
-                safe.preserveNativeDarkness,
-                safe.lightGamma),
+            .directionalGamma = safe.lightGamma,
             // FO4VR's DFLight shaders consume the produced RGB directly for
             // diffuse lighting. Their PI literal belongs to the specular
             // branch; unlike Skyrim's PBR path, there is no reciprocal-PI
             // normalization for this producer to compensate.
             .directionalMultiplier = safe.directionalLightMultiplier,
-            .ambientGamma = calibratedLightingResponseGamma(
-                safe.preserveNativeDarkness,
-                safe.ambientGamma),
+            .ambientGamma = safe.ambientGamma,
             .ambientMultiplier = safe.ambientMultiplier,
         };
     }

@@ -66,8 +66,8 @@ TransformOutput PSMain()
     output.shallow = ShallowColor;
     output.deep = DeepColor;
     if (EnableLinearLighting != 0u) {
-        output.shallow.xyz = pow(abs(output.shallow.xyz), WaterGamma);
-        output.deep.xyz = pow(abs(output.deep.xyz), WaterGamma);
+        output.shallow.xyz = pow(abs(output.shallow.xyz), WaterGamma / NativeProducerGamma);
+        output.deep.xyz = pow(abs(output.deep.xyz), WaterGamma / NativeProducerGamma);
     }
     return output;
 }
@@ -90,8 +90,8 @@ TransformOutput PSFogMain()
     output.shallow = FogNearColor;
     output.deep = FogFarColor;
     if (EnableLinearLighting != 0u) {
-        output.shallow.xyz = pow(abs(output.shallow.xyz), FogGamma);
-        output.deep.xyz = pow(abs(output.deep.xyz), FogGamma);
+        output.shallow.xyz = pow(abs(output.shallow.xyz), FogGamma / NativeProducerGamma);
+        output.deep.xyz = pow(abs(output.deep.xyz), FogGamma / NativeProducerGamma);
     }
     return output;
 }
@@ -112,7 +112,7 @@ float4 PSFogAlphaMain() : SV_Target0
 {
     float output = FogAlphaSource;
     if (EnableLinearLighting != 0u) {
-        output = pow(abs(output), FogAlphaGamma);
+        output = pow(abs(output), FogAlphaGamma / NativeProducerGamma);
     }
     return output.xxxx;
 }

@@ -236,40 +236,41 @@ else
 endif 
 eq r1.x, cb2[4].w, l(-1.000000)
 movc r1.x, r1.x, l(1.000000), r1.w
-log r1.yzw, |r0.yyzw|
-mul r1.yzw, r1.yyzw, cb5[1].xxxx
-exp r1.yzw, r1.yyzw
-mul r1.yzw, r1.yyzw, cb5[3].wwww
-movc r1.yzw, cb5[0].xxxx, r1.yyzw, r0.yyzw
-mul r2.xyz, r0.yzwy, cb5[3].wwww
-movc r0.yzw, cb5[0].xxxx, r2.xxyz, r0.yyzw
-movc r0.xyz, r0.xxxx, r1.yzwy, r0.yzwy
+mul r1.yzw, cb5[1].xxzy, l(0.000000, 0.454545, 0.454545, 0.454545)
+log r2.xyz, |r0.yzwy|
+mul r2.xyz, r1.yyyy, r2.xyzx
+exp r2.xyz, r2.xyzx
+mul r2.xyz, r2.xyzx, cb5[3].wwww
+movc r2.xyz, cb5[0].xxxx, r2.xyzx, r0.yzwy
+mul r3.xyz, r0.yzwy, cb5[3].wwww
+movc r0.yzw, cb5[0].xxxx, r3.xxyz, r0.yyzw
+movc r0.xyz, r0.xxxx, r2.xyzx, r0.yzwy
 mul o0.xyz, r0.xyzx, r1.xxxx
 ishl r0.x, v8.x, l(2)
-iadd r1.xyzw, r0.xxxx, l(66, 63, 64, 54)
-mov r2.xyz, v6.xyzx
-mov r2.w, l(1.000000)
-dp4 r0.y, cb12[r1.x + 0].xyzw, r2.xyzw
-dp4 r1.x, cb12[r1.y + 0].xyzw, r2.xyzw
-dp4 r1.y, cb12[r1.z + 0].xyzw, r2.xyzw
+iadd r2.xyzw, r0.xxxx, l(66, 63, 64, 54)
+mov r3.xyz, v6.xyzx
+mov r3.w, l(1.000000)
+dp4 r0.y, cb12[r2.x + 0].xyzw, r3.xyzw
+dp4 r1.x, cb12[r2.y + 0].xyzw, r3.xyzw
+dp4 r1.y, cb12[r2.z + 0].xyzw, r3.xyzw
 div r0.yz, r1.xxyx, r0.yyyy
-dp4 r0.w, cb12[r1.w + 0].xyzw, r2.xyzw
+dp4 r0.w, cb12[r2.w + 0].xyzw, r3.xyzw
 iadd r1.xy, r0.xxxx, l(51, 52, 0, 0)
-dp4 r3.x, cb12[r1.x + 0].xyzw, r2.xyzw
-dp4 r3.y, cb12[r1.y + 0].xyzw, r2.xyzw
-div r0.xw, r3.xxxy, r0.wwww
+dp4 r2.x, cb12[r1.x + 0].xyzw, r3.xyzw
+dp4 r2.y, cb12[r1.y + 0].xyzw, r3.xyzw
+div r0.xw, r2.xxxy, r0.wwww
 add r0.xy, -r0.xwxx, r0.yzyy
 mul o5.xy, r0.xyxx, l(-0.500000, 0.500000, 0.000000, 0.000000)
 sample_indexable(texture2d)(float,float,float,float) r0.xyz, v1.xyxx, t3.xyzw, s3
-log r1.xyz, |r0.xyzx|
-mul r1.xyz, r1.xyzx, cb5[1].zzzz
+log r2.xyz, |r0.xyzx|
+mul r1.xyz, r1.zzzz, r2.xyzx
 exp r1.xyz, r1.xyzx
 mul r1.xyz, r1.xyzx, cb5[5].xxxx
 movc r0.xyz, cb5[0].xxxx, r1.xyzx, r0.xyzx
 max r0.w, cb8[0].x, l(0.000010)
 div r1.xyz, cb2[1].xyzx, r0.wwww
 log r1.xyz, |r1.xyzx|
-mul r1.xyz, r1.xyzx, cb5[1].yyyy
+mul r1.xyz, r1.xyzx, r1.wwww
 exp r1.xyz, r1.xyzx
 mul r1.xyz, r1.xyzx, cb8[0].xxxx
 mul r1.xyz, r1.xyzx, cb5[4].wwww
@@ -279,4 +280,4 @@ mov o0.w, cb2[0].z
 mul o3.z, cb2[0].w, l(0.010000)
 mov o3.w, l(1.000000)
 ret 
-// Approximately 127 instruction slots used
+// Approximately 128 instruction slots used

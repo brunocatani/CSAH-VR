@@ -70,6 +70,23 @@ cbuffer LinearLightingGeometry : register(b8)
 // producers. Producer-space helpers apply only the remaining exponent.
 static const float kLinearLightingVanillaProducerGamma = 2.2f;
 
+// FO4VR already lights in linear space: colour textures are bound through
+// sRGB views, and encoded constants are decoded with 2.2 by the native
+// shader or its CPU producer. Every response setting is therefore relative
+// to the native decode: 2.2 reproduces the game exactly, a lower value
+// brightens dark values and a higher one darkens them. Helpers that receive
+// a value the game already uses as linear apply response / 2.2; sites that
+// replace a native pow(x, 2.2) apply the response itself.
+float3 LinearLightingResponse(float3 linearColor, float response)
+{
+    return pow(abs(linearColor), response / kLinearLightingVanillaProducerGamma);
+}
+
+float LinearLightingResponse(float linearValue, float response)
+{
+    return pow(abs(linearValue), response / kLinearLightingVanillaProducerGamma);
+}
+
 float LinearLightingSkyrimGammaToLinear(float color)
 {
     return pow(abs(color), 1.6f);
@@ -93,7 +110,7 @@ float3 LinearLightingLinearToSkyrimGamma(float3 color)
 float3 LinearLightingDiffuse(float3 color)
 {
     return enableLinearLighting != 0u ?
-        pow(abs(color), colorGamma) * vanillaDiffuseColorMult : color;
+        LinearLightingResponse(color, colorGamma) * vanillaDiffuseColorMult : color;
 }
 
 float3 LinearLightingDecodedDiffuse(float3 color)
@@ -105,7 +122,7 @@ float3 LinearLightingDecodedDiffuse(float3 color)
 float3 LinearLightingLight(float3 color, bool isLinear)
 {
     return enableLinearLighting != 0u && !isLinear ?
-        pow(abs(color), lightGamma) : color;
+        LinearLightingResponse(color, lightGamma) : color;
 }
 
 float3 LinearLightingDirectionalLight(float3 color, bool isLinear)
@@ -129,20 +146,20 @@ float3 LinearLightingEmitColor(float3 color)
     }
 
     const float safeEmissiveMult = max(emissiveMult, 1e-5f);
-    return pow(abs(color / safeEmissiveMult), emitColorGamma) *
+    return LinearLightingResponse(color / safeEmissiveMult, emitColorGamma) *
         emissiveMult * emitColorMult;
 }
 
 float3 LinearLightingGlowmap(float3 color)
 {
     return enableLinearLighting != 0u ?
-        pow(abs(color), glowmapGamma) * glowmapMult : color;
+        LinearLightingResponse(color, glowmapGamma) * glowmapMult : color;
 }
 
 float3 LinearLightingAmbient(float3 color)
 {
     return enableLinearLighting != 0u ?
-        pow(abs(color), ambientGamma) * ambientMult : color;
+        LinearLightingResponse(color, ambientGamma) * ambientMult : color;
 }
 
 float3 LinearLightingFog(float3 color)
@@ -156,12 +173,20 @@ float3 LinearLightingFog(float3 color)
 
 float LinearLightingFogAlpha(float alpha)
 {
-    return enableLinearLighting != 0u ? pow(abs(alpha), fogAlphaGamma) : alpha;
+    return enableLinearLighting != 0u ? LinearLightingResponse(alpha, fogAlphaGamma) : alpha;
 }
 
+// Effect colour the native shader decodes itself with pow(x, 2.2): vertex
+// colours and UI mask constants.
 float3 LinearLightingEffect(float3 color)
 {
     return enableLinearLighting != 0u ? pow(abs(color), effectGamma) : color;
+}
+
+// Effect texture samples, already linear through their sRGB views.
+float3 LinearLightingEffectTexture(float3 color)
+{
+    return enableLinearLighting != 0u ? LinearLightingResponse(color, effectGamma) : color;
 }
 
 // Effect material RGB is uploaded after a fixed 2.2 producer decode.
@@ -210,12 +235,12 @@ float LinearLightingEffectMembraneCoordinate(float color)
 
 float LinearLightingEffectAlpha(float alpha)
 {
-    return enableLinearLighting != 0u ? pow(abs(alpha), effectAlphaGamma) : alpha;
+    return enableLinearLighting != 0u ? LinearLightingResponse(alpha, effectAlphaGamma) : alpha;
 }
 
 float3 LinearLightingSky(float3 color)
 {
-    return enableLinearLighting != 0u ? pow(abs(color), skyGamma) : color;
+    return enableLinearLighting != 0u ? LinearLightingResponse(color, skyGamma) : color;
 }
 
 float3 LinearLightingSkyProducerColor(float3 color)
@@ -227,10 +252,9 @@ float3 LinearLightingSkyProducerColor(float3 color)
         color;
 }
 
-// Cloud techniques receive an authored weather tint rather than the fixed
-// producer-decoded gradient colour used by the other Sky techniques. Decode
-// its luminance with the complete Sky response while retaining the authored
-// channel ratio. A per-channel power curve turns pale sunset tints crimson by
+// Cloud techniques multiply their texture by the weather tint as the game
+// uses it. Apply the Sky response to its luminance while retaining the
+// channel ratio: a per-channel power curve turns pale sunset tints crimson by
 // suppressing their weaker green and blue channels disproportionately.
 float3 LinearLightingSkyCloudColor(float3 color)
 {
@@ -242,23 +266,23 @@ float3 LinearLightingSkyCloudColor(float3 color)
     const float luminance = dot(
         positiveColor,
         float3(0.2126f, 0.7152f, 0.0722f));
-    const float linearLuminance = pow(luminance, skyGamma);
+    const float linearLuminance = LinearLightingResponse(luminance, skyGamma);
     return positiveColor * (linearLuminance / max(luminance, 1e-5f));
 }
 
 float3 LinearLightingWater(float3 color)
 {
-    return enableLinearLighting != 0u ? pow(abs(color), waterGamma) : color;
+    return enableLinearLighting != 0u ? LinearLightingResponse(color, waterGamma) : color;
 }
 
 float3 LinearLightingVolumetricLighting(float3 color)
 {
-    return enableLinearLighting != 0u ? pow(abs(color), vlGamma) : color;
+    return enableLinearLighting != 0u ? LinearLightingResponse(color, vlGamma) : color;
 }
 
 float3 LinearLightingColorToLinear(float3 color)
 {
-    return enableLinearLighting != 0u ? pow(abs(color), colorGamma) : color;
+    return enableLinearLighting != 0u ? LinearLightingResponse(color, colorGamma) : color;
 }
 
 float3 LinearLightingRadianceToLinear(float3 color)
