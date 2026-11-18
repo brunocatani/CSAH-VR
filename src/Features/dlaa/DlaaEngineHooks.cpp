@@ -1,5 +1,4 @@
 #include "diagnostics/stereo_measurement/StereoMeasurement.h"
-#include "diagnostics/WorldStateTrace.h"
 #include "Features/surface_classification/SurfaceClassificationRuntime.h"
 #include "Features/volumetric_lighting/VolumetricLightingRuntime.h"
 #include "Features/cloud_shadows/CloudShadowRuntime.h"
@@ -281,7 +280,6 @@ namespace csah::dlaa
                 volumetric_lighting::Runtime::get().beginFrame();
                 cloud_shadows::Runtime::get().beginFrame();
                 terrain_shadows::Runtime::get().beginFrame();
-                diagnostics::onWorldStateFrame();
                 Runtime::get().onPreRender(
                     manager,
                     reinterpret_cast<float*>(graphics + kJitterXOffset),

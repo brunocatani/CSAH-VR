@@ -82,7 +82,7 @@ namespace csah::diagnostics
             std::uint64_t dlaaFailures{};
         };
 
-        // Owned by the render owner thread that calls onWorldStateFrame.
+        // Owned by the main thread that calls onWorldStateFrame.
         struct TraceState
         {
             const RE::TESObjectCELL* cell{};

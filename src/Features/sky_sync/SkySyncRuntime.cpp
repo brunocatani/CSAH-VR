@@ -1,4 +1,5 @@
 #include "diagnostics/stereo_measurement/StereoMeasurement.h"
+#include "diagnostics/WorldStateTrace.h"
 #include "Features/cloud_shadows/CloudShadowRuntime.h"
 #include "Features/terrain_shadows/TerrainShadowRuntime.h"
 #include "Features/water_effects/WaterEffectsRuntime.h"
@@ -542,6 +543,12 @@ namespace csah::sky_sync
         terrain_shadows::Runtime::get().captureWorld(sky && hookOwned_.load(std::memory_order_acquire) && worldReady_.load(std::memory_order_acquire));
         water_effects::Runtime::get().onSkyUpdated(sky && hookOwned_.load(std::memory_order_acquire) && worldReady_.load(std::memory_order_acquire),deltaSeconds);
         measureSun(sky);
+        // Main thread with the world loaded: the trace never runs on the
+        // loading-screen render path while a cell is being built.
+        if (sky && hookOwned_.load(std::memory_order_acquire) &&
+            worldReady_.load(std::memory_order_acquire)) {
+            diagnostics::onWorldStateFrame();
+        }
         if (!sky || !enabled_.load(std::memory_order_acquire) ||
             !hookOwned_.load(std::memory_order_acquire) ||
             !worldReady_.load(std::memory_order_acquire)) {
