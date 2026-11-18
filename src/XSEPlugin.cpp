@@ -5,6 +5,7 @@
 #include "Features/screen_space_gi/ScreenSpaceGIRuntime.h"
 #include "PCH.h"
 #include "render/NativeEmissionRead.h"
+#include "render/EngineCubemapArray.h"
 
 #include "Features/basic_wetness/BasicWetnessRuntime.h"
 #include "Features/lod_blending/LodBlendingRuntime.h"
@@ -511,6 +512,9 @@ extern "C" __declspec(dllexport) bool F4SEAPI F4SEPlugin_Load(
         if (!csah::render::installBSDFPrePassShaderHook()) {
             csah::logging::warn(
                 "Verified BSDFPrePass descriptor hook was not installed; complex environment materials remain fail-closed.");
+        }
+        if (!csah::render::engine_cubemap_array::install()) {
+            csah::logging::error("Engine cubemap array fix unavailable; material cubemap reflections stay missing after a direct save load.");
         }
 
         const auto* messaging = F4SE::GetMessagingInterface();

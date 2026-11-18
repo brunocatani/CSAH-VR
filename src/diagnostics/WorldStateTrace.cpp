@@ -85,6 +85,8 @@ namespace csah::diagnostics
             std::uint64_t contactScopes{};
             std::uint64_t contactFallbacks{};
             std::uint64_t iblMaterial{};
+            std::uint64_t iblEngineCubesBound{};
+            std::uint64_t iblEngineCubesMissing{};
             std::uint64_t iblFitsPublished{};
             std::uint64_t iblFitsRejected{};
             std::uint64_t dlaaCommitted{};
@@ -153,6 +155,8 @@ namespace csah::diagnostics
                 .contactScopes = contact.drawScopes,
                 .contactFallbacks = contact.drawFallbacks,
                 .iblMaterial = ibl.materialReplacementBinds,
+                .iblEngineCubesBound = ibl.compositeEngineCubesBound,
+                .iblEngineCubesMissing = ibl.compositeEngineCubesMissing,
                 .iblFitsPublished = ibl.diffuseFitsPublished,
                 .iblFitsRejected = ibl.diffuseFitsRejected,
                 .dlaaCommitted = dlaa.committedFrames,
@@ -297,7 +301,7 @@ namespace csah::diagnostics
                 "prepass technique={} accepted={} geometry={} geometryDescriptors={} mask=0x{:X} owned={} {} | "
                 "descriptorMisses={} contractMisses={} missing=[{}] | pbr scopes={} fallbacks={} failures={} | "
                 "ssgi scopes={} prepared={} radiance={} rejects=[{}] | skylighting captures={} rejects={} dispatches={} ambient={} | "
-                "volumetric rendered={} rejected={} | contact scopes={} fallbacks={} | ibl material={} fits={} fitRejects={} | dlaa committed={} failures={}",
+                "volumetric rendered={} rejected={} | contact scopes={} fallbacks={} | ibl material={} engineCubes={}/{} missingContracts=0x{:X} fits={} fitRejects={} | dlaa committed={} failures={}",
                 d(now.skyUpdates, base.skyUpdates),
                 d(now.shaderSelections, base.shaderSelections),
                 d(now.materialReplacements, base.materialReplacements),
@@ -334,6 +338,9 @@ namespace csah::diagnostics
                 d(now.contactScopes, base.contactScopes),
                 d(now.contactFallbacks, base.contactFallbacks),
                 d(now.iblMaterial, base.iblMaterial),
+                d(now.iblEngineCubesBound, base.iblEngineCubesBound),
+                d(now.iblEngineCubesMissing, base.iblEngineCubesMissing),
+                ibl::Runtime::get().snapshot().compositeEngineCubesMissingContracts,
                 d(now.iblFitsPublished, base.iblFitsPublished),
                 d(now.iblFitsRejected, base.iblFitsRejected),
                 d(now.dlaaCommitted, base.dlaaCommitted),

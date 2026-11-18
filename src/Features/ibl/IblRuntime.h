@@ -66,6 +66,9 @@ namespace csah::ibl
         std::uint64_t sceneRadianceProbeFailures{};
         std::uint64_t materialReplacementBinds{};
         std::uint64_t materialBindingFailures{};
+        std::uint64_t compositeEngineCubesBound{};
+        std::uint64_t compositeEngineCubesMissing{};
+        std::uint64_t compositeEngineCubesMissingContracts{};
         std::uint64_t latestSampleGeneration{};
         std::uint64_t latestSampleTickMilliseconds{};
         DiffuseSH latestDiffuseSH{};
@@ -412,6 +415,9 @@ namespace csah::ibl
         std::atomic_uint64_t sceneRadianceProbeReadbacks_{};
         std::atomic_uint64_t sceneRadianceProbeFailures_{};
         std::atomic_uint64_t materialReplacementBinds_{};
+        std::atomic_uint64_t compositeEngineCubesBound_{};
+        std::atomic_uint64_t compositeEngineCubesMissing_{};
+        std::atomic_uint64_t compositeEngineCubesMissingContracts_{};
         std::atomic_uint64_t materialBindingFailures_{};
         std::atomic_bool captureRegistryOverflowLogged_{};
         std::atomic_uint64_t publishedSequence_{};

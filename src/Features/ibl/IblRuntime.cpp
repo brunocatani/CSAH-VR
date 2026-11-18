@@ -1238,6 +1238,21 @@ namespace csah::ibl
         }
         const auto contractIndex =
             static_cast<std::size_t>(contractPlusOne - 1);
+        {
+            // Draw-time state: the engine binds its material cube array at
+            // t8 in BSDFCompositeShader setup (0x1429198EA). A composite draw
+            // without it has no cubemap reflection source.
+            ID3D11ShaderResourceView* engineCubes{};
+            context->PSGetShaderResources(8, 1, &engineCubes);
+            if (engineCubes) {
+                engineCubes->Release();
+                compositeEngineCubesBound_.fetch_add(1, std::memory_order_relaxed);
+            } else {
+                compositeEngineCubesMissing_.fetch_add(1, std::memory_order_relaxed);
+                compositeEngineCubesMissingContracts_.fetch_or(
+                    1ull << (contractIndex & 63), std::memory_order_relaxed);
+            }
+        }
         if (captureProbeLogged_[contractIndex].exchange(
                 true,
                 std::memory_order_acq_rel)) {
@@ -2479,6 +2494,12 @@ namespace csah::ibl
                 materialReplacementBinds_.load(std::memory_order_acquire),
             .materialBindingFailures =
                 materialBindingFailures_.load(std::memory_order_acquire),
+            .compositeEngineCubesBound =
+                compositeEngineCubesBound_.load(std::memory_order_acquire),
+            .compositeEngineCubesMissing =
+                compositeEngineCubesMissing_.load(std::memory_order_acquire),
+            .compositeEngineCubesMissingContracts =
+                compositeEngineCubesMissingContracts_.load(std::memory_order_acquire),
         };
         constexpr std::uint32_t kMaximumSnapshotAttempts = 3;
         for (std::uint32_t attempt = 0; attempt < kMaximumSnapshotAttempts;
