@@ -59,6 +59,10 @@ namespace csah::screen_space_gi
         // Called with the native DFComposite bound, before it draws: scales its
         // diffuse accumulators by the root of the occlusion and adds the bounce.
         void composeOcclusion(ID3D11DeviceContext* context,bool tiled) noexcept;
+        // True while that pass sets and restores pipeline state, so the D3D11
+        // hooks pass its calls straight through instead of re-deriving the
+        // active native draw from the pass's own shaders.
+        [[nodiscard]] static bool internalRenderActive() noexcept;
         void captureRadiance(ID3D11DeviceContext* context,bool tiled,ID3D11ShaderResourceView* authoredPbr=nullptr) noexcept;
         [[nodiscard]] RuntimeSnapshot snapshot() const noexcept;
     private:

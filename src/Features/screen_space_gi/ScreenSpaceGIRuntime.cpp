@@ -12,6 +12,16 @@ namespace csah::screen_space_gi
     using Microsoft::WRL::ComPtr;
     namespace
     {
+        // Render thread only: set for the whole composite-time pass, including
+        // the state restore that rebinds the native composite.
+        bool gComposeRender{};
+        struct ComposeRenderScope final
+        {
+            ComposeRenderScope() noexcept {gComposeRender=true;}
+            ~ComposeRenderScope() {gComposeRender=false;}
+            ComposeRenderScope(const ComposeRenderScope&)=delete;
+            ComposeRenderScope& operator=(const ComposeRenderScope&)=delete;
+        };
         bool textureDescription(ID3D11ShaderResourceView* view,D3D11_TEXTURE2D_DESC& result) noexcept
         {
             if(!view) return false;
@@ -281,6 +291,7 @@ namespace csah::screen_space_gi
         dispatch(shaders_[3].Get(),{inputs[0].Get(),inputs[1].Get(),inputs[2].Get(),inputs[3].Get(),positions_[current_].view.Get(),diffuse_[current_].view.Get(),authored},radiance_.output.Get());
         radianceFrame_=frame_;radianceCaptures_.fetch_add(1,std::memory_order_relaxed);
     }
+    bool Runtime::internalRenderActive() noexcept {return gComposeRender;}
     bool Runtime::createComposeResources() noexcept
     {
         if(composeVertex_ && composePixel_ && composeBlend_ && composeRaster_ && composeDepth_ && composeConstants_[0] && composeConstants_[1]) return true;
@@ -343,6 +354,7 @@ namespace csah::screen_space_gi
             return;
         }
         {
+            const ComposeRenderScope internal;
             ScopedComposeState state(context);
             const D3D11_VIEWPORT viewport{0,0,static_cast<float>(accumulator.Width),static_cast<float>(accumulator.Height),0,1};
             context->RSSetViewports(1,&viewport);
