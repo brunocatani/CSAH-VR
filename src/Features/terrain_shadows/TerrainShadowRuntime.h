@@ -6,6 +6,7 @@
 #include <atomic>
 #include <cstdint>
 #include <string>
+#include <string_view>
 #include <vector>
 namespace csah::terrain_shadows
 {
@@ -32,6 +33,10 @@ namespace csah::terrain_shadows
         void beginFrame() noexcept {++frame_;}
         void resetWorld() noexcept {epoch_.fetch_add(1,std::memory_order_acq_rel);}
         void captureWorld(bool ready) noexcept;
+        // Diagnostics: the loaded worldspace's own editor ID (empty when the
+        // TES interior cell is set) and the heightmap captureWorld selected.
+        [[nodiscard]] static bool readWorldspace(std::array<char,256>& editorId,bool& interior) noexcept;
+        [[nodiscard]] std::string_view selectedMapName() const noexcept;
         ScopedBindings scopeDraw(ID3D11DeviceContext*) noexcept;
     private:
         Runtime()=default;

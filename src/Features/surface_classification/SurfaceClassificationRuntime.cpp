@@ -464,6 +464,20 @@ namespace csah::surface_classification
         descriptorObservationMisses_.fetch_add(
             1,
             std::memory_order_relaxed);
+        for (auto& slot : recentMissDescriptors_) {
+            auto value = slot.load(std::memory_order_relaxed);
+            if (value == descriptor) {
+                break;
+            }
+            if (value == 0 &&
+                slot.compare_exchange_strong(
+                    value, descriptor, std::memory_order_relaxed)) {
+                break;
+            }
+            if (value == descriptor) {
+                break;
+            }
+        }
         if (!firstDescriptorObservationMissLogged_.exchange(
                 true, std::memory_order_relaxed)) {
             logging::warn(
@@ -531,5 +545,16 @@ namespace csah::surface_classification
                 descriptorContractMisses_.load(std::memory_order_relaxed),
             .failures = failures_.load(std::memory_order_relaxed),
         };
+    }
+
+    std::array<std::uint32_t, Runtime::kRecentMissCapacity>
+        Runtime::takeRecentMissDescriptors() noexcept
+    {
+        std::array<std::uint32_t, kRecentMissCapacity> result{};
+        for (std::size_t index = 0; index < result.size(); ++index) {
+            result[index] = recentMissDescriptors_[index].exchange(
+                0, std::memory_order_relaxed);
+        }
+        return result;
     }
 }

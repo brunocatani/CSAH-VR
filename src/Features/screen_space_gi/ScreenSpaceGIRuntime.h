@@ -8,6 +8,30 @@
 #include <cstdint>
 namespace csah::screen_space_gi
 {
+    // Why prepareAmbient left native ambient lighting unchanged on a frame.
+    enum class Rejection : std::uint8_t
+    {
+        retryWait,
+        gbufferContract,
+        viewport,
+        cameraBuffers,
+        resources,
+        computeState,
+        count,
+    };
+    inline constexpr std::size_t kRejectionCount = static_cast<std::size_t>(Rejection::count);
+
+    struct RuntimeSnapshot final
+    {
+        bool enabled{};
+        std::uint64_t ambientScopes{};
+        std::uint64_t preparedFrames{};
+        std::uint64_t radianceCaptures{};
+        std::array<std::uint64_t, kRejectionCount> rejections{};
+        // Formats seen by the last G-buffer contract rejection (normal, material, depth).
+        std::array<std::uint32_t, 3> lastRejectedFormats{};
+    };
+
     class ScopedBindings final
     {
     public:
@@ -31,7 +55,9 @@ namespace csah::screen_space_gi
         void resetHistory() noexcept {reset_.store(true,std::memory_order_release);}
         [[nodiscard]] ScopedBindings scopeAmbient(ID3D11DeviceContext* context,bool ambient,ID3D11ShaderResourceView* authoredPbr=nullptr, const pbr::FrameData& material={}, ID3D11ShaderResourceView* surface=nullptr) noexcept;
         void captureRadiance(ID3D11DeviceContext* context,bool tiled,ID3D11ShaderResourceView* authoredPbr=nullptr) noexcept;
+        [[nodiscard]] RuntimeSnapshot snapshot() const noexcept;
     private:
+        bool reject(Rejection reason) noexcept;
         Runtime()=default;
         template<class T> using Ptr=Microsoft::WRL::ComPtr<T>;
         struct Texture {Ptr<ID3D11Texture2D> texture;Ptr<ID3D11ShaderResourceView> view;Ptr<ID3D11UnorderedAccessView> output;};
@@ -62,5 +88,8 @@ namespace csah::screen_space_gi
         bool ready_{},historyValid_{},loggedFailure_{},loggedActive_{};
         std::atomic_bool enabled_{},gi_{true},specularEnabled_{},temporal_{true},reset_{true};
         std::atomic<float> radius_{256},thickness_{32},aoPower_{2},strength_{1};
+        std::atomic_uint64_t ambientScopes_{},preparedFrames_{},radianceCaptures_{};
+        std::array<std::atomic_uint64_t,kRejectionCount> rejections_{};
+        std::array<std::atomic_uint32_t,3> lastRejectedFormats_{};
     };
 }

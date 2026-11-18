@@ -113,27 +113,33 @@ namespace csah::screen_space_gi
     bool Runtime::prepareAmbient(ID3D11DeviceContext* context, ID3D11ShaderResourceView* authored, const pbr::FrameData& materialSettings, ID3D11ShaderResourceView* surface) noexcept
     {
         if(preparedFrame_==frame_) return ready_;
-        if(frame_<nextRetry_) return false;
+        if(frame_<nextRetry_) return reject(Rejection::retryWait);
         std::array<ComPtr<ID3D11ShaderResourceView>,3> inputs;
         for(UINT i=0;i<3;i++) context->PSGetShaderResources(i+1,1,inputs[i].GetAddressOf());
         D3D11_TEXTURE2D_DESC normal{},depth{},material{};
-        if(!textureDescription(inputs[0].Get(),normal) || !textureDescription(inputs[1].Get(),material) || !textureDescription(inputs[2].Get(),depth) ||
+        const bool described=textureDescription(inputs[0].Get(),normal) & textureDescription(inputs[1].Get(),material) & textureDescription(inputs[2].Get(),depth);
+        if(!described ||
             normal.Format!=DXGI_FORMAT_R16G16_UNORM || material.Format!=DXGI_FORMAT_R8G8B8A8_UNORM ||
             normal.Width!=depth.Width || normal.Height!=depth.Height || material.Width!=depth.Width || material.Height!=depth.Height ||
-            depth.Width%2 || depth.Width<=depth.Height) return false;
+            depth.Width%2 || depth.Width<=depth.Height) {
+            lastRejectedFormats_[0].store(normal.Format,std::memory_order_relaxed);
+            lastRejectedFormats_[1].store(material.Format,std::memory_order_relaxed);
+            lastRejectedFormats_[2].store(depth.Format,std::memory_order_relaxed);
+            return reject(Rejection::gbufferContract);
+        }
         UINT count=1;D3D11_VIEWPORT viewport{};context->RSGetViewports(&count,&viewport);
         if(count!=1 || !std::isfinite(viewport.Width) || !std::isfinite(viewport.Height) || viewport.Width<16 || viewport.Height<8 ||
-            viewport.TopLeftX<0 || viewport.TopLeftY<0 || viewport.TopLeftX+viewport.Width>depth.Width || viewport.TopLeftY+viewport.Height>depth.Height) return false;
+            viewport.TopLeftX<0 || viewport.TopLeftY<0 || viewport.TopLeftX+viewport.Width>depth.Width || viewport.TopLeftY+viewport.Height>depth.Height) return reject(Rejection::viewport);
         const auto width=static_cast<UINT>(std::ceil(viewport.Width*.25f)),height=static_cast<UINT>(std::ceil(viewport.Height*.5f));
         ComPtr<ID3D11Buffer> stereo,camera;
         context->PSGetConstantBuffers(8,1,&stereo);context->PSGetConstantBuffers(12,1,&camera);
-        if(!stereo || !camera) return false;
+        if(!stereo || !camera) return reject(Rejection::cameraBuffers);
         D3D11_BUFFER_DESC d{};camera->GetDesc(&d);
-        if(d.ByteWidth<sizeof(render::Fo4VrFrameBuffer)) return false;
-        if(!ensureResources(width,height)) return false;
+        if(d.ByteWidth<sizeof(render::Fo4VrFrameBuffer)) return reject(Rejection::cameraBuffers);
+        if(!ensureResources(width,height)) return reject(Rejection::resources);
         if(previousCamera_) {D3D11_BUFFER_DESC old{};previousCamera_->GetDesc(&old);if(old.ByteWidth!=d.ByteWidth) {previousCamera_.Reset();historyValid_=false;}}
         if(!previousCamera_) {d.Usage=D3D11_USAGE_DEFAULT;d.CPUAccessFlags=0;d.MiscFlags=0;d.BindFlags=D3D11_BIND_CONSTANT_BUFFER;
-            if(FAILED(device_->CreateBuffer(&d,nullptr,&previousCamera_))) return failAllocation();
+            if(FAILED(device_->CreateBuffer(&d,nullptr,&previousCamera_))) {(void)failAllocation();return reject(Rejection::resources);}
             context->CopyResource(previousCamera_.Get(),camera.Get());historyValid_=false;}
         if(uploaded_.originX!=viewport.TopLeftX || uploaded_.originY!=viewport.TopLeftY ||
             uploaded_.viewportWidth!=viewport.Width || uploaded_.viewportHeight!=viewport.Height) historyValid_=false;
@@ -146,13 +152,14 @@ namespace csah::screen_space_gi
         if(parameterView_) parameterView_->GetResource(&parameters);
         if(!parameters) {
             D3D11_BUFFER_DESC pd{};pd.ByteWidth=sizeof(Constants);pd.BindFlags=D3D11_BIND_SHADER_RESOURCE;
-            ComPtr<ID3D11Buffer> buffer;if(FAILED(device_->CreateBuffer(&pd,nullptr,&buffer))) return failAllocation();
+            ComPtr<ID3D11Buffer> buffer;if(FAILED(device_->CreateBuffer(&pd,nullptr,&buffer))) {(void)failAllocation();return reject(Rejection::resources);}
             D3D11_SHADER_RESOURCE_VIEW_DESC view{};view.Format=DXGI_FORMAT_R32G32B32A32_FLOAT;view.ViewDimension=D3D11_SRV_DIMENSION_BUFFER;view.Buffer.NumElements=8;
-            if(FAILED(device_->CreateShaderResourceView(buffer.Get(),&view,&parameterView_))) return failAllocation();parameters=buffer;
+            if(FAILED(device_->CreateShaderResourceView(buffer.Get(),&view,&parameterView_))) {(void)failAllocation();return reject(Rejection::resources);}
+            parameters=buffer;
         }
         context->UpdateSubresource(parameters.Get(),0,nullptr,&uploaded_,0,0);
         render::ScopedComputeState restore(context,{.firstShaderResource=0,.shaderResourceCount=8,.firstUnorderedAccess=0,.unorderedAccessCount=2,.firstConstantBuffer=2,.constantBufferCount=12});
-        if(!restore.captured()) return false;
+        if(!restore.captured()) return reject(Rejection::computeState);
         ID3D11Buffer* cb=stereo.Get();context->CSSetConstantBuffers(8,1,&cb);
         cb=previousCamera_.Get();context->CSSetConstantBuffers(10,1,&cb);cb=camera.Get();context->CSSetConstantBuffers(12,1,&cb);
         cb=constants_.Get();context->CSSetConstantBuffers(13,1,&cb);
@@ -161,13 +168,14 @@ namespace csah::screen_space_gi
         dispatch(shaders_[1].Get(),{positions_[current_].view.Get(),normals_[current_].view.Get(),positions_[previous].view.Get(),normals_[previous].view.Get(),radiance_.view.Get()},rawDiffuse_.output.Get(),rawSpecular_.output.Get());
         dispatch(shaders_[2].Get(),{positions_[current_].view.Get(),normals_[current_].view.Get(),positions_[previous].view.Get(),normals_[previous].view.Get(),rawDiffuse_.view.Get(),rawSpecular_.view.Get(),diffuse_[previous].view.Get(),specular_[previous].view.Get()},diffuse_[current_].output.Get(),specular_[current_].output.Get());
         context->CopyResource(previousCamera_.Get(),camera.Get());
-        preparedFrame_=frame_;ready_=true;
+        preparedFrame_=frame_;ready_=true;preparedFrames_.fetch_add(1,std::memory_order_relaxed);
         if(!loggedActive_) {loggedActive_=true;logging::info("Screen Space GI active: two isolated {}x{} eye slices, AO={}, indirect={}, experimentalSpecular={}, temporal={}; current geometry and prior-frame surface lighting.",width_,height_,uploaded_.aoPower,uploaded_.gi!=0,uploaded_.specular!=0,uploaded_.temporal!=0);}
         return true;
     }
     ScopedBindings Runtime::scopeAmbient(ID3D11DeviceContext* context,bool ambient,ID3D11ShaderResourceView* authored, const pbr::FrameData& material, ID3D11ShaderResourceView* surface) noexcept
     {
         if(!ambient || context!=context_.Get()) return {nullptr,{}};
+        ambientScopes_.fetch_add(1,std::memory_order_relaxed);
         if(!requested() || !prepareAmbient(context,authored,material,surface)) return {context,{}};
         ComPtr<ID3D11ShaderResourceView> albedo;context->PSGetShaderResources(0,1,&albedo);
         return {context,{diffuse_[current_].view.Get(),specular_[current_].view.Get(),parameterView_.Get(),albedo.Get(),authored,positions_[current_].view.Get(),normals_[current_].view.Get(),surface}};
@@ -187,6 +195,19 @@ namespace csah::screen_space_gi
         context->UpdateSubresource(constants_.Get(),0,nullptr,&uploaded_,0,0);
         auto* cb=constants_.Get();context->CSSetConstantBuffers(13,1,&cb);
         dispatch(shaders_[3].Get(),{inputs[0].Get(),inputs[1].Get(),inputs[2].Get(),inputs[3].Get(),positions_[current_].view.Get(),diffuse_[current_].view.Get(),authored},radiance_.output.Get());
-        radianceFrame_=frame_;
+        radianceFrame_=frame_;radianceCaptures_.fetch_add(1,std::memory_order_relaxed);
+    }
+    bool Runtime::reject(Rejection reason) noexcept
+    {
+        rejections_[static_cast<std::size_t>(reason)].fetch_add(1,std::memory_order_relaxed);
+        return false;
+    }
+    RuntimeSnapshot Runtime::snapshot() const noexcept
+    {
+        RuntimeSnapshot result{.enabled=requested(),.ambientScopes=ambientScopes_.load(std::memory_order_relaxed),
+            .preparedFrames=preparedFrames_.load(std::memory_order_relaxed),.radianceCaptures=radianceCaptures_.load(std::memory_order_relaxed)};
+        for(std::size_t i=0;i<kRejectionCount;i++) result.rejections[i]=rejections_[i].load(std::memory_order_relaxed);
+        for(std::size_t i=0;i<3;i++) result.lastRejectedFormats[i]=lastRejectedFormats_[i].load(std::memory_order_relaxed);
+        return result;
     }
 }

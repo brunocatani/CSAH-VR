@@ -88,6 +88,24 @@ namespace csah::terrain_shadows
         }
         publish(0);
     }
+    bool Runtime::readWorldspace(std::array<char,256>& editorId,bool& interior) noexcept
+    {
+        editorId[0]='\0';interior=false;
+        static const auto base=reinterpret_cast<std::uintptr_t>(GetModuleHandleW(nullptr));
+        std::uintptr_t tes{},cell{},world{},name{};
+        // Same TES +58/+D8 and WRLD +208 contracts as captureWorld.
+        if(!read(base+0x05B042C0,tes) || !tes || !read(tes+0x58,cell)) return false;
+        if(cell) {interior=true;return true;}
+        if(!read(tes+0xd8,world) || !world) return false;
+        if(!read(world+0x208,name) || !name) return false;
+        return support::readCString(name,editorId.data(),editorId.size());
+    }
+    std::string_view Runtime::selectedMapName() const noexcept
+    {
+        const auto selection=selected_.load(std::memory_order_acquire);const auto index=static_cast<std::uint32_t>(selection);
+        if(selection>>32!=epoch_.load(std::memory_order_acquire) || !index || index>maps_.size()) return {};
+        return maps_[index-1].name;
+    }
     void Runtime::onDeviceCreated(ID3D11Device* d,ID3D11DeviceContext* c) noexcept
     {
         device_=d;context_=c;parametersUploaded_=false;loadedSelection_=0;updatedFrame_=~0ull;retry_=0;loggedFailure_=false;

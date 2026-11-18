@@ -122,6 +122,12 @@ namespace csah::surface_classification
         void recordDescriptorScopeMiss() noexcept;
         void recordDescriptorContractMiss(std::uint32_t descriptor) noexcept;
 
+        // Distinct descriptors outside the FXP inventory seen since the last
+        // call, up to kRecentMissCapacity. Clears the set.
+        static constexpr std::size_t kRecentMissCapacity = 8;
+        [[nodiscard]] std::array<std::uint32_t, kRecentMissCapacity>
+            takeRecentMissDescriptors() noexcept;
+
         [[nodiscard]] RuntimeSnapshot snapshot() const noexcept;
 
     private:
@@ -164,6 +170,8 @@ namespace csah::surface_classification
             static_cast<std::size_t>(SurfaceClassCode::count)>
             descriptorObservations_{};
         std::atomic_uint64_t descriptorObservationMisses_{};
+        std::array<std::atomic_uint32_t, kRecentMissCapacity>
+            recentMissDescriptors_{};
         std::atomic_uint64_t descriptorScopeMisses_{};
         std::atomic_uint64_t descriptorContractMisses_{};
         std::atomic_uint64_t failures_{};

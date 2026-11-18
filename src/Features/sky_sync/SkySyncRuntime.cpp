@@ -489,11 +489,59 @@ namespace csah::sky_sync
         currentSource_ = CelestialSource::none;
     }
 
+    void Runtime::measureSun(RE::Sky* sky) noexcept
+    {
+        if (!sunMeasurementRequested_.exchange(false, std::memory_order_acq_rel)) {
+            return;
+        }
+        bool discValid = false;
+        bool lightValid = false;
+        std::array<float, 3> center{};
+        std::uintptr_t sunOwner{};
+        if (sky && hookOwned_.load(std::memory_order_acquire) &&
+            captureStereoCenter(center) &&
+            readValue(reinterpret_cast<std::uintptr_t>(sky) + kSunOwnerOffset, sunOwner) &&
+            sunOwner) {
+            std::array<float, 3> disc{};
+            discValid = captureWorldDirection(sunOwner, kSunSourceNodeOffset, center, disc);
+            if (discValid) {
+                publishVector(measuredDiscBits_, disc);
+            }
+            // The light stores the negated source direction in rotation
+            // column 0; the Fallout Moon write in onSkyUpdated is the inverse.
+            std::uintptr_t lightAddress{};
+            if (readValue(sunOwner + kSunLightNodeOffset, lightAddress) && lightAddress &&
+                readableRange(reinterpret_cast<const void*>(lightAddress), sizeof(RE::NiAVObject))) {
+                const auto& rotate = reinterpret_cast<const RE::NiAVObject*>(lightAddress)->world.rotate;
+                std::array<float, 3> toward{ -rotate.entry[0][0], -rotate.entry[1][0], -rotate.entry[2][0] };
+                lightValid = normalize(toward);
+                if (lightValid) {
+                    publishVector(measuredLightBits_, toward);
+                }
+            }
+        }
+        measuredDiscValid_.store(discValid, std::memory_order_relaxed);
+        measuredLightValid_.store(lightValid, std::memory_order_relaxed);
+        sunMeasurementGeneration_.fetch_add(1, std::memory_order_release);
+    }
+
+    SunMeasurement Runtime::sunMeasurement() const noexcept
+    {
+        return {
+            .discValid = measuredDiscValid_.load(std::memory_order_relaxed),
+            .lightValid = measuredLightValid_.load(std::memory_order_relaxed),
+            .discDirection = loadVector(measuredDiscBits_),
+            .lightDirection = loadVector(measuredLightBits_),
+            .generation = sunMeasurementGeneration_.load(std::memory_order_acquire),
+        };
+    }
+
     void Runtime::onSkyUpdated(RE::Sky* sky, float deltaSeconds) noexcept
     {
         skyUpdates_.fetch_add(1, std::memory_order_relaxed);
         terrain_shadows::Runtime::get().captureWorld(sky && hookOwned_.load(std::memory_order_acquire) && worldReady_.load(std::memory_order_acquire));
         water_effects::Runtime::get().onSkyUpdated(sky && hookOwned_.load(std::memory_order_acquire) && worldReady_.load(std::memory_order_acquire),deltaSeconds);
+        measureSun(sky);
         if (!sky || !enabled_.load(std::memory_order_acquire) ||
             !hookOwned_.load(std::memory_order_acquire) ||
             !worldReady_.load(std::memory_order_acquire)) {

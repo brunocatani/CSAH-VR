@@ -2281,6 +2281,8 @@ add_custom_target(ScreenSpaceGIShaders DEPENDS "${SSGI_GENERATED_HEADER}")
 
 add_library(${PROJECT_NAME} SHARED
   "${SOURCE_DIR}/diagnostics/stereo_measurement/StereoMeasurement.cpp"
+  "${SOURCE_DIR}/diagnostics/WorldStateTrace.cpp"
+  "${SOURCE_DIR}/diagnostics/WorldStateTrace.h"
   "${SOURCE_DIR}/Features/water_effects/WaterEffectsRuntime.cpp"
   "${SOURCE_DIR}/Features/terrain_shadows/TerrainShadowRuntime.cpp"
   "${SOURCE_DIR}/Features/inverse_square/InverseSquareRuntime.cpp"
