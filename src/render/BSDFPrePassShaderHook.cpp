@@ -19,6 +19,7 @@
 #pragma pop_macro("MAX_PATH")
 #pragma pop_macro("MEM_RELEASE")
 #include <Windows.h>
+#include <MinHook.h>
 
 #include <array>
 #include <atomic>
@@ -47,6 +48,10 @@ namespace csah::render
         // shaders; SetupGeometry publishes a one-draw reinforcement. Slot 3
         // merely constructs programs and is not a draw boundary.
         constexpr std::uintptr_t kVtableRva = 0x030B8C68;
+        // The constructor stores the singleton (MOV [0x146886DA0],RBX at
+        // 0x142878961) and BSLightingShaderProperty::GetRenderPasses copies
+        // it into each pass's shader field (read at 0x1427A36A3).
+        constexpr std::uintptr_t kSingletonRva = 0x06886DA0;
         constexpr std::size_t kTechniqueSetupSlot = 4;
         constexpr std::uintptr_t kTechniqueSetupFunctionRva = 0x0287B720;
         constexpr std::size_t kTechniqueRestoreSlot = 5;
@@ -114,6 +119,54 @@ namespace csah::render
             std::byte{ 0x8B }, std::byte{ 0x57 }, std::byte{ 0x40 },
         };
 
+        // DFPrepass pixel-shader key: SetupTechnique derives it through
+        // 0x142937A80 (AND 0xFFFFEFE7) and BeginTechnique looks the program up
+        // by it. Every descriptor table generated from the FXP inventory
+        // (surface classes, complex-material aliases) is keyed on it, so the
+        // full pass technique is normalized before it is published.
+        constexpr std::uint32_t kPixelShaderKeyMask = 0xFFFFEFE7;
+
+        [[nodiscard]] constexpr std::uint32_t pixelShaderKey(
+            std::uint32_t technique) noexcept
+        {
+            return technique & kPixelShaderKeyMask;
+        }
+
+        // Most FO4VR G-buffer draws never reach the BSDFPrePassShader vtable:
+        // the cached command-record replay at 0x1428AA8D0 binds the record's
+        // stage objects (record+0x60..0x78) through renderer SetShaders at
+        // 0x141D92C00 and issues the draws directly. BeginTechnique
+        // (0x142814D8A) uses the same SetShaders, so its pixel-shader argument
+        // is the one descriptor source shared by every DFPrepass draw.
+        // Raw disassembly: BeginTechnique matches the program with
+        // CMP dword ptr [RAX],EDX against the key (0x142814D3A), so the key
+        // is the object's first dword; SetShaders binds its ID3D11PixelShader
+        // from +0x08 (MOV R14,[RDI+0x8] at 0x141D92CEF, PSSetShader context
+        // slot 9 at 0x141D92D06) and skips the bind when the object equals
+        // renderer state +0x1EE0+0x6A0 (0x141D92CE1). The state pointer is
+        // [0x146235AC8], or [0x146235AC0] when that is null.
+        constexpr std::uintptr_t kSetShadersRva = 0x01D92C00;
+        constexpr std::uintptr_t kSetShadersPixelBindRva = 0x01D92CDC;
+        constexpr std::uintptr_t kRendererStateRva = 0x06235AC8;
+        constexpr std::uintptr_t kRendererStateFallbackRva = 0x06235AC0;
+        constexpr std::size_t kRendererCurrentPixelShaderOffset = 0x1EE0 + 0x6A0;
+        constexpr std::array<std::uint8_t, 64> kSetShadersEntrySignature{
+            0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x6C, 0x24, 0x10,
+            0x48, 0x89, 0x74, 0x24, 0x18, 0x48, 0x89, 0x7C, 0x24, 0x20,
+            0x41, 0x56, 0x48, 0x83, 0xEC, 0x20, 0x48, 0x8B, 0x1D, 0xA7,
+            0x2E, 0x4A, 0x04, 0x49, 0x8B, 0xF1, 0x49, 0x8B, 0xE8, 0x48,
+            0x8B, 0xFA, 0x48, 0x85, 0xDB, 0x75, 0x07, 0x48, 0x8B, 0x1D,
+            0x8A, 0x2E, 0x4A, 0x04, 0x48, 0x81, 0xC3, 0xE0, 0x1E, 0x00,
+            0x00, 0x45, 0x33, 0xF6,
+        };
+        constexpr std::array<std::uint8_t, 45> kSetShadersPixelBindSignature{
+            0x48, 0x8B, 0x7C, 0x24, 0x50, 0x48, 0x3B, 0xBB, 0xA0, 0x06,
+            0x00, 0x00, 0x74, 0x26, 0x48, 0x85, 0xFF, 0x74, 0x04, 0x4C,
+            0x8B, 0x77, 0x08, 0x48, 0x8B, 0x0D, 0xB6, 0x2D, 0x4A, 0x04,
+            0x45, 0x33, 0xC9, 0x45, 0x33, 0xC0, 0x48, 0x8B, 0x01, 0x49,
+            0x8B, 0xD6, 0xFF, 0x50, 0x48,
+        };
+
         using SetupTechniqueFunction = bool(__fastcall*)(
             void* receiver,
             std::uint32_t descriptor,
@@ -131,6 +184,17 @@ namespace csah::render
         SetupGeometryFunction originalSetupGeometry{};
         using RestoreGeometryFunction=void(__fastcall*)(void*,void*);
         RestoreGeometryFunction originalRestoreGeometry{};
+        using SetShadersFunction = void(__fastcall*)(
+            void* renderer,
+            void* vertex,
+            void* hull,
+            void* domain,
+            void* pixel);
+        SetShadersFunction originalSetShaders{};
+        const std::uintptr_t* rendererState{};
+        const std::uintptr_t* rendererStateFallback{};
+        std::atomic_bool setShadersInstalled{};
+        std::atomic_uint64_t shaderKeyPublications{};
         void** techniqueSetupCell{};
         void** techniqueRestoreCell{};
         void** geometrySetupCell{};
@@ -509,13 +573,13 @@ namespace csah::render
                 return original(receiver, descriptor, techniqueState);
             }
 
-            beginDFPrePassTechnique(descriptor);
+            beginDFPrePassTechnique(pixelShaderKey(descriptor));
             const auto accepted = original(
                 receiver,
                 descriptor,
                 techniqueState);
             if (!accepted) {
-                endDFPrePassTechnique(descriptor);
+                endDFPrePassTechnique(pixelShaderKey(descriptor));
                 return false;
             }
             const auto previousCalls = techniqueSetupCalls.fetch_add(
@@ -542,7 +606,7 @@ namespace csah::render
                 original(receiver, descriptor);
                 return;
             }
-            endDFPrePassTechnique(descriptor);
+            endDFPrePassTechnique(pixelShaderKey(descriptor));
             techniqueRestoreCalls.fetch_add(1, std::memory_order_relaxed);
             original(receiver, descriptor);
         }
@@ -640,8 +704,100 @@ namespace csah::render
                 }
             }
             lod_blending::Runtime::get().beginGeometry(pass);
-            publishDFPrePassGeometry(descriptor, baseTexture);
+            publishDFPrePassGeometry(pixelShaderKey(descriptor), baseTexture);
             original(receiver, pass, geometryState);
+        }
+
+        void __fastcall hookSetShaders(
+            void* renderer,
+            void* vertex,
+            void* hull,
+            void* domain,
+            void* pixel) noexcept
+        {
+            if (pixel &&
+                descriptorConsumerMask.load(std::memory_order_acquire) != 0) {
+                auto state = *rendererState;
+                if (!state) {
+                    state = *rendererStateFallback;
+                }
+                void* current{};
+                std::memcpy(
+                    &current,
+                    reinterpret_cast<const std::byte*>(state) +
+                        kRendererCurrentPixelShaderOffset,
+                    sizeof(current));
+                // Only a bind the engine will actually issue carries a new
+                // key; a skipped bind keeps the replacement already selected
+                // for this same program.
+                if (pixel != current) {
+                    std::uint32_t key{};
+                    std::memcpy(&key, pixel, sizeof(key));
+                    publishDFPrePassShaderKey(key);
+                    shaderKeyPublications.fetch_add(
+                        1,
+                        std::memory_order_relaxed);
+                }
+            }
+            originalSetShaders(renderer, vertex, hull, domain, pixel);
+        }
+
+        [[nodiscard]] bool installSetShadersHook(std::byte* image) noexcept
+        {
+            auto* target = image + kSetShadersRva;
+            const auto* pixelBind = image + kSetShadersPixelBindRva;
+            const auto entryMatches =
+                executable(target, kSetShadersEntrySignature.size()) &&
+                std::memcmp(
+                    target,
+                    kSetShadersEntrySignature.data(),
+                    kSetShadersEntrySignature.size()) == 0;
+            const auto pixelBindMatches =
+                executable(pixelBind, kSetShadersPixelBindSignature.size()) &&
+                std::memcmp(
+                    pixelBind,
+                    kSetShadersPixelBindSignature.data(),
+                    kSetShadersPixelBindSignature.size()) == 0;
+            if (!entryMatches || !pixelBindMatches) {
+                logging::error(
+                    "Renderer SetShaders live identity gate failed (entry={} pixelBind={}); cached G-buffer draws keep no material descriptor.",
+                    entryMatches,
+                    pixelBindMatches);
+                return false;
+            }
+            rendererState = reinterpret_cast<const std::uintptr_t*>(
+                image + kRendererStateRva);
+            rendererStateFallback = reinterpret_cast<const std::uintptr_t*>(
+                image + kRendererStateFallbackRva);
+            void* trampoline{};
+            auto status = MH_CreateHook(
+                target,
+                reinterpret_cast<void*>(&hookSetShaders),
+                &trampoline);
+            if (status != MH_OK || !executable(trampoline, 1)) {
+                logging::error(
+                    "Renderer SetShaders detour creation failed ({}); cached G-buffer draws keep no material descriptor.",
+                    MH_StatusToString(status));
+                if (status == MH_OK) {
+                    (void)MH_RemoveHook(target);
+                }
+                return false;
+            }
+            originalSetShaders =
+                reinterpret_cast<SetShadersFunction>(trampoline);
+            status = MH_EnableHook(target);
+            if (status != MH_OK) {
+                logging::error(
+                    "Renderer SetShaders detour enable failed ({}); cached G-buffer draws keep no material descriptor.",
+                    MH_StatusToString(status));
+                (void)MH_RemoveHook(target);
+                originalSetShaders = nullptr;
+                return false;
+            }
+            setShadersInstalled.store(true, std::memory_order_release);
+            logging::info(
+                "Installed verified renderer SetShaders descriptor source (RVA 0x01D92C00); every DFPrepass bind, including cached command records, publishes its pixel-shader key.");
+            return true;
         }
         void __fastcall hookRestoreGeometry(void* receiver,void* pass) noexcept
         {
@@ -788,7 +944,7 @@ namespace csah::render
         installed.store(true, std::memory_order_release);
         logging::info(
             "Installed verified Fallout4VR BSDFPrePass descriptor lifetime hooks (vtable 0x030B8C68: SetupTechnique slot 4 RVA 0x0287B720, RestoreTechnique slot 5 RVA 0x028789B0, SetupGeometry slot 9 RVA 0x0287CF60, geometry-state descriptor +0x40 verified at RVA 0x0287D1AB).");
-        return true;
+        return installSetShadersHook(image);
     }
 
     bool validateBSDFPrePassShaderHook(const char* trigger) noexcept
@@ -859,8 +1015,44 @@ namespace csah::render
         setDescriptorConsumer(kAuthoredPbrConsumer, enabled);
     }
 
+    namespace
+    {
+        struct LiveDispatch
+        {
+            std::uintptr_t vtable{};
+            std::uintptr_t setupTechnique{};
+            std::uintptr_t setupGeometry{};
+        };
+
+        // Diagnostic read on the world-trace path only; SEH-guarded so a
+        // missing singleton reads as zero.
+        LiveDispatch readLiveDispatch(const std::byte* image) noexcept
+        {
+            LiveDispatch result{};
+            __try {
+                const auto* object = *reinterpret_cast<void* const*>(
+                    image + kSingletonRva);
+                if (object) {
+                    const auto* const* vtable =
+                        *reinterpret_cast<void* const* const*>(object);
+                    result.vtable = reinterpret_cast<std::uintptr_t>(vtable);
+                    result.setupTechnique = reinterpret_cast<std::uintptr_t>(
+                        vtable[kTechniqueSetupSlot]);
+                    result.setupGeometry = reinterpret_cast<std::uintptr_t>(
+                        vtable[kGeometrySetupSlot]);
+                }
+            } __except (EXCEPTION_EXECUTE_HANDLER) {
+                result = {};
+            }
+            return result;
+        }
+    }
+
     DFPrePassHookSnapshot dFPrePassHookSnapshot() noexcept
     {
+        const auto* image = reinterpret_cast<const std::byte*>(
+            GetModuleHandleW(nullptr));
+        const auto live = image ? readLiveDispatch(image) : LiveDispatch{};
         const auto hookInstalled =
             installed.load(std::memory_order_acquire);
         return {
@@ -892,6 +1084,15 @@ namespace csah::render
                 geometryEntries.load(std::memory_order_relaxed),
             .consumerMask =
                 descriptorConsumerMask.load(std::memory_order_acquire),
+            .setShadersInstalled =
+                setShadersInstalled.load(std::memory_order_acquire),
+            .shaderKeyPublications =
+                shaderKeyPublications.load(std::memory_order_relaxed),
+            .liveVtable = live.vtable,
+            .liveSetupTechnique = live.setupTechnique,
+            .liveSetupGeometry = live.setupGeometry,
+            .patchedVtable = image ?
+                reinterpret_cast<std::uintptr_t>(image + kVtableRva) : 0,
         };
     }
 }

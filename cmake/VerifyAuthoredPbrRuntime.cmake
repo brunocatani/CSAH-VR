@@ -54,7 +54,7 @@ foreach(required IN ITEMS
     "kGeometryShaderPropertyOffset = 0x178"
     "kShaderPropertyMaterialOffset = 0x58"
     "kLightingMaterialBaseTextureOffset = 0x38"
-    "publishDFPrePassGeometry(descriptor, baseTexture)")
+    "publishDFPrePassGeometry(pixelShaderKey(descriptor), baseTexture)")
   string(FIND "${dfprepass_source}" "${required}" found)
   if(found EQUAL -1)
     message(FATAL_ERROR "Authored PBR verified pointer walk lost '${required}'")

@@ -18,13 +18,27 @@ namespace csah::render
         std::uint64_t techniqueAccepted{};
         std::uint64_t geometryEntries{};
         std::uint32_t consumerMask{};
+        // Renderer SetShaders descriptor source used by cached G-buffer
+        // command records, which never call the vtable slots above.
+        bool setShadersInstalled{};
+        std::uint64_t shaderKeyPublications{};
+        // Live dispatch of the engine's BSDFPrePassShader singleton: its
+        // vtable pointer and the SetupTechnique/SetupGeometry entries the
+        // renderer actually calls (0 when unreadable).
+        std::uintptr_t liveVtable{};
+        std::uintptr_t liveSetupTechnique{};
+        std::uintptr_t liveSetupGeometry{};
+        std::uintptr_t patchedVtable{};
     };
 
-    // Fallout4VR.exe 1.2.72 BSDFPrePassShader slots 4/5 own the complete
-    // SetupTechnique/RestoreTechnique descriptor lifetime. Slot 9 owns
-    // per-draw SetupGeometry and exposes geometryState + 0x40 as reinforcement
-    // for retained shader binds. Every hook and the descriptor-load
-    // instruction are guarded by exact live identity bytes.
+    // Fallout4VR.exe 1.2.72 BSDFPrePassShader slots 4/5 own the
+    // SetupTechnique/RestoreTechnique descriptor lifetime of the virtual
+    // per-pass path. Slot 9 owns per-draw SetupGeometry and exposes
+    // geometryState + 0x40 as reinforcement for retained shader binds. Most
+    // G-buffer draws are cached command records that bypass those slots; the
+    // renderer SetShaders detour publishes the bound pixel-shader key for
+    // every bind instead. Every hook and the instructions it relies on are
+    // guarded by exact live identity bytes.
     [[nodiscard]] bool installBSDFPrePassShaderHook() noexcept;
     [[nodiscard]] bool validateBSDFPrePassShaderHook(
         const char* trigger) noexcept;

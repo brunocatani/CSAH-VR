@@ -339,6 +339,7 @@ namespace csah::render
             std::uint32_t descriptor{};
             RE::NiTexture* baseTexture{};
             bool active{};
+            bool shaderKey{};
         };
         constexpr std::size_t kMaxDFPrePassTechniqueDepth = 8;
         struct ActiveDFPrePassTechniques
@@ -3425,6 +3426,9 @@ namespace csah::render
                 recordDFPrePassDescriptorConsumed(
                     selectedDescriptor,
                     "active technique material bind");
+            } else if (descriptorPending &&
+                pendingDFPrePassDescriptor.shaderKey) {
+                pendingDFPrePassDescriptor = {};
             }
             auto iblSelection = ibl::Runtime::MaterialPixelShaderSelection{
                 selection.shader,
@@ -4926,6 +4930,16 @@ namespace csah::render
         pendingDFPrePassDescriptor = {
             descriptor,
             baseTexture,
+            true,
+        };
+    }
+
+    void publishDFPrePassShaderKey(std::uint32_t key) noexcept
+    {
+        pendingDFPrePassDescriptor = {
+            key,
+            nullptr,
+            true,
             true,
         };
     }

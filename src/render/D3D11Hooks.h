@@ -86,6 +86,11 @@ namespace csah::render
     void publishDFPrePassGeometry(
         std::uint32_t descriptor,
         RE::NiTexture* baseTexture) noexcept;
+    // Renderer SetShaders publishes the pixel-shader key of the program it
+    // is about to bind; the PSSetShader hook consumes it at that bind. Keys
+    // reach every shader family, so one left unconsumed by a non-material
+    // bind is dropped there.
+    void publishDFPrePassShaderKey(std::uint32_t key) noexcept;
 
     // A new session invalidates render-thread-local proof state through its
     // monotonically increasing ID. All counters below are session-local.

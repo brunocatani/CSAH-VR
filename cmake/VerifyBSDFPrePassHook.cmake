@@ -28,9 +28,13 @@ foreach(required_token IN ITEMS
     "void* geometryState"
     "std::memcmp("
     "#include \"render/D3D11Hooks.h\""
-    "beginDFPrePassTechnique(descriptor)"
-    "endDFPrePassTechnique(descriptor)"
-    "publishDFPrePassGeometry(descriptor, baseTexture)"
+    "beginDFPrePassTechnique(pixelShaderKey(descriptor))"
+    "endDFPrePassTechnique(pixelShaderKey(descriptor))"
+    "publishDFPrePassGeometry(pixelShaderKey(descriptor), baseTexture)"
+    "kSetShadersRva = 0x01D92C00"
+    "kRendererCurrentPixelShaderOffset = 0x1EE0 + 0x6A0"
+    "kPixelShaderKeyMask = 0xFFFFEFE7"
+    "publishDFPrePassShaderKey(key)"
     "std::atomic_uint32_t descriptorConsumerMask"
     "setDFPrePassLinearLightingEnabled(bool enabled) noexcept"
     "setDFPrePassComplexEnvironmentEnabled(bool enabled) noexcept"
@@ -83,11 +87,11 @@ foreach(forbidden_read IN ITEMS
 endforeach()
 
 string(FIND "${hook_body}"
-  "beginDFPrePassTechnique(descriptor);" technique_begin)
+  "beginDFPrePassTechnique(pixelShaderKey(descriptor));" technique_begin)
 string(FIND "${hook_body}"
   "const auto accepted = original(" technique_original)
 string(FIND "${hook_body}"
-  "endDFPrePassTechnique(descriptor);" technique_end)
+  "endDFPrePassTechnique(pixelShaderKey(descriptor));" technique_end)
 if(technique_begin EQUAL -1 OR technique_original EQUAL -1 OR
    technique_end EQUAL -1 OR
    NOT technique_begin LESS technique_original OR
@@ -97,7 +101,7 @@ if(technique_begin EQUAL -1 OR technique_original EQUAL -1 OR
 endif()
 
 string(FIND "${hook_body}"
-  "publishDFPrePassGeometry(descriptor, baseTexture);\n            original(receiver, pass, geometryState)"
+  "publishDFPrePassGeometry(pixelShaderKey(descriptor), baseTexture);\n            original(receiver, pass, geometryState)"
   ordered_handoff)
 if(ordered_handoff EQUAL -1)
   message(FATAL_ERROR

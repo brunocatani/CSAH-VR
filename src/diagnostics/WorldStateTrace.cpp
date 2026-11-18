@@ -64,6 +64,7 @@ namespace csah::diagnostics
             std::uint64_t prepassTechniqueAccepted{};
             std::uint64_t prepassGeometryEntries{};
             std::uint64_t prepassGeometryDescriptors{};
+            std::uint64_t prepassShaderKeys{};
             std::uint32_t prepassConsumerMask{};
             bool prepassVtableOwned{};
             std::uint64_t descriptorMisses{};
@@ -131,6 +132,7 @@ namespace csah::diagnostics
                 .prepassTechniqueAccepted = prepass.techniqueAccepted,
                 .prepassGeometryEntries = prepass.geometryEntries,
                 .prepassGeometryDescriptors = prepass.setupCalls,
+                .prepassShaderKeys = prepass.shaderKeyPublications,
                 .prepassConsumerMask = prepass.consumerMask,
                 .prepassVtableOwned = prepass.vtableCellOwned,
                 .descriptorMisses = classification.descriptorObservationMisses,
@@ -248,6 +250,37 @@ namespace csah::diagnostics
                     misses += std::format(" 0x{:08X}", descriptor);
                 }
             }
+            const auto prepass = render::dFPrePassHookSnapshot();
+            const auto describeAddress = [](std::uintptr_t address) {
+                if (!address) {
+                    return std::string("unreadable");
+                }
+                HMODULE module{};
+                wchar_t path[MAX_PATH]{};
+                if (!GetModuleHandleExW(
+                        GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                            GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                        reinterpret_cast<LPCWSTR>(address), &module) ||
+                    !GetModuleFileNameW(module, path, MAX_PATH)) {
+                    return std::format("0x{:X}(no module)", address);
+                }
+                std::wstring_view name(path);
+                name = name.substr(name.find_last_of(L"\\/") + 1);
+                std::string narrow;
+                for (const auto character : name) {
+                    narrow.push_back(character < 0x80 ? static_cast<char>(character) : '?');
+                }
+                return std::format("{}+0x{:X}", narrow,
+                    address - reinterpret_cast<std::uintptr_t>(module));
+            };
+            const auto prepassDispatch = std::format(
+                "setShaders={} shaderKeys={} liveVtable={} isPatchedVtable={} liveSetupTechnique={} liveSetupGeometry={}",
+                prepass.setShadersInstalled,
+                d(now.prepassShaderKeys, base.prepassShaderKeys),
+                describeAddress(prepass.liveVtable),
+                prepass.liveVtable == prepass.patchedVtable,
+                describeAddress(prepass.liveSetupTechnique),
+                describeAddress(prepass.liveSetupGeometry));
             // Rejects that carried a descriptor:
             // descriptor/expected producer/alias producer (0 none, FFFF other family).
             std::string complexRejects;
@@ -261,7 +294,7 @@ namespace csah::diagnostics
             }
             return std::format(
                 "skyUpdates={} | shaders selections={} material={} ambient={} inactive={} unmatched={} complexEnv={} complexEnvRejects={} noDescriptor={} rejected=[{}] | "
-                "prepass technique={} accepted={} geometry={} geometryDescriptors={} mask=0x{:X} owned={} | "
+                "prepass technique={} accepted={} geometry={} geometryDescriptors={} mask=0x{:X} owned={} {} | "
                 "descriptorMisses={} contractMisses={} missing=[{}] | pbr scopes={} fallbacks={} failures={} | "
                 "ssgi scopes={} prepared={} radiance={} rejects=[{}] | skylighting captures={} rejects={} dispatches={} ambient={} | "
                 "volumetric rendered={} rejected={} | contact scopes={} fallbacks={} | ibl material={} fits={} fitRejects={} | dlaa committed={} failures={}",
@@ -281,6 +314,7 @@ namespace csah::diagnostics
                 d(now.prepassGeometryDescriptors, base.prepassGeometryDescriptors),
                 now.prepassConsumerMask,
                 now.prepassVtableOwned,
+                prepassDispatch,
                 d(now.descriptorMisses, base.descriptorMisses),
                 d(now.descriptorContractMisses, base.descriptorContractMisses),
                 misses.empty() ? std::string() : misses.substr(1),
