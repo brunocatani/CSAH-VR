@@ -2498,6 +2498,8 @@ add_library(${PROJECT_NAME} SHARED
   "${SOURCE_DIR}/render/NativeEmissionRead.h"
   "${SOURCE_DIR}/render/EngineCubemapArray.cpp"
   "${SOURCE_DIR}/render/EngineCubemapArray.h"
+  "${SOURCE_DIR}/render/NativeTextureLoad.cpp"
+  "${SOURCE_DIR}/render/NativeTextureLoad.h"
   "${D3D11_HOOK_SOURCE}"
   "${SOURCE_DIR}/render/D3D11Hooks.h"
   "${DLAA_RUNTIME_SOURCE}"

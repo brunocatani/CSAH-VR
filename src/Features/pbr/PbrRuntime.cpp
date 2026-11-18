@@ -4,6 +4,7 @@
 #include "Features/linear_lighting/LinearLightingRuntime.h"
 #include "Features/surface_classification/SurfaceClassificationRuntime.h"
 #include "render/BSDFPrePassShaderHook.h"
+#include "render/NativeTextureLoad.h"
 #include "support/Logger.h"
 
 #ifdef MEM_RELEASE
@@ -102,14 +103,7 @@ namespace csah::pbr
             const std::string& path,
             bool sRgb) noexcept
         {
-            try {
-                RE::BSFixedString fixedPath(path.c_str());
-                return RE::NiPointer<RE::NiTexture>{
-                    RE::NiTexture::Create(fixedPath, sRgb, true)
-                };
-            } catch (...) {
-                return {};
-            }
+            return render::loadStreamBackedTexture(path.c_str(), sRgb);
         }
 
         [[nodiscard]] ID3D11ShaderResourceView* shaderResource(
