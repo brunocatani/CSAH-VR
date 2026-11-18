@@ -3,6 +3,7 @@
 #include "render/Fo4VrCamera.h"
 #include "support/Logger.h"
 #include "ScreenSpaceGIShaders.h"
+#include <d3d11_1.h>
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -21,6 +22,85 @@ namespace csah::screen_space_gi
             texture->GetDesc(&result);
             return result.ArraySize==1 && result.SampleDesc.Count==1;
         }
+        // Saves and restores exactly the graphics state one composite-time
+        // fullscreen pass touches, on the render thread inside the native
+        // composite draw. Pixel constant buffers keep their bound ranges:
+        // FO4VR binds its camera buffer with offsets.
+        class ScopedComposeState final
+        {
+        public:
+            static constexpr UINT kResources=65,kConstants=13,kClasses=256;
+            explicit ScopedComposeState(ID3D11DeviceContext* context) noexcept:context_(context)
+            {
+                context_->QueryInterface(IID_PPV_ARGS(&context1_));
+                context_->OMGetRenderTargets(D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT,targets_.data(),&depth_);
+                context_->OMGetBlendState(&blend_,blendFactor_.data(),&sampleMask_);
+                context_->OMGetDepthStencilState(&depthState_,&stencilRef_);
+                context_->RSGetState(&raster_);
+                viewportCount_=D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE;
+                context_->RSGetViewports(&viewportCount_,viewports_.data());
+                context_->IAGetInputLayout(&layout_);
+                context_->IAGetPrimitiveTopology(&topology_);
+                vertexClassCount_=kClasses;context_->VSGetShader(&vertex_,vertexClasses_.data(),&vertexClassCount_);
+                pixelClassCount_=kClasses;context_->PSGetShader(&pixel_,pixelClasses_.data(),&pixelClassCount_);
+                geometryClassCount_=kClasses;context_->GSGetShader(&geometry_,geometryClasses_.data(),&geometryClassCount_);
+                hullClassCount_=kClasses;context_->HSGetShader(&hull_,hullClasses_.data(),&hullClassCount_);
+                domainClassCount_=kClasses;context_->DSGetShader(&domain_,domainClasses_.data(),&domainClassCount_);
+                context_->PSGetShaderResources(0,kResources,resources_.data());
+                if(context1_) context1_->PSGetConstantBuffers1(0,kConstants,constants_.data(),firstConstant_.data(),constantCount_.data());
+                else context_->PSGetConstantBuffers(0,kConstants,constants_.data());
+            }
+            ~ScopedComposeState()
+            {
+                // Render targets first, so the accumulators are no longer
+                // bound for output when the composite inputs are restored.
+                context_->OMSetRenderTargets(D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT,targets_.data(),depth_);
+                context_->OMSetBlendState(blend_,blendFactor_.data(),sampleMask_);
+                context_->OMSetDepthStencilState(depthState_,stencilRef_);
+                context_->RSSetState(raster_);
+                context_->RSSetViewports(viewportCount_,viewports_.data());
+                context_->IASetInputLayout(layout_);
+                context_->IASetPrimitiveTopology(topology_);
+                context_->VSSetShader(vertex_,vertexClasses_.data(),vertexClassCount_);
+                context_->PSSetShader(pixel_,pixelClasses_.data(),pixelClassCount_);
+                context_->GSSetShader(geometry_,geometryClasses_.data(),geometryClassCount_);
+                context_->HSSetShader(hull_,hullClasses_.data(),hullClassCount_);
+                context_->DSSetShader(domain_,domainClasses_.data(),domainClassCount_);
+                context_->PSSetShaderResources(0,kResources,resources_.data());
+                if(context1_) context1_->PSSetConstantBuffers1(0,kConstants,constants_.data(),firstConstant_.data(),constantCount_.data());
+                else context_->PSSetConstantBuffers(0,kConstants,constants_.data());
+                const auto release=[](auto* value) noexcept {if(value) value->Release();};
+                for(auto* value:targets_) release(value);
+                release(depth_);release(blend_);release(depthState_);release(raster_);release(layout_);
+                release(vertex_);release(pixel_);release(geometry_);release(hull_);release(domain_);
+                for(UINT i=0;i<vertexClassCount_;i++) release(vertexClasses_[i]);
+                for(UINT i=0;i<pixelClassCount_;i++) release(pixelClasses_[i]);
+                for(UINT i=0;i<geometryClassCount_;i++) release(geometryClasses_[i]);
+                for(UINT i=0;i<hullClassCount_;i++) release(hullClasses_[i]);
+                for(UINT i=0;i<domainClassCount_;i++) release(domainClasses_[i]);
+                for(auto* value:resources_) release(value);
+                for(auto* value:constants_) release(value);
+            }
+            ScopedComposeState(const ScopedComposeState&)=delete;
+            ScopedComposeState& operator=(const ScopedComposeState&)=delete;
+        private:
+            ID3D11DeviceContext* context_{};
+            ComPtr<ID3D11DeviceContext1> context1_;
+            std::array<ID3D11RenderTargetView*,D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT> targets_{};
+            ID3D11DepthStencilView* depth_{};
+            ID3D11BlendState* blend_{};std::array<float,4> blendFactor_{};UINT sampleMask_{};
+            ID3D11DepthStencilState* depthState_{};UINT stencilRef_{};
+            ID3D11RasterizerState* raster_{};
+            std::array<D3D11_VIEWPORT,D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE> viewports_{};UINT viewportCount_{};
+            ID3D11InputLayout* layout_{};D3D11_PRIMITIVE_TOPOLOGY topology_{};
+            ID3D11VertexShader* vertex_{};ID3D11PixelShader* pixel_{};ID3D11GeometryShader* geometry_{};
+            ID3D11HullShader* hull_{};ID3D11DomainShader* domain_{};
+            std::array<ID3D11ClassInstance*,kClasses> vertexClasses_{},pixelClasses_{},geometryClasses_{},hullClasses_{},domainClasses_{};
+            UINT vertexClassCount_{},pixelClassCount_{},geometryClassCount_{},hullClassCount_{},domainClassCount_{};
+            std::array<ID3D11ShaderResourceView*,kResources> resources_{};
+            std::array<ID3D11Buffer*,kConstants> constants_{};
+            std::array<UINT,kConstants> firstConstant_{},constantCount_{};
+        };
     }
     ScopedBindings::ScopedBindings(ID3D11DeviceContext* context,const std::array<ID3D11ShaderResourceView*,8>& views) noexcept:context_(context)
     {
@@ -49,7 +129,9 @@ namespace csah::screen_space_gi
     {
         device_=device;context_=context;shaders_={};constants_.Reset();parameterView_.Reset();previousCamera_.Reset();
         positions_={};normals_={};diffuse_={};specular_={};rawDiffuse_={};rawSpecular_={};radiance_={};
-        frame_=preparedFrame_=radianceFrame_=nextRetry_=0;width_=height_=current_=0;ready_=historyValid_=loggedFailure_=loggedActive_=false;
+        composeVertex_.Reset();composePixel_.Reset();composeBlend_.Reset();composeRaster_.Reset();composeDepth_.Reset();
+        composeConstants_={};composeTargets_={};frameNative_={};frameAuthored_.Reset();frameSurface_.Reset();frameStereo_.Reset();frameCamera_.Reset();
+        frame_=preparedFrame_=radianceFrame_=composedFrame_=nextRetry_=0;width_=height_=current_=0;ready_=historyValid_=loggedFailure_=loggedActive_=false;
         resetHistory();
     }
     void Runtime::beginFrame() noexcept
@@ -93,7 +175,8 @@ namespace csah::screen_space_gi
                     !createTexture(diffuse_[i],DXGI_FORMAT_R16G16B16A16_FLOAT,width,height) ||
                     !createTexture(specular_[i],DXGI_FORMAT_R16G16B16A16_FLOAT,width,height)) return false;
             }
-            return createTexture(rawDiffuse_,DXGI_FORMAT_R16G16B16A16_FLOAT,width,height) &&
+            return createComposeResources() &&
+                createTexture(rawDiffuse_,DXGI_FORMAT_R16G16B16A16_FLOAT,width,height) &&
                 createTexture(rawSpecular_,DXGI_FORMAT_R16G16B16A16_FLOAT,width,height) &&
                 createTexture(radiance_,DXGI_FORMAT_R16G16B16A16_FLOAT,width,height);
         };
@@ -168,6 +251,7 @@ namespace csah::screen_space_gi
         dispatch(shaders_[1].Get(),{positions_[current_].view.Get(),normals_[current_].view.Get(),positions_[previous].view.Get(),normals_[previous].view.Get(),radiance_.view.Get()},rawDiffuse_.output.Get(),rawSpecular_.output.Get());
         dispatch(shaders_[2].Get(),{positions_[current_].view.Get(),normals_[current_].view.Get(),positions_[previous].view.Get(),normals_[previous].view.Get(),rawDiffuse_.view.Get(),rawSpecular_.view.Get(),diffuse_[previous].view.Get(),specular_[previous].view.Get()},diffuse_[current_].output.Get(),specular_[current_].output.Get());
         context->CopyResource(previousCamera_.Get(),camera.Get());
+        frameNative_={inputs[0],inputs[1],inputs[2]};frameAuthored_=authored;frameSurface_=surface;frameStereo_=stereo;frameCamera_=camera;
         preparedFrame_=frame_;ready_=true;preparedFrames_.fetch_add(1,std::memory_order_relaxed);
         if(!loggedActive_) {loggedActive_=true;logging::info("Screen Space GI active: two isolated {}x{} eye slices, AO={}, indirect={}, experimentalSpecular={}, temporal={}; current geometry and prior-frame surface lighting.",width_,height_,uploaded_.aoPower,uploaded_.gi!=0,uploaded_.specular!=0,uploaded_.temporal!=0);}
         return true;
@@ -197,6 +281,98 @@ namespace csah::screen_space_gi
         dispatch(shaders_[3].Get(),{inputs[0].Get(),inputs[1].Get(),inputs[2].Get(),inputs[3].Get(),positions_[current_].view.Get(),diffuse_[current_].view.Get(),authored},radiance_.output.Get());
         radianceFrame_=frame_;radianceCaptures_.fetch_add(1,std::memory_order_relaxed);
     }
+    bool Runtime::createComposeResources() noexcept
+    {
+        if(composeVertex_ && composePixel_ && composeBlend_ && composeRaster_ && composeDepth_ && composeConstants_[0] && composeConstants_[1]) return true;
+        if(FAILED(device_->CreateVertexShader(kScreenSpaceGIComposeVS.data,kScreenSpaceGIComposeVS.size,nullptr,&composeVertex_)) ||
+            FAILED(device_->CreatePixelShader(kScreenSpaceGIComposePS.data,kScreenSpaceGIComposePS.size,nullptr,&composePixel_))) return false;
+        // dest * Target1 + Target0: the accumulator takes the root of the
+        // occlusion and the added bounce; its alpha is kept.
+        D3D11_BLEND_DESC blend{};
+        blend.RenderTarget[0].BlendEnable=TRUE;
+        blend.RenderTarget[0].SrcBlend=D3D11_BLEND_ONE;blend.RenderTarget[0].DestBlend=D3D11_BLEND_SRC1_COLOR;blend.RenderTarget[0].BlendOp=D3D11_BLEND_OP_ADD;
+        blend.RenderTarget[0].SrcBlendAlpha=D3D11_BLEND_ZERO;blend.RenderTarget[0].DestBlendAlpha=D3D11_BLEND_ONE;blend.RenderTarget[0].BlendOpAlpha=D3D11_BLEND_OP_ADD;
+        blend.RenderTarget[0].RenderTargetWriteMask=D3D11_COLOR_WRITE_ENABLE_ALL;
+        D3D11_RASTERIZER_DESC raster{};raster.FillMode=D3D11_FILL_SOLID;raster.CullMode=D3D11_CULL_NONE;raster.DepthClipEnable=TRUE;
+        D3D11_DEPTH_STENCIL_DESC depth{};depth.DepthEnable=FALSE;depth.StencilEnable=FALSE;depth.DepthWriteMask=D3D11_DEPTH_WRITE_MASK_ZERO;depth.DepthFunc=D3D11_COMPARISON_ALWAYS;
+        if(FAILED(device_->CreateBlendState(&blend,&composeBlend_)) || FAILED(device_->CreateRasterizerState(&raster,&composeRaster_)) ||
+            FAILED(device_->CreateDepthStencilState(&depth,&composeDepth_))) return false;
+        for(UINT i=0;i<2;i++) {
+            const std::array<UINT,4> value{i,0,0,0};
+            D3D11_BUFFER_DESC d{};d.ByteWidth=sizeof(value);d.Usage=D3D11_USAGE_IMMUTABLE;d.BindFlags=D3D11_BIND_CONSTANT_BUFFER;
+            const D3D11_SUBRESOURCE_DATA initial{value.data(),0,0};
+            if(FAILED(device_->CreateBuffer(&d,&initial,&composeConstants_[i]))) return false;
+        }
+        return true;
+    }
+    ID3D11RenderTargetView* Runtime::composeTarget(std::size_t index,ID3D11ShaderResourceView* accumulator) noexcept
+    {
+        if(!accumulator) return nullptr;
+        ComPtr<ID3D11Resource> resource;accumulator->GetResource(&resource);
+        auto& target=composeTargets_[index];
+        if(target.view && target.resource.Get()==resource.Get()) return target.view.Get();
+        target={};
+        ComPtr<ID3D11Texture2D> texture;
+        if(FAILED(resource.As(&texture))) return nullptr;
+        D3D11_TEXTURE2D_DESC description{};texture->GetDesc(&description);
+        if(!(description.BindFlags&D3D11_BIND_RENDER_TARGET) || description.ArraySize!=1 || description.SampleDesc.Count!=1) return nullptr;
+        D3D11_SHADER_RESOURCE_VIEW_DESC view{};accumulator->GetDesc(&view);
+        D3D11_RENDER_TARGET_VIEW_DESC output{};output.Format=view.Format;output.ViewDimension=D3D11_RTV_DIMENSION_TEXTURE2D;
+        if(FAILED(device_->CreateRenderTargetView(resource.Get(),&output,&target.view))) {target={};return nullptr;}
+        target.resource=resource;
+        return target.view.Get();
+    }
+    void Runtime::composeOcclusion(ID3D11DeviceContext* context,bool tiled) noexcept
+    {
+        if(!requested() || context!=context_.Get() || !ready_ || preparedFrame_!=frame_ || composedFrame_==frame_) return;
+        composedFrame_=frame_;
+        // Native DFComposite inputs: t0 albedo, t5 deferred diffuse, t11 tiled diffuse.
+        std::array<ComPtr<ID3D11ShaderResourceView>,3> inputs;
+        context->PSGetShaderResources(0,1,inputs[0].GetAddressOf());
+        context->PSGetShaderResources(5,1,inputs[1].GetAddressOf());
+        context->PSGetShaderResources(11,1,inputs[2].GetAddressOf());
+        const std::array<ID3D11RenderTargetView*,2> targets{composeTarget(0,inputs[1].Get()),tiled?composeTarget(1,inputs[2].Get()):nullptr};
+        D3D11_TEXTURE2D_DESC accumulator{};
+        if(!inputs[0] || !targets[0] || (tiled && !targets[1]) || !textureDescription(inputs[1].Get(),accumulator)) {
+            composeFailures_.fetch_add(1,std::memory_order_relaxed);
+            if(!loggedComposeFailure_) {
+                loggedComposeFailure_=true;
+                logging::error("Screen Space GI could not bind the composite diffuse accumulators (albedo={}, deferred={}, tiled={}/{}); this frame keeps only the ambient half of the occlusion.",
+                    static_cast<bool>(inputs[0]),targets[0]!=nullptr,tiled,targets[1]!=nullptr);
+            }
+            return;
+        }
+        {
+            ScopedComposeState state(context);
+            const D3D11_VIEWPORT viewport{0,0,static_cast<float>(accumulator.Width),static_cast<float>(accumulator.Height),0,1};
+            context->RSSetViewports(1,&viewport);
+            context->RSSetState(composeRaster_.Get());
+            context->OMSetBlendState(composeBlend_.Get(),nullptr,0xFFFFFFFFu);
+            context->OMSetDepthStencilState(composeDepth_.Get(),0);
+            context->IASetInputLayout(nullptr);
+            context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+            context->VSSetShader(composeVertex_.Get(),nullptr,0);
+            context->GSSetShader(nullptr,nullptr,0);context->HSSetShader(nullptr,nullptr,0);context->DSSetShader(nullptr,nullptr,0);
+            context->PSSetShader(composePixel_.Get(),nullptr,0);
+            // The accumulators become render targets: no composite input may stay bound.
+            const std::array<ID3D11ShaderResourceView*,ScopedComposeState::kResources> none{};
+            context->PSSetShaderResources(0,ScopedComposeState::kResources,none.data());
+            const std::array<ID3D11ShaderResourceView*,3> native{frameNative_[0].Get(),frameNative_[1].Get(),frameNative_[2].Get()};
+            context->PSSetShaderResources(1,3,native.data());
+            const std::array<ID3D11ShaderResourceView*,8> gi{diffuse_[current_].view.Get(),specular_[current_].view.Get(),parameterView_.Get(),inputs[0].Get(),
+                frameAuthored_.Get(),positions_[current_].view.Get(),normals_[current_].view.Get(),frameSurface_.Get()};
+            context->PSSetShaderResources(57,8,gi.data());
+            ID3D11Buffer* buffer=frameStereo_.Get();context->PSSetConstantBuffers(8,1,&buffer);
+            buffer=frameCamera_.Get();context->PSSetConstantBuffers(12,1,&buffer);
+            for(UINT i=0;i<(tiled?2u:1u);i++) {
+                // The bounce is added once, to the deferred accumulator.
+                buffer=composeConstants_[i==0?1:0].Get();context->PSSetConstantBuffers(0,1,&buffer);
+                context->OMSetRenderTargets(1,&targets[i],nullptr);
+                context->Draw(3,0);
+            }
+        }
+        composedFrames_.fetch_add(1,std::memory_order_relaxed);
+    }
     bool Runtime::reject(Rejection reason) noexcept
     {
         rejections_[static_cast<std::size_t>(reason)].fetch_add(1,std::memory_order_relaxed);
@@ -205,7 +381,8 @@ namespace csah::screen_space_gi
     RuntimeSnapshot Runtime::snapshot() const noexcept
     {
         RuntimeSnapshot result{.enabled=requested(),.ambientScopes=ambientScopes_.load(std::memory_order_relaxed),
-            .preparedFrames=preparedFrames_.load(std::memory_order_relaxed),.radianceCaptures=radianceCaptures_.load(std::memory_order_relaxed)};
+            .preparedFrames=preparedFrames_.load(std::memory_order_relaxed),.radianceCaptures=radianceCaptures_.load(std::memory_order_relaxed),
+            .composedFrames=composedFrames_.load(std::memory_order_relaxed),.composeFailures=composeFailures_.load(std::memory_order_relaxed)};
         for(std::size_t i=0;i<kRejectionCount;i++) result.rejections[i]=rejections_[i].load(std::memory_order_relaxed);
         for(std::size_t i=0;i<3;i++) result.lastRejectedFormats[i]=lastRejectedFormats_[i].load(std::memory_order_relaxed);
         return result;

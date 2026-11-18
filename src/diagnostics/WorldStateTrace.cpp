@@ -79,6 +79,8 @@ namespace csah::diagnostics
             std::uint64_t giScopes{};
             std::uint64_t giPrepared{};
             std::uint64_t giRadiance{};
+            std::uint64_t giComposed{};
+            std::uint64_t giComposeFailures{};
             std::array<std::uint64_t, screen_space_gi::kRejectionCount> giRejections{};
             std::uint64_t skylightingCaptures{};
             std::uint64_t skylightingRejects{};
@@ -152,6 +154,8 @@ namespace csah::diagnostics
                 .giScopes = gi.ambientScopes,
                 .giPrepared = gi.preparedFrames,
                 .giRadiance = gi.radianceCaptures,
+                .giComposed = gi.composedFrames,
+                .giComposeFailures = gi.composeFailures,
                 .giRejections = gi.rejections,
                 .skylightingCaptures = skylighting.captureCalls,
                 .skylightingRejects = skylighting.rejectedCaptures,
@@ -309,7 +313,7 @@ namespace csah::diagnostics
                 "skyUpdates={} | shaders selections={} material={} ambient={} inactive={} unmatched={} complexEnv={} complexEnvRejects={} noDescriptor={} rejected=[{}] | "
                 "prepass technique={} accepted={} geometry={} geometryDescriptors={} mask=0x{:X} owned={} {} | "
                 "descriptorMisses={} contractMisses={} missing=[{}] | pbr scopes={} fallbacks={} failures={} | "
-                "ssgi scopes={} prepared={} radiance={} rejects=[{}] | skylighting captures={} rejects={} dispatches={} ambient={} | "
+                "ssgi scopes={} prepared={} radiance={} composed={} composeFailures={} rejects=[{}] | skylighting captures={} rejects={} dispatches={} ambient={} | "
                 "volumetric rendered={} rejected={} | contact scopes={} fallbacks={} | lod classified={} objectLod={} | ibl material={} engineCubes={}/{} missingContracts=0x{:X} fits={} fitRejects={} | dlaa committed={} failures={}",
                 d(now.skyUpdates, base.skyUpdates),
                 d(now.shaderSelections, base.shaderSelections),
@@ -337,6 +341,8 @@ namespace csah::diagnostics
                 d(now.giScopes, base.giScopes),
                 d(now.giPrepared, base.giPrepared),
                 d(now.giRadiance, base.giRadiance),
+                d(now.giComposed, base.giComposed),
+                d(now.giComposeFailures, base.giComposeFailures),
                 giRejects.empty() ? std::string() : giRejects.substr(1),
                 d(now.skylightingCaptures, base.skylightingCaptures),
                 d(now.skylightingRejects, base.skylightingRejects),

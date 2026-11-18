@@ -122,9 +122,9 @@ namespace
             f.context->CopyResource(staging.Get(),textures[target].Get());D3D11_MAPPED_SUBRESOURCE mapped{};check(f.context->Map(staging.Get(),0,D3D11_MAP_READ,0,&mapped),"ambient map");
             for(UINT y=0;y<td.Height;y++) for(UINT x=0;x<td.Width;x++) {
                 const auto value=reinterpret_cast<const V*>(static_cast<const std::byte*>(mapped.pData)+y*mapped.RowPitch)[x];
-                if(target==0) require(std::abs(value.x-.5508f)<.002f && std::abs(value.y-.6809625f)<.002f && std::abs(value.z-.811125f)<.002f && value.w==1,"ambient multibounce AO or alpha changed");
+                if(target==0) require(std::abs(value.x-std::sqrt(.5508f))<.002f && std::abs(value.y-std::sqrt(.6809625f))<.002f && std::abs(value.z-std::sqrt(.811125f))<.002f && value.w==1,"ambient multibounce AO root or alpha changed");
                 if(target==1) require(value.x==1 && value.y==1 && value.z==1 && value.w==1,"diffuse AO changed native specular visibility");
-                if(target==2) {const V expected=x<Width*2?V{.3f,0,0,0}:V{0,0,.3f,0};require(std::abs(value.x-expected.x)<1e-4f && std::abs(value.z-expected.z)<1e-4f && value.y==0 && value.w==0,"ambient GI scale, eye or alpha changed");}
+                if(target==2) require(value.x==0 && value.y==0 && value.z==0 && value.w==0,"ambient pass added the bounce the composite owns");
                 if(target==3) require(value.x==0 && value.y==0 && value.z==0 && value.w==0,"disabled specular GI changed specular output");
             }
             f.context->Unmap(staging.Get(),0);
@@ -144,6 +144,7 @@ namespace
         D3D11_SAMPLER_DESC sd{};sd.Filter=D3D11_FILTER_MIN_MAG_MIP_POINT;sd.AddressU=sd.AddressV=sd.AddressW=D3D11_TEXTURE_ADDRESS_CLAMP;sd.MaxLOD=D3D11_FLOAT32_MAX;
         ComPtr<ID3D11SamplerState> sampler;check(f.device->CreateSamplerState(&sd,&sampler),"native sampler");std::array<ID3D11SamplerState*,3> samplers{sampler.Get(),sampler.Get(),sampler.Get()};f.context->PSSetSamplers(1,3,samplers.data());
         std::array<std::vector<V>,2> baseline;
+        ComPtr<ID3D11ShaderResourceView> parameters;f.context->PSGetShaderResources(59,1,&parameters);
         for(UINT phase=0;phase<3;phase++) {
             if(phase==2) {ID3D11ShaderResourceView* noParameters{};f.context->PSSetShaderResources(59,1,&noParameters);}
             f.context->PSSetShader(phase?composed.Get():original.Get(),nullptr,0);f.context->OMSetRenderTargets(2,outputs.data(),nullptr);
@@ -157,12 +158,44 @@ namespace
                     if(!phase) baseline[target][y*td.Width+x]=value;
                     else {
                         auto expected=baseline[target][y*td.Width+x];
-                        if(target==0 && phase==1) {expected.x=expected.x*.5508f+(x<Width*2?.3f:0);expected.y*=.6809625f;expected.z=expected.z*.811125f+(x>=Width*2?.3f:0);}
+                        if(target==0 && phase==1) {expected.x*=std::sqrt(.5508f);expected.y*=std::sqrt(.6809625f);expected.z*=std::sqrt(.811125f);}
                         require(std::isfinite(value.x)&&std::abs(value.x-expected.x)<.002f && std::abs(value.y-expected.y)<.002f && std::abs(value.z-expected.z)<.002f && value.w==expected.w,"native ambient composition changed the wrong lobe, irradiance or alpha");
                     }
                 }
                 f.context->Unmap(staging.Get(),0);
             }
+        }
+        // The composite-time pass scales a deferred accumulator by the root of
+        // the multibounce occlusion and adds the bounce once, per eye.
+        {
+            auto composePath=root/L"package/Shaders/Community/ScreenSpaceGI/ComposeOcclusion.hlsl";
+            ComPtr<ID3DBlob> composeVertex,composePixel;
+            check(D3DCompileFromFile(composePath.c_str(),nullptr,D3D_COMPILE_STANDARD_FILE_INCLUDE,"VSMain","vs_5_0",D3DCOMPILE_OPTIMIZATION_LEVEL3,0,&composeVertex,&error),"compose vertex");
+            check(D3DCompileFromFile(composePath.c_str(),nullptr,D3D_COMPILE_STANDARD_FILE_INCLUDE,"PSMain","ps_5_0",D3DCOMPILE_OPTIMIZATION_LEVEL3,0,&composePixel,&error),"compose pixel");
+            ComPtr<ID3D11VertexShader> cvs;ComPtr<ID3D11PixelShader> cps;
+            check(f.device->CreateVertexShader(composeVertex->GetBufferPointer(),composeVertex->GetBufferSize(),nullptr,&cvs),"compose VS");
+            check(f.device->CreatePixelShader(composePixel->GetBufferPointer(),composePixel->GetBufferSize(),nullptr,&cps),"compose PS");
+            D3D11_BLEND_DESC blend{};blend.RenderTarget[0].BlendEnable=TRUE;
+            blend.RenderTarget[0].SrcBlend=D3D11_BLEND_ONE;blend.RenderTarget[0].DestBlend=D3D11_BLEND_SRC1_COLOR;blend.RenderTarget[0].BlendOp=D3D11_BLEND_OP_ADD;
+            blend.RenderTarget[0].SrcBlendAlpha=D3D11_BLEND_ZERO;blend.RenderTarget[0].DestBlendAlpha=D3D11_BLEND_ONE;blend.RenderTarget[0].BlendOpAlpha=D3D11_BLEND_OP_ADD;
+            blend.RenderTarget[0].RenderTargetWriteMask=D3D11_COLOR_WRITE_ENABLE_ALL;
+            ComPtr<ID3D11BlendState> blendState;check(f.device->CreateBlendState(&blend,&blendState),"compose blend");
+            D3D11_BUFFER_DESC cd{};cd.ByteWidth=16;cd.BindFlags=D3D11_BIND_CONSTANT_BUFFER;ComPtr<ID3D11Buffer> addIndirect;check(f.device->CreateBuffer(&cd,nullptr,&addIndirect),"compose constants");
+            std::array<UINT,4> flag{1,0,0,0};f.context->UpdateSubresource(addIndirect.Get(),0,nullptr,flag.data(),0,0);
+            auto* composeConstants=addIndirect.Get();f.context->PSSetConstantBuffers(0,1,&composeConstants);
+            auto* parameterView=parameters.Get();f.context->PSSetShaderResources(59,1,&parameterView);
+            const float one[4]{1,1,1,1};f.context->ClearRenderTargetView(targets[0].Get(),one);
+            f.context->VSSetShader(cvs.Get(),nullptr,0);f.context->PSSetShader(cps.Get(),nullptr,0);f.context->OMSetBlendState(blendState.Get(),nullptr,0xFFFFFFFFu);
+            auto* accumulator=targets[0].Get();f.context->OMSetRenderTargets(1,&accumulator,nullptr);
+            D3D11_VIEWPORT full{0,0,Width*4,Height*2,0,1};f.context->RSSetViewports(1,&full);f.context->Draw(3,0);
+            f.context->OMSetRenderTargets(0,nullptr,nullptr);f.context->OMSetBlendState(nullptr,nullptr,0xFFFFFFFFu);
+            f.context->CopyResource(staging.Get(),textures[0].Get());D3D11_MAPPED_SUBRESOURCE mapped{};check(f.context->Map(staging.Get(),0,D3D11_MAP_READ,0,&mapped),"compose map");
+            for(UINT y=0;y<td.Height;y++) for(UINT x=0;x<td.Width;x++) {
+                const auto value=reinterpret_cast<const V*>(static_cast<const std::byte*>(mapped.pData)+y*mapped.RowPitch)[x];
+                const V expected{std::sqrt(.5508f)+(x<Width*2?.3f:0),std::sqrt(.6809625f),std::sqrt(.811125f)+(x>=Width*2?.3f:0),1};
+                require(std::abs(value.x-expected.x)<.002f && std::abs(value.y-expected.y)<.002f && std::abs(value.z-expected.z)<.002f && value.w==1,"composite occlusion root, bounce, eye or alpha changed");
+            }
+            f.context->Unmap(staging.Get(),0);
         }
         D3D11_VIEWPORT viewport{0,0,Width*4,Height*2,0,1};f.context->RSSetViewports(1,&viewport);
     }
