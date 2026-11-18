@@ -1,4 +1,3 @@
-#include "diagnostics/TextureFormatCensus.h"
 #include "diagnostics/stereo_measurement/StereoMeasurement.h"
 #include "Features/local_lighting/LocalLightingScope.h"
 #include "Features/inverse_square/InverseSquareRuntime.h"
@@ -1845,7 +1844,6 @@ namespace csah::render
         scopeActiveReplacementPixelConstants(
             ID3D11DeviceContext* context) noexcept
         {
-            diagnostics::observeReplacementDraw(context, static_cast<std::uint8_t>(activeReplacementBinding.family));
             return linear_lighting::Runtime::get()
                 .scopeReplacementPixelConstants(
                     context,
