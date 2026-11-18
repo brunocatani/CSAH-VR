@@ -141,6 +141,10 @@ def replace_instruction_operands(
     return result
 
 
+# Screen Space GI consumer views t57..t65 (ScreenSpaceGIRuntime.h kConsumerFirstSlot).
+SCREEN_SPACE_GI_SLOTS = range(57, 66)
+
+
 def declaration_contract(
     template: bytes,
 ) -> tuple[list[list[int]], list[list[int]], int]:
@@ -177,7 +181,7 @@ def declaration_contract(
                 (SKYLIGHTING_FAR_PROBE_SLOT,)
         ):
             far_resource_declaration = words[start:end]
-        if opcode == OPCODE_DCL_RESOURCE and operands and operands[0].immediate_indices[0] in range(57,65):
+        if opcode == OPCODE_DCL_RESOURCE and operands and operands[0].immediate_indices[0] in SCREEN_SPACE_GI_SLOTS:
             gi_declarations.append(words[start:end])
         if (
             opcode == OPCODE_DCL_UNORDERED_ACCESS_VIEW_RAW
@@ -409,7 +413,7 @@ def patch_ambient_shader(original: bytes, template: bytes) -> bytes:
         raise ContractError("ambient native b2/b8/b12 contract changed")
     if not REQUIRED_NATIVE_SAMPLER_SLOTS.issubset(samplers):
         raise ContractError("ambient native s1/s2/s3 contract changed")
-    if resources.intersection(range(57,65)):
+    if resources.intersection(SCREEN_SPACE_GI_SLOTS):
         raise ContractError("ambient shader owns a Screen Space GI slot")
     if SKYLIGHTING_PROBE_SLOT in resources:
         raise ContractError("ambient shader unexpectedly owns t50")

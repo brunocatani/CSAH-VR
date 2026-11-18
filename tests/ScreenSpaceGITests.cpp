@@ -16,6 +16,9 @@
 #include <cmath>
 #include <limits>
 #include <fstream>
+#include <initializer_list>
+#include <cstring>
+#include <bit>
 using Microsoft::WRL::ComPtr;
 using V=csah::render::CameraVector;
 namespace
@@ -24,24 +27,43 @@ namespace
     void check(HRESULT value,const char* message) {require(SUCCEEDED(value),message);}
     HRESULT STDMETHODCALLTYPE failTexture(ID3D11Device*,const D3D11_TEXTURE2D_DESC*,const D3D11_SUBRESOURCE_DATA*,ID3D11Texture2D** output)
     {if(output) *output=nullptr;return E_OUTOFMEMORY;}
-    constexpr UINT Width=32,Height=16;
-    struct Constants {UINT width{Width},height{Height},frame{},history{1};float x{},y{},vw{Width*4},vh{Height*2};float radius{100},thickness{32},power{2},strength{1};UINT gi{1},specular{1},temporal{},tiled{};float pbr[16]{};};
-    struct Texture {ComPtr<ID3D11Texture2D> texture;ComPtr<ID3D11ShaderResourceView> view;ComPtr<ID3D11UnorderedAccessView> output;};
+    constexpr UINT Width=32,Height=16,Mips=5;
+    // Mirrors cbuffer Settings in ScreenSpaceGICommon.hlsli.
+    struct Constants
+    {
+        UINT width{Width},height{Height},frame{},history{1};
+        float x{},y{},vw{Width*4},vh{Height*2};
+        float aoRadius{1},thickness{32},power{2},strength{1};
+        UINT gi{1},specular{1},temporal{},tiled{};
+        float effectRadius{100},giRadius{1},minScreenRadius{},saturation{1};
+        float compensation{},compensationDistance{100},fadeStart{40000},fadeScale{1.0f/10000};
+        float depthDisocclusion{.1f},blurRadius{2},distanceNormalisation{2};UINT maxFrames{16};
+        UINT slices{4},steps{8},blur{1},resolutionMode{};
+        float pbr[16]{};
+    };
+    static_assert(sizeof(Constants)==192);
+    enum Pass : UINT {Prepare,PrefilterPosition,Reproject,PrefilterRadiance,Trace,Blur,Capture,PassCount};
+    struct Texture
+    {
+        ComPtr<ID3D11Texture2D> texture;ComPtr<ID3D11ShaderResourceView> view,top;ComPtr<ID3D11UnorderedAccessView> output;
+        std::array<ComPtr<ID3D11UnorderedAccessView>,Mips-1> mips;
+    };
     struct Fixture
     {
         ComPtr<ID3D11Device> device;ComPtr<ID3D11DeviceContext> context;
-        std::array<ComPtr<ID3D11ComputeShader>,4> shader;
+        std::array<ComPtr<ID3D11ComputeShader>,PassCount> shader;
         ComPtr<ID3D11Buffer> constants,camera,previousCamera;
+        ComPtr<ID3D11ShaderResourceView> noise;
         Constants settings;
         Fixture(const std::filesystem::path& root,D3D_DRIVER_TYPE driver)
         {
             D3D_FEATURE_LEVEL level;check(D3D11CreateDevice(nullptr,driver,nullptr,0,nullptr,0,D3D11_SDK_VERSION,&device,&level,&context),"device");
-            const std::array names{L"PrepareCS.hlsl",L"TraceCS.hlsl",L"FilterCS.hlsl",L"CaptureCS.hlsl"};
+            const std::array names{L"PrepareCS.hlsl",L"PrefilterPositionCS.hlsl",L"ReprojectCS.hlsl",L"PrefilterRadianceCS.hlsl",L"TraceCS.hlsl",L"BlurCS.hlsl",L"CaptureCS.hlsl"};
             for(std::size_t i=0;i<names.size();i++) {
                 ComPtr<ID3DBlob> code,error;auto p=root/L"package/Shaders/Community/ScreenSpaceGI"/names[i];
                 const auto hr=D3DCompileFromFile(p.c_str(),nullptr,D3D_COMPILE_STANDARD_FILE_INCLUDE,"main","cs_5_0",D3DCOMPILE_ENABLE_STRICTNESS|D3DCOMPILE_WARNINGS_ARE_ERRORS|D3DCOMPILE_OPTIMIZATION_LEVEL3,0,&code,&error);
                 if(error) std::cerr.write(static_cast<const char*>(error->GetBufferPointer()),error->GetBufferSize());check(hr,"compile");
-                if(i==0) {require(csah::render::declaresTexture2D(code->GetBufferPointer(),code->GetBufferSize(),0),"native texture slot metadata");require(!csah::render::declaresTexture2D(code->GetBufferPointer(),code->GetBufferSize(),11),"stale tiled slot metadata");require(!csah::render::declaresTexture2D(code->GetBufferPointer(),16,0),"truncated DXBC metadata");}
+                if(i==Prepare) {require(csah::render::declaresTexture2D(code->GetBufferPointer(),code->GetBufferSize(),0),"native texture slot metadata");require(!csah::render::declaresTexture2D(code->GetBufferPointer(),code->GetBufferSize(),11),"stale tiled slot metadata");require(!csah::render::declaresTexture2D(code->GetBufferPointer(),16,0),"truncated DXBC metadata");}
                 check(device->CreateComputeShader(code->GetBufferPointer(),code->GetBufferSize(),nullptr,&shader[i]),"compute shader");
             }
             D3D11_BUFFER_DESC bd{};bd.ByteWidth=sizeof(Constants);bd.BindFlags=D3D11_BIND_CONSTANT_BUFFER;check(device->CreateBuffer(&bd,nullptr,&constants),"constants");
@@ -49,24 +71,39 @@ namespace
             csah::render::Fo4VrFrameBuffer data{};
             data.view=data.inverseView={V{1,0,0,0},V{0,1,0,0},V{0,0,1,0},V{0,0,0,1}};
             for(auto& projection:data.projection) projection={V{1,0,0,0},V{0,1,0,0},V{0,0,1,0},V{0,0,1,0}};
+            // Pixel scale reconstruction: view x grows linearly with clip x.
+            for(auto& inverse:data.inverseProjection) inverse={V{1,0,0,0},V{0,1,0,0},V{0,0,0,1},V{0,0,.01f,0}};
+            data.inverseFirstPersonProjection=data.inverseProjection;
             context->UpdateSubresource(camera.Get(),0,nullptr,&data,0,0);context->UpdateSubresource(previousCamera.Get(),0,nullptr,&data,0,0);
             auto* cb=camera.Get();context->CSSetConstantBuffers(12,1,&cb);cb=previousCamera.Get();context->CSSetConstantBuffers(10,1,&cb);cb=constants.Get();context->CSSetConstantBuffers(13,1,&cb);
+            D3D11_TEXTURE2D_DESC nd{};nd.Width=128;nd.Height=8192;nd.MipLevels=nd.ArraySize=nd.SampleDesc.Count=1;nd.Format=DXGI_FORMAT_R8G8_UNORM;nd.BindFlags=D3D11_BIND_SHADER_RESOURCE;
+            std::vector<std::uint16_t> half(128*8192,0x8080);const D3D11_SUBRESOURCE_DATA initial{half.data(),256,0};
+            ComPtr<ID3D11Texture2D> noiseTexture;check(device->CreateTexture2D(&nd,&initial,&noiseTexture),"noise");check(device->CreateShaderResourceView(noiseTexture.Get(),nullptr,&noise),"noise view");
         }
-        Texture texture()
+        Texture texture(UINT mips=1)
         {
-            Texture t;D3D11_TEXTURE2D_DESC d{};d.Width=Width;d.Height=Height;d.ArraySize=2;d.MipLevels=d.SampleDesc.Count=1;
+            Texture t;D3D11_TEXTURE2D_DESC d{};d.Width=Width;d.Height=Height;d.ArraySize=2;d.MipLevels=mips;d.SampleDesc.Count=1;
             d.Format=DXGI_FORMAT_R32G32B32A32_FLOAT;d.BindFlags=D3D11_BIND_SHADER_RESOURCE|D3D11_BIND_UNORDERED_ACCESS;
-            check(device->CreateTexture2D(&d,nullptr,&t.texture),"texture");check(device->CreateShaderResourceView(t.texture.Get(),nullptr,&t.view),"SRV");check(device->CreateUnorderedAccessView(t.texture.Get(),nullptr,&t.output),"UAV");return t;
+            check(device->CreateTexture2D(&d,nullptr,&t.texture),"texture");check(device->CreateShaderResourceView(t.texture.Get(),nullptr,&t.view),"SRV");
+            D3D11_UNORDERED_ACCESS_VIEW_DESC u{};u.Format=d.Format;u.ViewDimension=D3D11_UAV_DIMENSION_TEXTURE2DARRAY;u.Texture2DArray.ArraySize=2;
+            check(device->CreateUnorderedAccessView(t.texture.Get(),&u,&t.output),"UAV");
+            if(mips>1) {
+                D3D11_SHADER_RESOURCE_VIEW_DESC s{};s.Format=d.Format;s.ViewDimension=D3D11_SRV_DIMENSION_TEXTURE2DARRAY;s.Texture2DArray.MipLevels=1;s.Texture2DArray.ArraySize=2;
+                check(device->CreateShaderResourceView(t.texture.Get(),&s,&t.top),"top SRV");
+                for(UINT m=1;m<mips;m++) {u.Texture2DArray.MipSlice=m;check(device->CreateUnorderedAccessView(t.texture.Get(),&u,&t.mips[m-1]),"mip UAV");}
+            }
+            return t;
         }
         void upload(Texture& t,const std::vector<V>& pixels)
         {
-            for(UINT eye=0;eye<2;eye++) context->UpdateSubresource(t.texture.Get(),eye,nullptr,pixels.data()+eye*Width*Height,Width*sizeof(V),0);
+            D3D11_TEXTURE2D_DESC d{};t.texture->GetDesc(&d);
+            for(UINT eye=0;eye<2;eye++) context->UpdateSubresource(t.texture.Get(),D3D11CalcSubresource(0,eye,d.MipLevels),nullptr,pixels.data()+eye*Width*Height,Width*sizeof(V),0);
         }
         std::vector<V> read(Texture& t)
         {
             D3D11_TEXTURE2D_DESC d{};t.texture->GetDesc(&d);d.Usage=D3D11_USAGE_STAGING;d.BindFlags=0;d.CPUAccessFlags=D3D11_CPU_ACCESS_READ;
             ComPtr<ID3D11Texture2D> staging;check(device->CreateTexture2D(&d,nullptr,&staging),"staging");context->CopyResource(staging.Get(),t.texture.Get());std::vector<V> result(Width*Height*2);
-            for(UINT eye=0;eye<2;eye++) {D3D11_MAPPED_SUBRESOURCE map{};check(context->Map(staging.Get(),eye,D3D11_MAP_READ,0,&map),"readback");
+            for(UINT eye=0;eye<2;eye++) {D3D11_MAPPED_SUBRESOURCE map{};const UINT sub=D3D11CalcSubresource(0,eye,d.MipLevels);check(context->Map(staging.Get(),sub,D3D11_MAP_READ,0,&map),"readback");
                 for(UINT y=0;y<Height;y++) {
                     const auto* row=static_cast<const std::byte*>(map.pData)+y*map.RowPitch;
                     auto* output=result.data()+eye*Width*Height+y*Width;
@@ -79,24 +116,56 @@ namespace
                         for(UINT x=0;x<Width;x++) {std::array<std::uint16_t,4> packed{};std::memcpy(packed.data(),row+x*8,8);output[x]={half(packed[0]),half(packed[1]),half(packed[2]),half(packed[3])};}
                     } else std::memcpy(output,row,Width*sizeof(V));
                 }
-                context->Unmap(staging.Get(),eye);}
+                context->Unmap(staging.Get(),sub);}
             return result;
         }
-        void dispatch(UINT index,const std::array<ID3D11ShaderResourceView*,8>& inputs,Texture& a,Texture& b)
+        void dispatch(Pass pass,std::initializer_list<ID3D11ShaderResourceView*> inputs,std::initializer_list<ID3D11UnorderedAccessView*> outputs,UINT width=Width,UINT height=Height)
         {
-            context->UpdateSubresource(constants.Get(),0,nullptr,&settings,0,0);context->CSSetShader(shader[index].Get(),nullptr,0);
-            context->CSSetShaderResources(0,8,inputs.data());const std::array<ID3D11UnorderedAccessView*,2> outputs{a.output.Get(),b.output.Get()},none{};
-            context->CSSetUnorderedAccessViews(0,2,outputs.data(),nullptr);context->Dispatch(Width/8,Height/8,2);
-            context->CSSetUnorderedAccessViews(0,2,none.data(),nullptr);const std::array<ID3D11ShaderResourceView*,8> noInputs{};context->CSSetShaderResources(0,8,noInputs.data());
+            std::array<ID3D11ShaderResourceView*,8> views{};std::copy(inputs.begin(),inputs.end(),views.begin());
+            std::array<ID3D11UnorderedAccessView*,4> targets{};std::copy(outputs.begin(),outputs.end(),targets.begin());
+            const std::array<ID3D11ShaderResourceView*,8> noInputs{};const std::array<ID3D11UnorderedAccessView*,4> none{};
+            context->UpdateSubresource(constants.Get(),0,nullptr,&settings,0,0);context->CSSetShader(shader[pass].Get(),nullptr,0);
+            context->CSSetShaderResources(0,8,views.data());context->CSSetUnorderedAccessViews(0,4,targets.data(),nullptr);
+            context->Dispatch((width+7)/8,(height+7)/8,2);
+            context->CSSetUnorderedAccessViews(0,4,none.data(),nullptr);context->CSSetShaderResources(0,8,noInputs.data());
         }
+        void mips(Pass pass,Texture& t) {dispatch(pass,{t.top.Get()},{t.mips[0].Get(),t.mips[1].Get(),t.mips[2].Get(),t.mips[3].Get()},Width/2,Height/2);}
     };
+    // One trace frame through the real pass chain: position and radiance mips,
+    // reprojection of the given history, trace and blur.
+    struct Chain
+    {
+        Fixture& f;
+        Texture position,oldPosition,normal,radiance,radianceMips,luma,chroma,specular,oldLuma,oldChroma,oldSpecular,
+            remappedLuma,remappedChroma,remappedSpecular,tracedLuma,tracedChroma;
+        explicit Chain(Fixture& fixture):f(fixture),position(f.texture(Mips)),oldPosition(f.texture()),normal(f.texture()),radiance(f.texture()),
+            radianceMips(f.texture(Mips)),luma(f.texture()),chroma(f.texture()),specular(f.texture()),oldLuma(f.texture()),oldChroma(f.texture()),
+            oldSpecular(f.texture()),remappedLuma(f.texture()),remappedChroma(f.texture()),remappedSpecular(f.texture()),tracedLuma(f.texture()),tracedChroma(f.texture()) {}
+        void reproject()
+        {
+            f.mips(PrefilterPosition,position);
+            f.dispatch(Reproject,{position.view.Get(),oldPosition.view.Get(),radiance.view.Get(),oldLuma.view.Get(),oldChroma.view.Get(),oldSpecular.view.Get()},
+                {radianceMips.output.Get(),remappedLuma.output.Get(),remappedChroma.output.Get(),remappedSpecular.output.Get()});
+            f.mips(PrefilterRadiance,radianceMips);
+        }
+        void trace()
+        {
+            f.dispatch(Trace,{position.view.Get(),normal.view.Get(),radianceMips.view.Get(),f.noise.Get(),remappedLuma.view.Get(),remappedChroma.view.Get(),remappedSpecular.view.Get()},
+                {tracedLuma.output.Get(),tracedChroma.output.Get(),specular.output.Get()});
+            f.dispatch(Blur,{position.view.Get(),normal.view.Get(),tracedLuma.view.Get(),tracedChroma.view.Get()},{luma.output.Get(),chroma.output.Get()});
+        }
+        void frame() {reproject();trace();}
+    };
+    // SH with only the constant band: ZH3 irradiance is then L0 * sqrt(pi)/2.
+    constexpr float kConstantBand=.9f/.88622692545275801f;
     void checkAmbientConsumer(Fixture& f,const std::filesystem::path& root)
     {
         ComPtr<ID3DBlob> vertex,pixel,error;
         const char* vsSource="cbuffer EyeData:register(b0){uint Eye;};struct Out{float4 p:SV_POSITION;nointerpolation uint eye:EYEINDEX;};Out main(uint i:SV_VertexID){Out o;float2 uv=float2((i<<1)&2,i&2);o.p=float4(uv*float2(2,-2)+float2(-1,1),0,1);o.eye=Eye;return o;}";
         check(D3DCompile(vsSource,std::strlen(vsSource),nullptr,nullptr,nullptr,"main","vs_5_0",D3DCOMPILE_OPTIMIZATION_LEVEL3,0,&vertex,&error),"ambient fixture vertex");
         auto path=root/L"package/Shaders/Community/Skylighting/SkylightingAmbientTransform.hlsl";
-        check(D3DCompileFromFile(path.c_str(),nullptr,D3D_COMPILE_STANDARD_FILE_INCLUDE,"PSMain","ps_5_0",D3DCOMPILE_OPTIMIZATION_LEVEL3,0,&pixel,&error),"ambient fixture pixel");
+        const auto compiled=D3DCompileFromFile(path.c_str(),nullptr,D3D_COMPILE_STANDARD_FILE_INCLUDE,"PSMain","ps_5_0",D3DCOMPILE_OPTIMIZATION_LEVEL3,0,&pixel,&error);
+        if(error) std::cerr.write(static_cast<const char*>(error->GetBufferPointer()),error->GetBufferSize());check(compiled,"ambient fixture pixel");
         ComPtr<ID3D11VertexShader> vs;ComPtr<ID3D11PixelShader> ps;
         check(f.device->CreateVertexShader(vertex->GetBufferPointer(),vertex->GetBufferSize(),nullptr,&vs),"ambient VS");check(f.device->CreatePixelShader(pixel->GetBufferPointer(),pixel->GetBufferSize(),nullptr,&ps),"ambient PS");
         f.context->VSSetShader(vs.Get(),nullptr,0);f.context->PSSetShader(ps.Get(),nullptr,0);f.context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
@@ -108,9 +177,11 @@ namespace
         std::array<ComPtr<ID3D11Texture2D>,4> textures;std::array<ComPtr<ID3D11RenderTargetView>,4> targets;std::array<ID3D11RenderTargetView*,4> outputs{};
         D3D11_TEXTURE2D_DESC td{};td.Width=Width*4;td.Height=Height*2;td.ArraySize=td.MipLevels=td.SampleDesc.Count=1;td.Format=DXGI_FORMAT_R32G32B32A32_FLOAT;td.BindFlags=D3D11_BIND_RENDER_TARGET;
         for(UINT i=0;i<4;i++) {check(f.device->CreateTexture2D(&td,nullptr,&textures[i]),"ambient output");check(f.device->CreateRenderTargetView(textures[i].Get(),nullptr,&targets[i]),"ambient RTV");outputs[i]=targets[i].Get();}
-        auto indirect=f.texture();std::vector<V> light(Width*Height*2);
-        for(UINT i=0;i<light.size();i++) light[i]=i<Width*Height?V{.9f,0,0,.5f}:V{0,0,.9f,.5f};f.upload(indirect,light);
-        auto* view=indirect.view.Get();f.context->PSSetShaderResources(57,1,&view);
+        // Left eye bounces orange light, right eye blue; both carry AO 0.5.
+        auto luma=f.texture(),chroma=f.texture();std::vector<V> lumaPixels(Width*Height*2,V{kConstantBand,0,0,0}),chromaPixels(lumaPixels.size());
+        for(UINT i=0;i<chromaPixels.size();i++) chromaPixels[i]=i<Width*Height?V{.45f,0,.5f,4}:V{-.45f,0,.5f,4};
+        f.upload(luma,lumaPixels);f.upload(chroma,chromaPixels);
+        auto* view=luma.view.Get();f.context->PSSetShaderResources(57,1,&view);view=chroma.view.Get();f.context->PSSetShaderResources(65,1,&view);
         f.context->OMSetRenderTargets(4,outputs.data(),nullptr);
         for(UINT side=0;side<2;side++) {
             std::array<UINT,4> data{side,0,0,0};f.context->UpdateSubresource(eye.Get(),0,nullptr,data.data(),0,0);
@@ -118,20 +189,22 @@ namespace
         }
         f.context->OMSetRenderTargets(0,nullptr,nullptr);td.BindFlags=0;td.Usage=D3D11_USAGE_STAGING;td.CPUAccessFlags=D3D11_CPU_ACCESS_READ;
         ComPtr<ID3D11Texture2D> staging;check(f.device->CreateTexture2D(&td,nullptr,&staging),"ambient readback");
+        // The composed native shader must apply exactly these transform outputs.
+        std::vector<V> transformVisibility(td.Width*td.Height),transformSpecular(td.Width*td.Height);
         for(UINT target=0;target<4;target++) {
             f.context->CopyResource(staging.Get(),textures[target].Get());D3D11_MAPPED_SUBRESOURCE mapped{};check(f.context->Map(staging.Get(),0,D3D11_MAP_READ,0,&mapped),"ambient map");
             for(UINT y=0;y<td.Height;y++) for(UINT x=0;x<td.Width;x++) {
                 const auto value=reinterpret_cast<const V*>(static_cast<const std::byte*>(mapped.pData)+y*mapped.RowPitch)[x];
                 if(target==0) require(std::abs(value.x-std::sqrt(.5508f))<.002f && std::abs(value.y-std::sqrt(.6809625f))<.002f && std::abs(value.z-std::sqrt(.811125f))<.002f && value.w==1,"ambient multibounce AO root or alpha changed");
-                if(target==1) require(value.x==1 && value.y==1 && value.z==1 && value.w==1,"diffuse AO changed native specular visibility");
+                if(target==1) {require(value.x>0 && value.x<1 && value.x==value.y && value.y==value.z && value.w==1,"specular occlusion missing or out of range");transformVisibility[y*td.Width+x]=value;}
                 if(target==2) require(value.x==0 && value.y==0 && value.z==0 && value.w==0,"ambient pass added the bounce the composite owns");
-                if(target==3) require(value.x==0 && value.y==0 && value.z==0 && value.w==0,"disabled specular GI changed specular output");
+                if(target==3) {require(std::isfinite(value.x) && value.x>=0 && value.y>=0 && value.z>=0 && value.w==0,"specular bounce not finite");transformSpecular[y*td.Width+x]=value;}
             }
             f.context->Unmap(staging.Get(),0);
         }
         // Compare an actual native ambient variant with its composed DXBC.
         // Shader-object creation alone does not prove a bytecode splice has
-        // the correct operand count or adds irradiance at the intended output.
+        // the correct operand count or scales the intended output.
         auto originalPath=root/L"package/Shaders/Community/VerifiedDFLightAmbient/DFLightAmbient_1d065bd1_2912.dxbc";
         std::ifstream stream(originalPath,std::ios::binary);std::vector<char> originalBytes((std::istreambuf_iterator<char>(stream)),{});
         require(originalBytes.size()==2912,"native ambient fixture missing");ComPtr<ID3D11PixelShader> original,composed;
@@ -155,18 +228,22 @@ namespace
                 if(!phase) baseline[target].resize(td.Width*td.Height);
                 for(UINT y=0;y<td.Height;y++) for(UINT x=0;x<td.Width;x++) {
                     const auto value=reinterpret_cast<const V*>(static_cast<const std::byte*>(mapped.pData)+y*mapped.RowPitch)[x];
-                    if(!phase) baseline[target][y*td.Width+x]=value;
-                    else {
-                        auto expected=baseline[target][y*td.Width+x];
-                        if(target==0 && phase==1) {expected.x*=std::sqrt(.5508f);expected.y*=std::sqrt(.6809625f);expected.z*=std::sqrt(.811125f);}
-                        require(std::isfinite(value.x)&&std::abs(value.x-expected.x)<.002f && std::abs(value.y-expected.y)<.002f && std::abs(value.z-expected.z)<.002f && value.w==expected.w,"native ambient composition changed the wrong lobe, irradiance or alpha");
+                    if(!phase) {baseline[target][y*td.Width+x]=value;continue;}
+                    auto expected=baseline[target][y*td.Width+x];
+                    if(target==1 && phase==1) {
+                        // Native lobe times specular occlusion, plus the bounce.
+                        const auto& o=transformVisibility[y*td.Width+x];const auto& s=transformSpecular[y*td.Width+x];
+                        expected.x=expected.x*o.x+s.x;expected.y=expected.y*o.y+s.y;expected.z=expected.z*o.z+s.z;
                     }
+                    if(target==0 && phase==1) {expected.x*=std::sqrt(.5508f);expected.y*=std::sqrt(.6809625f);expected.z*=std::sqrt(.811125f);}
+                    require(std::isfinite(value.x)&&std::abs(value.x-expected.x)<.002f && std::abs(value.y-expected.y)<.002f && std::abs(value.z-expected.z)<.002f && value.w==expected.w,"native ambient composition changed the wrong lobe, irradiance or alpha");
                 }
                 f.context->Unmap(staging.Get(),0);
             }
         }
         // The composite-time pass scales a deferred accumulator by the root of
-        // the multibounce occlusion and adds the bounce once, per eye.
+        // the multibounce occlusion and adds the bounce once, per eye: the
+        // constant band evaluates to 0.9 luma, tinted by each eye's chroma.
         {
             auto composePath=root/L"package/Shaders/Community/ScreenSpaceGI/ComposeOcclusion.hlsl";
             ComPtr<ID3DBlob> composeVertex,composePixel;
@@ -192,8 +269,9 @@ namespace
             f.context->CopyResource(staging.Get(),textures[0].Get());D3D11_MAPPED_SUBRESOURCE mapped{};check(f.context->Map(staging.Get(),0,D3D11_MAP_READ,0,&mapped),"compose map");
             for(UINT y=0;y<td.Height;y++) for(UINT x=0;x<td.Width;x++) {
                 const auto value=reinterpret_cast<const V*>(static_cast<const std::byte*>(mapped.pData)+y*mapped.RowPitch)[x];
-                const V expected{std::sqrt(.5508f)+(x<Width*2?.3f:0),std::sqrt(.6809625f),std::sqrt(.811125f)+(x>=Width*2?.3f:0),1};
-                require(std::abs(value.x-expected.x)<.002f && std::abs(value.y-expected.y)<.002f && std::abs(value.z-expected.z)<.002f && value.w==1,"composite occlusion root, bounce, eye or alpha changed");
+                const float co=x<Width*2?.45f:-.45f;
+                const V expected{std::sqrt(.5508f)+(.9f+co)/3,std::sqrt(.6809625f)+.9f/3,std::sqrt(.811125f)+(.9f-co)/3,1};
+                require(std::abs(value.x-expected.x)<.003f && std::abs(value.y-expected.y)<.003f && std::abs(value.z-expected.z)<.003f && value.w==1,"composite occlusion root, SH bounce, eye or alpha changed");
             }
             f.context->Unmap(staging.Get(),0);
         }
@@ -201,47 +279,60 @@ namespace
     }
     void run(const std::filesystem::path& root,D3D_DRIVER_TYPE driver)
     {
-        Fixture f(root,driver);auto position=f.texture(),normal=f.texture(),oldPosition=f.texture(),oldNormal=f.texture(),radiance=f.texture();
+        Fixture f(root,driver);
         for(const auto& contract:csah_skylighting_ambient_contracts) {
             ComPtr<ID3D11PixelShader> candidate;
             check(f.device->CreatePixelShader(contract.replacementBytecode,contract.replacementBytecodeLength,nullptr,&candidate),"native ambient shader composition rejected by D3D11");
         }
-        auto diffuse=f.texture(),specular=f.texture(),filtered=f.texture(),filteredSpecular=f.texture(),oldDiffuse=f.texture(),oldSpecular=f.texture();
+        Chain c(f);
         std::vector<V> positions(Width*Height*2),normals(positions.size(),{0,0,-1,.5f}),light(positions.size());
         for(UINT eye=0;eye<2;eye++) for(UINT y=0;y<Height;y++) for(UINT x=0;x<Width;x++) {
             const auto i=eye*Width*Height+y*Width+x;
             positions[i]={((x+.5f)/Width*2-1)*100,(1-(y+.5f)/Height*2)*100,100,1};
             light[i]=eye?V{0,0,4,1}:V{4,0,0,1};
         }
-        f.upload(position,positions);f.upload(oldPosition,positions);f.upload(normal,normals);f.upload(oldNormal,normals);f.upload(radiance,light);
-        const std::array<ID3D11ShaderResourceView*,8> trace{position.view.Get(),normal.view.Get(),oldPosition.view.Get(),oldNormal.view.Get(),radiance.view.Get()};
-        f.dispatch(1,trace,diffuse,specular);auto flat=f.read(diffuse);
-        for(auto v:flat) require(std::isfinite(v.w)&&v.w>.9999f && v.x<1e-5f && v.y<1e-5f && v.z<1e-5f,"flat plane must not self-occlude or bounce");
+        f.upload(c.position,positions);f.upload(c.oldPosition,positions);f.upload(c.normal,normals);f.upload(c.radiance,light);
+        // Textures created without initial data are undefined in D3D11.
+        const std::vector<V> empty(positions.size());f.upload(c.oldLuma,empty);f.upload(c.oldChroma,empty);f.upload(c.oldSpecular,empty);
+        c.frame();auto flatLuma=f.read(c.luma),flatChroma=f.read(c.chroma);
+        for(UINT i=0;i<flatLuma.size();i++) require(flatChroma[i].z>.9999f && std::abs(flatLuma[i].x)<1e-5f && std::abs(flatChroma[i].x)<1e-5f,"flat plane must not self-occlude or bounce");
         for(UINT eye=0;eye<2;eye++) for(UINT y=0;y<Height;y++) for(UINT x=19;x<Width;x++) {
             const auto i=eye*Width*Height+y*Width+x;positions[i].x*=.7f;positions[i].y*=.7f;positions[i].z=70;normals[i]={-1,0,0,.5f};
         }
-        f.upload(position,positions);f.upload(oldPosition,positions);f.upload(normal,normals);f.upload(oldNormal,normals);
-        f.dispatch(1,trace,diffuse,specular);auto corner=f.read(diffuse);float minAO=1,maxGI=0;
-        for(UINT i=0;i<corner.size();i++) {
-            const auto v=corner[i];require(std::isfinite(v.x)&&std::isfinite(v.z)&&v.w>=0&&v.w<=1,"finite bounded corner");
-            if(i<Width*Height) require(v.y<1e-6f && v.z<1e-6f,"right-eye light leaked left");
-            else require(v.x<1e-6f && v.y<1e-6f,"left-eye light leaked right");
-            minAO=(std::min)(minAO,v.w);maxGI=(std::max)(maxGI,v.x+v.z);
+        f.upload(c.position,positions);f.upload(c.oldPosition,positions);f.upload(c.normal,normals);
+        c.frame();auto cornerLuma=f.read(c.luma),cornerChroma=f.read(c.chroma);float minAO=1,maxGI=0;
+        for(UINT i=0;i<cornerLuma.size();i++) {
+            const auto l=cornerLuma[i];const auto k=cornerChroma[i];
+            require(std::isfinite(l.x)&&std::isfinite(k.x)&&k.z>=0&&k.z<=1,"finite bounded corner");
+            // Red source light has positive Co, blue negative.
+            if(i<Width*Height) require(k.x>=-1e-5f,"right-eye light leaked left");
+            else require(k.x<=1e-5f,"left-eye light leaked right");
+            minAO=(std::min)(minAO,k.z);maxGI=(std::max)(maxGI,l.x);
         }
         require(minAO<.95f,"corner occlusion missing");require(maxGI>.001f,"visible indirect light missing");
-        f.settings.history=0;f.dispatch(1,trace,diffuse,specular);auto reset=f.read(diffuse);
-        for(const auto v:reset) require(v.x==0&&v.y==0&&v.z==0,"reset used stale radiance");
-        f.settings.history=1;f.settings.gi=0;f.dispatch(1,trace,diffuse,specular);auto aoOnly=f.read(diffuse);
-        for(const auto v:aoOnly) require(v.x==0&&v.y==0&&v.z==0,"AO-only mode emits GI");
-        f.settings.gi=1;f.dispatch(1,trace,diffuse,specular);
-        std::vector<V> stale(positions.size(),{100,100,100,.1f});f.upload(oldDiffuse,stale);f.upload(oldSpecular,stale);
-        const std::array<ID3D11ShaderResourceView*,8> filter{position.view.Get(),normal.view.Get(),oldPosition.view.Get(),oldNormal.view.Get(),diffuse.view.Get(),specular.view.Get(),oldDiffuse.view.Get(),oldSpecular.view.Get()};
-        f.settings.temporal=0;f.dispatch(2,filter,filtered,filteredSpecular);auto baseline=f.read(filtered);
-        auto moved=positions;for(auto& v:moved) v.z+=10000;f.upload(oldPosition,moved);
-        f.settings.temporal=1;f.dispatch(2,filter,filtered,filteredSpecular);auto rejected=f.read(filtered);
-        for(UINT i=0;i<rejected.size();i++) require(std::abs(rejected[i].x-baseline[i].x)<1e-6f && std::abs(rejected[i].z-baseline[i].z)<1e-6f && std::abs(rejected[i].w-baseline[i].w)<1e-6f,"disocclusion retained history");
-        f.upload(oldPosition,positions);f.dispatch(2,filter,filtered,filteredSpecular);auto clamped=f.read(filtered);
-        for(auto v:clamped) require(v.x<10 && v.y<1e-6f && v.z<10 && v.w>=0 && v.w<=1,"temporal neighbourhood clamp failed");
+        f.settings.history=0;c.frame();auto reset=f.read(c.luma);
+        for(const auto v:reset) require(v.x==0&&v.y==0&&v.z==0&&v.w==0,"reset used stale radiance");
+        f.settings.history=1;f.settings.gi=0;c.frame();auto aoOnly=f.read(c.luma),aoOnlyChroma=f.read(c.chroma);
+        for(UINT i=0;i<aoOnly.size();i++) require(aoOnly[i].x==0&&aoOnlyChroma[i].x==0&&aoOnlyChroma[i].y==0,"AO-only mode emits GI");
+        f.settings.gi=1;
+        // History survives an unmoved surface and is dropped on disocclusion.
+        f.settings.temporal=1;
+        std::vector<V> staleLuma(positions.size(),{100,0,0,0}),staleChroma(positions.size(),{1,0,.25f,8});
+        f.upload(c.oldLuma,staleLuma);f.upload(c.oldChroma,staleChroma);f.upload(c.oldSpecular,std::vector<V>(positions.size()));
+        c.reproject();auto kept=f.read(c.remappedLuma),keptChroma=f.read(c.remappedChroma);
+        for(UINT i=0;i<kept.size();i++) require(std::abs(kept[i].x-100)<.5f && std::abs(keptChroma[i].w-9)<1e-3f,"static history was not retained or counted");
+        auto moved=positions;for(auto& v:moved) v.z+=10000;f.upload(c.oldPosition,moved);
+        c.reproject();auto rejected=f.read(c.remappedLuma),rejectedChroma=f.read(c.remappedChroma);
+        for(UINT i=0;i<rejected.size();i++) require(rejected[i].x==0 && rejectedChroma[i].w==1,"disocclusion retained history");
+        // A history outlier is clamped to its neighbourhood while young.
+        f.upload(c.oldPosition,positions);staleChroma.assign(positions.size(),{0,0,1,1});
+        const UINT outlier=5*Width+5;staleLuma.assign(positions.size(),{.01f,0,0,0});staleLuma[outlier]={1e4f,0,0,0};
+        f.upload(c.oldLuma,staleLuma);f.upload(c.oldChroma,staleChroma);
+        f.settings.blur=0;c.frame();auto clamped=f.read(c.luma);
+        require(clamped[outlier].x<100,"temporal neighbourhood clamp failed");
+        auto unblurred=f.read(c.tracedLuma);
+        for(UINT i=0;i<unblurred.size();i++) require(unblurred[i].x==clamped[i].x,"disabled blur changed the trace");
+        f.settings.blur=1;f.settings.temporal=0;
         std::cout<<(driver==D3D_DRIVER_TYPE_WARP?"WARP":"Hardware")<<": stereo AO/GI, no self-occlusion, reset, disocclusion and temporal clamp passed\n";
 
         // Exercise the actual render transaction with native packed inputs,
@@ -275,26 +366,30 @@ namespace
         D3D11_VIEWPORT viewport{0,0,Width*4,Height*2,0,1};f.context->RSSetViewports(1,&viewport);
         const std::array<ID3D11ShaderResourceView*,4> ambientInputs{nativeViews[3].Get(),nativeViews[0].Get(),nativeViews[1].Get(),nativeViews[2].Get()};
         f.context->PSSetShaderResources(0,4,ambientInputs.data());
-        auto* sentinel=radiance.view.Get();f.context->PSSetShaderResources(57,1,&sentinel);
+        auto* sentinel=c.radiance.view.Get();f.context->PSSetShaderResources(57,1,&sentinel);
         auto& runtime=csah::screen_space_gi::Runtime::get();runtime.onDeviceCreated(f.device.Get(),f.context.Get());
         csah::screen_space_gi::Settings runtimeSettings;runtimeSettings.enabled=true;runtime.applySettings(runtimeSettings);runtime.beginFrame();
-        f.context->CSSetShader(f.shader[3].Get(),nullptr,0);
+        f.context->CSSetShader(f.shader[Capture].Get(),nullptr,0);
         {
             csah::pbr::FrameData material{};material.enabled=1;material.legacyMaterials=1;material.environmentFresnel=1;material.roughnessMultiplier=1.7f;material.baseF0Multiplier=.45f;
             auto scope=runtime.scopeAmbient(f.context.Get(),true,nullptr,material,nativeViews[3].Get());
             ComPtr<ID3D11ShaderResourceView> parameters;f.context->PSGetShaderResources(59,1,&parameters);
-            D3D11_SHADER_RESOURCE_VIEW_DESC pd{};parameters->GetDesc(&pd);require(pd.Buffer.NumElements==8,"GI lost PBR parameter rows");
+            require(parameters,"runtime failed to publish GI parameters");
+            D3D11_SHADER_RESOURCE_VIEW_DESC pd{};parameters->GetDesc(&pd);require(pd.Buffer.NumElements==12,"GI lost PBR parameter rows");
             ComPtr<ID3D11Resource> data;parameters->GetResource(&data);ComPtr<ID3D11Buffer> source;check(data.As(&source),"GI parameter buffer");
             D3D11_BUFFER_DESC copyDesc{};source->GetDesc(&copyDesc);copyDesc.BindFlags=0;copyDesc.Usage=D3D11_USAGE_STAGING;copyDesc.CPUAccessFlags=D3D11_CPU_ACCESS_READ;
             ComPtr<ID3D11Buffer> copy;check(f.device->CreateBuffer(&copyDesc,nullptr,&copy),"GI parameter readback");f.context->CopyResource(copy.Get(),source.Get());
             D3D11_MAPPED_SUBRESOURCE mapped{};check(f.context->Map(copy.Get(),0,D3D11_MAP_READ,0,&mapped),"GI parameter map");
-            csah::pbr::FrameData transferred{};std::memcpy(&transferred,static_cast<const char*>(mapped.pData)+64,sizeof(transferred));f.context->Unmap(copy.Get(),0);
+            csah::pbr::FrameData transferred{};std::memcpy(&transferred,static_cast<const char*>(mapped.pData)+128,sizeof(transferred));f.context->Unmap(copy.Get(),0);
             require(transferred.enabled==1 && transferred.roughnessMultiplier==1.7f && transferred.baseF0Multiplier==.45f,"GI did not transport live PBR settings");
             ComPtr<ID3D11ShaderResourceView> surface;f.context->PSGetShaderResources(64,1,&surface);require(surface.Get()==nativeViews[3].Get(),"GI surface classification missing");
-            ComPtr<ID3D11ShaderResourceView> selected;f.context->PSGetShaderResources(57,1,&selected);require(selected && selected.Get()!=sentinel,"runtime failed to publish ambient output");
-            Texture generated;ComPtr<ID3D11Resource> resource;selected->GetResource(&resource);check(resource.As(&generated.texture),"generated texture");
-            auto pixels=f.read(generated);for(auto v:pixels) require(std::isfinite(v.w)&&v.w>.99f && v.x==0 && v.y==0 && v.z==0,"first frame must have neutral plane lighting");
-            ComPtr<ID3D11ComputeShader> restored;f.context->CSGetShader(&restored,nullptr,nullptr);require(restored.Get()==f.shader[3].Get(),"compute shader was not restored");
+            ComPtr<ID3D11ShaderResourceView> selected,selectedChroma;f.context->PSGetShaderResources(57,1,&selected);f.context->PSGetShaderResources(65,1,&selectedChroma);
+            require(selected && selected.Get()!=sentinel && selectedChroma,"runtime failed to publish ambient output");
+            Texture generated,generatedChroma;ComPtr<ID3D11Resource> resource;selected->GetResource(&resource);check(resource.As(&generated.texture),"generated texture");
+            selectedChroma->GetResource(resource.ReleaseAndGetAddressOf());check(resource.As(&generatedChroma.texture),"generated chroma");
+            auto pixels=f.read(generated),chromaPixels=f.read(generatedChroma);
+            for(UINT i=0;i<pixels.size();i++) require(pixels[i].x==0 && chromaPixels[i].z>.99f,"first frame must have neutral plane lighting");
+            ComPtr<ID3D11ComputeShader> restored;f.context->CSGetShader(&restored,nullptr,nullptr);require(restored.Get()==f.shader[Capture].Get(),"compute shader was not restored");
             checkAmbientConsumer(f,root);
         }
         ComPtr<ID3D11ShaderResourceView> restored;f.context->PSGetShaderResources(57,1,&restored);require(restored.Get()==sentinel,"pixel SRV was not restored");
@@ -316,13 +411,14 @@ namespace
         // full-size allocation. The inactive capacity contains invalid depth.
         cb=f.constants.Get();f.context->CSSetConstantBuffers(13,1,&cb);cb=f.camera.Get();f.context->CSSetConstantBuffers(12,1,&cb);
         cb=stereo.Get();f.context->CSSetConstantBuffers(8,1,&cb);cb=pass.Get();f.context->CSSetConstantBuffers(2,1,&cb);
+        auto position=f.texture(),normal=f.texture();
         for(const auto rect:std::array<D3D11_VIEWPORT,4>{{{0,0,84,22,0,1},{0,0,74,18,0,1},{0,0,64,16,0,1},{4,2,42,10,0,1}}}) {
             f.settings.x=rect.TopLeftX;f.settings.y=rect.TopLeftY;f.settings.vw=rect.Width;f.settings.vh=rect.Height;
             std::vector<float> depths(Width*4*Height*2,1);
             for(UINT y=UINT(rect.TopLeftY);y<UINT(rect.TopLeftY+rect.Height);y++)for(UINT x=UINT(rect.TopLeftX);x<UINT(rect.TopLeftX+rect.Width);x++)
                 depths[y*Width*4+x]=(x-UINT(rect.TopLeftX))<UINT(rect.Width/2)?.5f:.75f;
             f.context->UpdateSubresource(native[2].Get(),0,nullptr,depths.data(),Width*4*sizeof(float),0);
-            f.dispatch(0,{nativeViews[0].Get(),nativeViews[2].Get(),nativeViews[1].Get()},position,normal);
+            f.dispatch(Prepare,{nativeViews[0].Get(),nativeViews[2].Get(),nativeViews[1].Get()},{position.output.Get(),normal.output.Get()});
             const auto prepared=f.read(position);
             for(UINT eyeIndex=0;eyeIndex<2;eyeIndex++)for(UINT y=0;y<Height;y++)for(UINT x=0;x<Width;x++) {
                 const auto p=prepared[(eyeIndex*Height+y)*Width+x];const float projected=(eyeIndex?.75f:.5f)*1.01f-.01f;
@@ -340,9 +436,11 @@ int main(int argc,char** argv)
     try {
         std::cout<<std::unitbuf;std::cerr<<std::unitbuf;
         require(argc>1,"source root required");csah::screen_space_gi::Settings settings;
-        require(!settings.enabled && settings.indirectLight && !settings.specular,"safe defaults");
-        settings.radius=std::numeric_limits<float>::quiet_NaN();settings.strength=std::numeric_limits<float>::infinity();settings.thickness=-10;
-        settings=csah::screen_space_gi::sanitize(settings);require(settings.radius==256 && settings.strength==1 && settings.thickness==1,"settings bounds");
+        require(!settings.enabled && settings.indirectLight && !settings.specular && settings.aoPower==4 && settings.resolutionMode==1,"upstream defaults");
+        settings.aoRadius=std::numeric_limits<float>::quiet_NaN();settings.strength=std::numeric_limits<float>::infinity();settings.thickness=-10;
+        settings.slices=40;settings.fadeStart=60000;settings.fadeEnd=1000;
+        settings=csah::screen_space_gi::sanitize(settings);
+        require(settings.aoRadius==256 && settings.strength==1 && settings.thickness==0 && settings.slices==10 && settings.fadeEnd>settings.fadeStart,"settings bounds");
         run(std::filesystem::path(argv[1]),D3D_DRIVER_TYPE_WARP);run(std::filesystem::path(argv[1]),D3D_DRIVER_TYPE_HARDWARE);return 0;
     } catch(const std::exception& error) {std::cerr<<error.what()<<'\n';return 1;}
 }

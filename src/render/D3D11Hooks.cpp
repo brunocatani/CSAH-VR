@@ -2310,9 +2310,11 @@ namespace csah::render
             if (activeWorldCameraComposite && activeWorldCameraContext == context) {
                 dlaa::Runtime::get().onWorldCompositeDraw(context);
                 cloud_shadows::Runtime::get().observeMainView(context);
-                if(activeWorldCompositeDiffuse) screen_space_gi::Runtime::get().composeOcclusion(context,activeWorldCompositeTiled);
-                if(activeWorldCompositeDiffuse) screen_space_gi::Runtime::get().captureRadiance(context,activeWorldCompositeTiled,
-                    pbr::Runtime::get().requested()?surface_classification::Runtime::get().pbrMaterialShaderResourceView():nullptr);
+                if(activeWorldCompositeDiffuse) {
+                    auto& ssgi=screen_space_gi::Runtime::get();
+                    ssgi.captureRadiance(context,activeWorldCompositeTiled);
+                    ssgi.composeOcclusion(context,activeWorldCompositeTiled);
+                }
             }
             if (activeIblCaptureProbePass.lastEnvironmentContractPlusOne == 0) {
                 return;

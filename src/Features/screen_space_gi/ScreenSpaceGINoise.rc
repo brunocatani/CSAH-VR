@@ -1,0 +1,5 @@
+// Upstream Community Shaders spatiotemporal noise (EA fastnoise), linked
+// by the plugin and by the SSGI tests, which load it through FindResource.
+#include "../../resources.h"
+
+IDR_SCREEN_SPACE_GI_NOISE RCDATA "../../../package/Shaders/Community/ScreenSpaceGI/fast_2uges.dds"

@@ -47,14 +47,13 @@ ComposeOutput PSMain(float4 position : SV_Position)
     uint count;
     ScreenSpaceParameters.GetDimensions(count);
     uint eye = 0u;
-    if (count >= 4u) {
+    if (count >= ScreenSpaceParameterCount) {
         const float4 rect = ScreenSpaceParameters[1];
         eye = position.x - rect.x >= rect.z * 0.5f ? 1u : 0u;
     }
-    float3 visibility, diffuse, specular;
-    ScreenSpaceAmbient(position.xy, eye, visibility, diffuse, specular);
+    const ScreenSpaceAmbientResult ssgi = ScreenSpaceAmbient(position.xy, eye);
     ComposeOutput output;
-    output.Add = float4(AddIndirect != 0u ? diffuse : 0.0f.xxx, 0.0f);
-    output.Scale = float4(sqrt(visibility), 1.0f);
+    output.Add = float4(AddIndirect != 0u ? ssgi.diffuse : 0.0f.xxx, 0.0f);
+    output.Scale = float4(sqrt(ssgi.diffuseVisibility), 1.0f);
     return output;
 }

@@ -1875,6 +1875,7 @@ add_custom_command(
     "${SKYLIGHTING_SHADER_GENERATOR}"
     "${SKYLIGHTING_AMBIENT_SHADER_SOURCE}"
     "${ROOT_DIR}/package/Shaders/Community/ScreenSpaceGI/Ambient.hlsli"
+    "${ROOT_DIR}/package/Shaders/Community/ScreenSpaceGI/ScreenSpaceGIMath.hlsli"
     "${ROOT_DIR}/package/Shaders/Community/PBR/PbrCommon.hlsli"
     "${ROOT_DIR}/package/Shaders/Community/PBR/PbrIndirectMaterial.hlsli"
   "${SKYLIGHTING_SAMPLING_SHADER_SOURCE}"
@@ -2312,6 +2313,7 @@ add_library(${PROJECT_NAME} SHARED
   "${SOURCE_DIR}/exports.def"
   "${SOURCE_DIR}/resources.h"
   "${SOURCE_DIR}/resources.rc"
+  "${SOURCE_DIR}/Features/screen_space_gi/ScreenSpaceGINoise.rc"
   "${QUALIFICATION_SOURCE}"
   "${SOURCE_DIR}/diagnostics/LinearLightingQualification.h"
   "${SOURCE_DIR}/diagnostics/LinearLightingQualificationModel.h"
@@ -3504,7 +3506,8 @@ if(BUILD_CSAH_TESTS)
   add_test(NAME CSAH.WaterParallax COMMAND CSAHWaterParallaxTests "${ROOT_DIR}")
 
   add_executable(CSAHScreenSpaceGITests "${ROOT_DIR}/tests/ScreenSpaceGITests.cpp"
-    "${SOURCE_DIR}/Features/screen_space_gi/ScreenSpaceGIRuntime.cpp" "${SOURCE_DIR}/render/ComputeStateScope.cpp")
+    "${SOURCE_DIR}/Features/screen_space_gi/ScreenSpaceGIRuntime.cpp" "${SOURCE_DIR}/render/ComputeStateScope.cpp"
+    "${SOURCE_DIR}/Features/screen_space_gi/ScreenSpaceGINoise.rc")
   add_dependencies(CSAHScreenSpaceGITests ScreenSpaceGIShaders SkylightingShaders)
   target_compile_features(CSAHScreenSpaceGITests PRIVATE cxx_std_23)
   target_compile_options(CSAHScreenSpaceGITests PRIVATE /Zi)

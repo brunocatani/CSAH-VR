@@ -1,54 +1,89 @@
-// Visibility-bitmask slice integration adapted from community-shaders-shared
+// Visibility-bitmask slice integration after upstream Community Shaders
 // ScreenSpaceGI/gi.cs.hlsl (FiveLimbedCat/ProfJack), derived from XeGTAO.
 // Copyright (C) 2016-2021 Intel Corporation. SPDX-License-Identifier: MIT
-// VR uses actual reconstructed positions for both native depth domains,
-// isolated eye slices and reprojected prior-frame surface radiance.
+// Bounce light is stored as L1 spherical-harmonic luma plus YCoCg chroma so
+// the consumer evaluates it against the receiving normal. CSAH keeps three
+// VR rules: first-person and world depth never occlude each other, samples
+// on the receiver's own plane are skipped, and AO is temporally accumulated
+// with the bounce (upstream leaves AO per-frame).
 #include "ScreenSpaceGICommon.hlsli"
 Texture2DArray<float4> Position : register(t0);
 Texture2DArray<float4> Normal : register(t1);
-Texture2DArray<float4> PreviousPosition : register(t2);
-Texture2DArray<float4> PreviousNormal : register(t3);
-Texture2DArray<float4> Radiance : register(t4);
-RWTexture2DArray<float4> Diffuse : register(u0);
-RWTexture2DArray<float4> Specular : register(u1);
-bool HistoryGeometry(int3 p,float3 expected,float3 n)
+Texture2DArray<float4> Radiance : register(t2);
+Texture2D<float2> Noise : register(t3);
+Texture2DArray<float4> HistoryLuma : register(t4);
+Texture2DArray<float4> HistoryChroma : register(t5);
+Texture2DArray<float4> HistorySpecular : register(t6);
+Texture2D<float4> NativeEmissive : register(t7);
+RWTexture2DArray<float4> Luma : register(u0);
+RWTexture2DArray<float4> Chroma : register(u1);
+RWTexture2DArray<float4> Specular : register(u2);
+float DistributionGGX(float roughness,float nh)
 {
-    float4 previous=PreviousPosition.Load(int4(p,0));
-    float3 previousNormal=PreviousNormal.Load(int4(p,0)).xyz;
-    float3 worldNormal=WorldRelative(n);
-    float3 expectedNormal=float3(dot(Previous[0].xyz,worldNormal),dot(Previous[1].xyz,worldNormal),dot(Previous[2].xyz,worldNormal));
-    return previous.w>0 && distance(previous.xyz,expected)<max(1,abs(expected.z)*.015) && dot(previousNormal,expectedNormal)>.85;
+    float a=roughness*roughness,a2=a*a;
+    float d=max((nh*a2-nh)*nh+1,1e-5);
+    return a2/(Pi*d*d);
+}
+float VisibilitySmithJoint(float roughness,float nv,float nl)
+{
+    float a=roughness*roughness;
+    float v=nl*(nv*(1-a)+a)+nv*(nl*(1-a)+a);
+    return v>0?.5/v:0;
 }
 [numthreads(8,8,1)]
 void main(uint3 id:SV_DispatchThreadID)
 {
     if(any(id.xy>=Extent)||id.z>=2) return;
+    const uint eye=id.z;
     float4 center=Position.Load(int4(id,0));
     float4 surface=Normal.Load(int4(id,0));
     float3 n=surface.xyz,view=SafeNormal(-center.xyz);
-    float visibility=0;float3 diffuse=0,specular=0;
-    if(center.w!=0 && center.z<50000)
+    float occlusion=0,specularOcclusion=0;float4 luma=0;float2 chroma=0;float3 specular=0;
+    const float fadeEnd=DepthFadeStart+1/DepthFadeScale;
+    const bool traced=center.w!=0 && center.z<fadeEnd;
+    if(traced)
     {
-        float pixelSize=max(length(Position.Load(int4(min(id.xy+uint2(1,0),Extent-1),id.z,0)).xyz-center.xyz),center.z/Extent.x);
-        float radiusPixels=min(Radius/max(pixelSize,1e-4),max(Extent.x,Extent.y));
-        float noise=frac(52.9829189*frac(dot(float2(id.xy),float2(.06711056,.00583715))+(EnableTemporal!=0?(Frame&63)*.006:0)));
-        [loop] for(uint slice=0;slice<4;slice++)
+        const bool gi=EnableGI!=0 && center.w>0;
+        const bool specularGI=gi && EnableSpecular!=0;
+        const float roughness=max(.2,saturate(surface.w));
+        const float nv=clamp(dot(view,n),1e-5,1);
+        const float pixelSize=center.z*PixelViewScale(eye,center.w<0);
+        const float screenRadius=max(MinScreenRadius,EffectRadius/max(pixelSize,1e-6));
+        const float minS=1.3/screenRadius;
+        const float rcpSlices=1.0/NumSlices,rcpSteps=1.0/NumSteps;
+        // EA fastnoise spatiotemporal blue noise, 128x128 x 64 frames.
+        const float2 noise=Noise.Load(int3(id.xy%128+uint2(0,((EnableTemporal!=0?Frame:0)%64)*128),0));
+        const float minimumRadianceMip=min(1+ResolutionMode,MipCount-1);
+        [loop] for(uint slice=0;slice<NumSlices;slice++)
         {
-            float phi=Pi*(slice+noise)*.25;float2 direction=float2(cos(phi),sin(phi));
-            float3 axis=SafeNormal(cross(float3(direction,0),view));
+            float phi=Pi*rcpSlices*(slice+noise.x);
+            float3 direction=float3(cos(phi),sin(phi),0);
+            float2 omega=float2(direction.x,-direction.y)*screenRadius;
+            float logLengthOmega=.5*log2(max(dot(omega,omega),1e-8));
+            float3 ortho=direction-dot(direction,view)*view;
+            float3 axis=SafeNormal(cross(ortho,view));
             float3 projected=n-axis*dot(n,axis);
-            float angle=sign(dot(float3(direction,0),projected))*acos(saturate(dot(SafeNormal(projected),view)));
-            uint mask=0,giMask=0;
-            [unroll] for(int side=-1;side<=1;side+=2)
-            [loop] for(uint step=0;step<8;step++)
+            float angle=sign(dot(ortho,projected))*acos(saturate(dot(projected,view)*rsqrt(max(dot(projected,projected),1e-8))));
+            float dominantAngle=0;
+            if(specularGI)
             {
-                float s=(step+.5+noise*.5)/8;
-                int2 q=int2(float2(id.xy)+.5+direction*float2(1,-1)*side*max(1.3,s*s*radiusPixels));
-                if(any(q<0)||any(q>=int2(Extent))) continue;
-                float4 sample=Position.Load(int4(q,id.z,0));
+                float3 dominant=SpecularDominantDirection(n,view,roughness);
+                float3 projectedDominant=SafeNormal(dominant-axis*dot(dominant,axis));
+                dominantAngle=sign(dot(ortho,projectedDominant))*acos(saturate(dot(projectedDominant,view)));
+            }
+            uint mask=0,giMask=0,specularMask=0;
+            float stepNoise=frac(noise.y+slice*.6180339887498948);
+            [unroll] for(int side=-1;side<=1;side+=2)
+            [loop] for(uint step=0;step<NumSteps;step++)
+            {
+                float s=(step+stepNoise)*rcpSteps;s*=s;s+=minS;
+                float2 pixel=float2(id.xy)+.5+s*omega*side;
+                if(any(pixel<0)||any(pixel>=float2(Extent))) continue;
+                float mip=clamp(log2(s)+logLengthOmega-3.3,0,MipCount-1);
+                float4 sample=Position.Load(MipTexel(pixel,eye,(uint)round(mip)));
                 if(sample.w!=center.w) continue;
-                float3 delta=sample.xyz-center.xyz;float distanceSq=dot(delta,delta);
-                if(distanceSq<1e-6||distanceSq>Radius*Radius) continue;
+                float3 delta=sample.xyz-center.xyz;
+                if(dot(delta,delta)<1e-6) continue;
                 float3 horizon=SafeNormal(delta);
                 // Integer sampling can leave the analytic slice plane. A
                 // coplanar/below-surface point cannot occlude this hemisphere.
@@ -56,34 +91,87 @@ void main(uint3 id:SV_DispatchThreadID)
                 float front=acos(clamp(dot(horizon,view),-1,1));
                 float back=acos(clamp(dot(SafeNormal(delta-view*Thickness),view),-1,1));
                 float2 range=-side*(side==-1?float2(front,back):float2(back,front));
-                uint covered=AngleMask(smoothstep(0,1,(range+angle)/Pi+.5));
-                mask|=covered;
-                uint fresh=covered&~giMask;giMask|=covered;
-                if(EnableGI!=0 && fresh!=0 && center.w>0)
+                uint covered=s<AORadius?AngleMask(smoothstep(0,1,(range+angle)/Pi+.5)):0;
+                uint giCovered=0,specularCovered=0;
+                if(gi)
                 {
-                    float3 sampleNormal=Normal.Load(int4(q,id.z,0)).xyz;
-                    int3 previousPixel;float3 expected;
-                    if(PreviousPixel(sample.xyz,id.z,previousPixel,expected) && HistoryGeometry(previousPixel,expected,sampleNormal))
+                    // Bounce light uses a deeper surface (upstream: 300 units).
+                    float backGI=acos(clamp(dot(SafeNormal(delta-view*300),view),-1,1));
+                    float2 rangeGI=-side*(side==-1?float2(front,backGI):float2(backGI,front));
+                    if(specularGI)
                     {
-                        float3 light=max(0,Radiance.Load(int4(previousPixel,0)).rgb);
-                        float weight=countbits(fresh)/32.0*saturate(-dot(sampleNormal,horizon));
-                        diffuse+=light*weight*saturate(dot(n,horizon))*2;
-                        if(EnableSpecular!=0)
+                        float cone=max(5e-2,SpecularLobeHalfAngle(roughness));
+                        float2 rangeSpecular=clamp((rangeGI+dominantAngle)*.5/cone,-1,1)*.5+.5;
+                        specularCovered=s<GIRadius?AngleMask(rangeSpecular):0;
+                    }
+                    giCovered=s<GIRadius?AngleMask(smoothstep(0,1,(rangeGI+angle)/Pi+.5)):0;
+                    uint fresh=giCovered&~giMask,freshSpecular=specularCovered&~specularMask;
+                    if(fresh!=0 || freshSpecular!=0)
+                    {
+                        float3 sampleNormal=Normal.Load(int4(clamp(int2(pixel),0,int2(Extent)-1),eye,0)).xyz;
+                        if(dot(sample.xyz,sampleNormal)>0) sampleNormal=-sampleNormal;
+                        float facing=max(0,-dot(sampleNormal,horizon));
+                        if(facing>0)
                         {
-                            float roughness=max(.2,surface.w),a=roughness*roughness;
-                            float nh=saturate(dot(n,SafeNormal(view+horizon)));
-                            float denominator=max(1e-3,nh*nh*(a*a-1)+1);
-                            // Bounded GGX distribution; material Fresnel is applied by the ambient consumer.
-                            float distribution=a*a/(Pi*denominator*denominator);
-                            specular+=light*weight*min(distribution,8)*saturate(dot(n,horizon));
+                            float boost=4*Pi*(1+GIDistanceCompensation*smoothstep(0,GICompensationMaxDist,s*EffectRadius));
+                            float3 light=max(0,Radiance.Load(MipTexel(pixel,eye,(uint)round(max(mip,minimumRadianceMip)))).rgb)*facing*boost*countbits(fresh)*.03125;
+                            float3 ycocg=RGBToYCoCg(light);
+                            luma+=ycocg.x*SHEvaluate(SafeNormal(WorldRelative(horizon)));
+                            chroma+=ycocg.yz;
+                            if(specularGI)
+                            {
+                                float nh=clamp(dot(n,SafeNormal(view+horizon)),1e-2,1),nl=clamp(dot(n,horizon),1e-2,1);
+                                specular+=max(0,light*countbits(freshSpecular)*.03125*DistributionGGX(roughness,nh)*VisibilitySmithJoint(roughness,nv,nl));
+                            }
                         }
                     }
                 }
+                mask|=covered;giMask|=giCovered;specularMask|=specularCovered;
             }
-            visibility+=countbits(mask)/32.0;
+            occlusion+=countbits(mask)*.03125;
+            specularOcclusion+=countbits(specularMask)*.03125;
         }
+        const float fade=saturate((center.z-DepthFadeStart)*DepthFadeScale);
+        occlusion=lerp(saturate(occlusion*rcpSlices),0,fade);
+        luma=lerp(luma*rcpSlices,0,fade);
+        chroma*=rcpSlices*GISaturation;
+        specular=lerp(specular*rcpSlices,0,fade);
+        specularOcclusion=lerp(saturate(specularOcclusion*rcpSlices),0,fade);
     }
-    float fade=1-saturate((center.z-40000)/10000);
-    Diffuse[id]=float4(min(diffuse*.25*GIStrength*fade,60000),pow(saturate(1-visibility*.25*fade),AOPower));
-    Specular[id]=float4(min(specular*.25*GIStrength*fade,60000),1);
+    float visibility=pow(saturate(1-occlusion),AOPower);
+    // Native vertex AO already darkens the lit surface; divide it out so
+    // SSGI does not occlude the same crease twice (upstream Masks2.x).
+    uint w,h;NativeEmissive.GetDimensions(w,h);
+    float vertexAO=1-NativeEmissive.Load(int3(clamp(int2(PackedPixel(id)),0,int2(w,h)-1),0)).a;
+    if(w!=0) visibility=saturate(visibility/max(vertexAO,1e-3));
+    float4 historyChroma=HistoryChroma.Load(int4(id,0));
+    float frames=traced?max(historyChroma.w,1):1;
+    float blend=1/frames;
+    float4 previousLuma=HistoryLuma.Load(int4(id,0));
+    float3 previousChroma=historyChroma.xyz;
+    float3 current=float3(chroma,visibility);
+    // Clamp history to the local neighbourhood (SVGF, Schied 2017) while it
+    // still weighs in strongly; saturated history is self-stabilised.
+    [branch] if(blend<1 && blend>=.15)
+    {
+        float4 lowL=luma,highL=luma;float3 lowC=current,highC=current;
+        [unroll] for(uint tap=0;tap<4;tap++)
+        {
+            int2 o=tap==0?int2(-1,0):tap==1?int2(1,0):tap==2?int2(0,-1):int2(0,1);
+            int4 t=int4(clamp(int2(id.xy)+o,0,int2(Extent)-1),eye,0);
+            float4 l=HistoryLuma.Load(t);float3 c=HistoryChroma.Load(t).xyz;
+            lowL=min(lowL,l);highL=max(highL,l);lowC=min(lowC,c);highC=max(highC,c);
+        }
+        previousLuma=clamp(previousLuma,lowL,highL);previousChroma=clamp(previousChroma,lowC,highC);
+    }
+    luma=lerp(previousLuma,luma,blend);
+    current=lerp(previousChroma,current,blend);
+    float4 specularOut=lerp(HistorySpecular.Load(int4(id,0)),float4(specular,specularOcclusion),blend);
+    // Upstream filterNaN: a non-finite sample must not enter the history.
+    if(any(!isfinite(luma))) luma=0;
+    if(any(!isfinite(current))) current=float3(0,0,1);
+    if(any(!isfinite(specularOut))) specularOut=0;
+    Luma[id]=min(luma,60000);
+    Chroma[id]=float4(clamp(current.xy,-60000,60000),current.z,frames);
+    Specular[id]=float4(min(specularOut.rgb,60000),specularOut.w);
 }

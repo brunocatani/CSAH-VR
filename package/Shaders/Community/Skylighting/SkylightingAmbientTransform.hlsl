@@ -244,13 +244,13 @@ PixelOutput PSMain(PixelInput input)
             }
         }
     }
-    float3 ao,gi,specularGI;
-    ScreenSpaceAmbient(input.Position.xy,input.Eye,ao,gi,specularGI);
+    const ScreenSpaceAmbientResult ssgi=ScreenSpaceAmbient(input.Position.xy,input.Eye);
     // ComposeOcclusion.hlsl scales every accumulated diffuse term by the
     // square root of the occlusion and adds the bounce, so ambient takes the
     // other root here and ends at the full occlusion, as upstream composes it.
-    output.DiffuseVisibility.rgb*=sqrt(ao);
+    output.DiffuseVisibility.rgb*=sqrt(ssgi.diffuseVisibility);
+    output.SpecularVisibility.rgb*=ssgi.specularVisibility;
     output.IndirectDiffuse=0;
-    output.IndirectSpecular=float4(specularGI,0);
+    output.IndirectSpecular=float4(ssgi.specular,0);
     return output;
 }

@@ -1,12 +1,16 @@
-"""Compile the bounded stereo AO/GI pipeline from source for embedding."""
+"""Compile the stereo SSGI pipeline for embedding."""
 import argparse
 import subprocess
 from pathlib import Path
 
+SOURCE_DIR = 'package/Shaders/Community/ScreenSpaceGI'
+# Dispatch order; the runtime indexes kScreenSpaceGIShaders with ScreenSpaceGIPass.
+PASSES = ('PrepareCS', 'PrefilterPositionCS', 'ReprojectCS', 'PrefilterRadianceCS', 'TraceCS', 'BlurCS', 'CaptureCS')
+
 
 def compile_shader(root, fxc, output, name, source, profile, entry):
     binary = output.parent / (name + '.dxbc')
-    source_path = root / 'package/Shaders/Community/ScreenSpaceGI' / (source + '.hlsl')
+    source_path = root / SOURCE_DIR / (source + '.hlsl')
     subprocess.run([str(fxc), '/nologo', '/T', profile, '/E', entry, '/O3', '/Ges', '/WX', '/Fo', str(binary), str(source_path)], check=True)
     return binary.read_bytes()
 
@@ -22,10 +26,10 @@ def array_rows(symbol, data):
 def generate(root, fxc, output):
     output.parent.mkdir(parents=True, exist_ok=True)
     rows = ['#pragma once', '#include <cstddef>', 'struct ScreenSpaceGIShader {const unsigned char* data;std::size_t size;};']
-    for index, name in enumerate(('PrepareCS', 'TraceCS', 'FilterCS', 'CaptureCS')):
+    for index, name in enumerate(PASSES):
         rows.extend(array_rows(f'kScreenSpaceGI{index}', compile_shader(root, fxc, output, name, name, 'cs_5_0', 'main')))
     rows.append('inline constexpr ScreenSpaceGIShader kScreenSpaceGIShaders[]={')
-    rows.extend(f'{{kScreenSpaceGI{i},sizeof(kScreenSpaceGI{i})}},' for i in range(4))
+    rows.extend(f'{{kScreenSpaceGI{i},sizeof(kScreenSpaceGI{i})}},' for i in range(len(PASSES)))
     rows.append('};')
     rows.extend(array_rows('kScreenSpaceGIComposeVSData', compile_shader(root, fxc, output, 'ComposeOcclusionVS', 'ComposeOcclusion', 'vs_5_0', 'VSMain')))
     rows.extend(array_rows('kScreenSpaceGIComposePSData', compile_shader(root, fxc, output, 'ComposeOcclusionPS', 'ComposeOcclusion', 'ps_5_0', 'PSMain')))
