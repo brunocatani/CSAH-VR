@@ -5,6 +5,19 @@
 
 #include "support/Logger.h"
 
+#pragma push_macro("MEM_RELEASE")
+#pragma push_macro("MAX_PATH")
+#pragma push_macro("near")
+#pragma push_macro("far")
+#undef MEM_RELEASE
+#undef MAX_PATH
+#undef near
+#undef far
+#include <RE/NetImmerse/NiObjectNET.h>
+#pragma pop_macro("far")
+#pragma pop_macro("near")
+#pragma pop_macro("MAX_PATH")
+#pragma pop_macro("MEM_RELEASE")
 #include <Windows.h>
 
 #include <array>
@@ -12,7 +25,10 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <format>
 #include <limits>
+#include <string>
+#include <string_view>
 
 namespace csah::render
 {
@@ -261,6 +277,221 @@ namespace csah::render
             }
         }
 
+        // Diagnostic for the native crash at Fallout4VR.exe+287F514, where
+        // this SetupGeometry loads shaderProperty+0x1A0 and reads the NiColor
+        // without a null check. The BSLightingShaderProperty constructor
+        // 0x1427A23B0 allocates that colour and the destructor 0x1427A2510
+        // frees it only while flag 0x400000 at +0x30 marks it owned, so a null
+        // pointer is an engine invariant broken before the draw. The snapshot
+        // runs only for a null colour; every other draw pays three loads that
+        // the native function performs anyway. Remove once the cause is fixed.
+        constexpr std::size_t kNiRefCountOffset = 0x8;
+        constexpr std::size_t kNiParentOffset = 0x28;
+        constexpr std::size_t kShaderPropertyFlagsOffset = 0x30;
+        constexpr std::size_t kShaderPropertyEmitColorOffset = 0x1A0;
+        constexpr std::size_t kEmittanceTraceTailOffset = 0x190;
+        constexpr std::size_t kEmittanceTraceParents = 8;
+        constexpr std::size_t kEmittanceTraceFrames = 24;
+        constexpr std::uint32_t kEmittanceTraceLimit = 8;
+        std::atomic_uint32_t nullEmittanceDraws{};
+
+        struct EmittanceTraceSnapshot
+        {
+            std::uintptr_t geometryVtable;
+            std::uintptr_t propertyVtable;
+            std::uint32_t geometryRefs;
+            std::uint32_t propertyRefs;
+            std::uint64_t propertyFlags;
+            void* material;
+            std::uint64_t propertyTail[8];
+            std::uint32_t descriptor;
+            char geometryName[96];
+            char propertyName[160];
+            char parentNames[kEmittanceTraceParents][64];
+            void* parents[kEmittanceTraceParents];
+            std::uint32_t parentCount;
+            bool complete;
+        };
+
+        template <std::size_t N>
+        void copyNiName(const void* object, char (&out)[N]) noexcept
+        {
+            const char* name =
+                static_cast<const RE::NiObjectNET*>(object)->name.c_str();
+            std::size_t i = 0;
+            for (; name && name[i] && i + 1 < N; ++i) {
+                out[i] = name[i];
+            }
+            out[i] = '\0';
+        }
+
+        // SEH-guarded so a torn-down object faults here as a logged partial
+        // snapshot instead of moving the crash into CSAH.
+        void captureEmittanceSnapshot(
+            const std::byte* geometry,
+            const std::byte* property,
+            const std::byte* geometryState,
+            const std::byte* image,
+            EmittanceTraceSnapshot& out) noexcept
+        {
+            __try {
+                const auto base = reinterpret_cast<std::uintptr_t>(image);
+                std::memcpy(&out.geometryVtable, geometry,
+                    sizeof(out.geometryVtable));
+                std::memcpy(&out.propertyVtable, property,
+                    sizeof(out.propertyVtable));
+                out.geometryVtable -= base;
+                out.propertyVtable -= base;
+                std::memcpy(&out.geometryRefs, geometry + kNiRefCountOffset,
+                    sizeof(out.geometryRefs));
+                std::memcpy(&out.propertyRefs, property + kNiRefCountOffset,
+                    sizeof(out.propertyRefs));
+                std::memcpy(&out.propertyFlags,
+                    property + kShaderPropertyFlagsOffset,
+                    sizeof(out.propertyFlags));
+                std::memcpy(&out.material,
+                    property + kShaderPropertyMaterialOffset,
+                    sizeof(out.material));
+                std::memcpy(out.propertyTail,
+                    property + kEmittanceTraceTailOffset,
+                    sizeof(out.propertyTail));
+                if (geometryState) {
+                    std::memcpy(&out.descriptor,
+                        geometryState + kGeometryStateDescriptorOffset,
+                        sizeof(out.descriptor));
+                }
+                copyNiName(geometry, out.geometryName);
+                copyNiName(property, out.propertyName);
+                const std::byte* node = geometry;
+                while (out.parentCount < kEmittanceTraceParents) {
+                    void* parent{};
+                    std::memcpy(&parent, node + kNiParentOffset, sizeof(parent));
+                    if (!parent) {
+                        break;
+                    }
+                    out.parents[out.parentCount] = parent;
+                    copyNiName(parent, out.parentNames[out.parentCount]);
+                    ++out.parentCount;
+                    node = static_cast<const std::byte*>(parent);
+                }
+                out.complete = true;
+            } __except (EXCEPTION_EXECUTE_HANDLER) {
+                out.complete = false;
+            }
+        }
+
+        [[nodiscard]] std::string describeReturnAddress(void* address)
+        {
+            HMODULE module{};
+            if (!GetModuleHandleExW(
+                    GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                        GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                    static_cast<LPCWSTR>(address),
+                    &module)) {
+                return std::format("{}", address);
+            }
+            char path[MAX_PATH]{};
+            const auto length = GetModuleFileNameA(module, path, MAX_PATH);
+            std::string_view name(path, length);
+            if (const auto slash = name.find_last_of("\\/");
+                slash != std::string_view::npos) {
+                name.remove_prefix(slash + 1);
+            }
+            return std::format("{}+{:X}", name,
+                reinterpret_cast<std::uintptr_t>(address) -
+                    reinterpret_cast<std::uintptr_t>(module));
+        }
+
+        void traceNullEmittanceColor(
+            void* pass,
+            void* geometryState) noexcept
+        {
+            void* geometry{};
+            std::memcpy(&geometry,
+                static_cast<const std::byte*>(pass) + kPassGeometryOwnerOffset,
+                sizeof(geometry));
+            if (!geometry) {
+                return;
+            }
+            void* property{};
+            std::memcpy(&property,
+                static_cast<const std::byte*>(geometry) +
+                    kGeometryShaderPropertyOffset,
+                sizeof(property));
+            if (!property) {
+                return;
+            }
+            void* emitColor{};
+            std::memcpy(&emitColor,
+                static_cast<const std::byte*>(property) +
+                    kShaderPropertyEmitColorOffset,
+                sizeof(emitColor));
+            if (emitColor) {
+                return;
+            }
+            const auto occurrence =
+                nullEmittanceDraws.fetch_add(1, std::memory_order_relaxed) + 1;
+            if (occurrence > kEmittanceTraceLimit) {
+                return;
+            }
+            try {
+                const auto* image = reinterpret_cast<const std::byte*>(
+                    GetModuleHandleW(nullptr));
+                EmittanceTraceSnapshot snapshot{};
+                captureEmittanceSnapshot(
+                    static_cast<const std::byte*>(geometry),
+                    static_cast<const std::byte*>(property),
+                    static_cast<const std::byte*>(geometryState),
+                    image,
+                    snapshot);
+
+                std::string parents;
+                for (std::uint32_t i = 0; i < snapshot.parentCount; ++i) {
+                    parents += std::format(" <- {} '{}'",
+                        snapshot.parents[i], snapshot.parentNames[i]);
+                }
+                std::string tail;
+                for (std::size_t i = 0; i < std::size(snapshot.propertyTail); ++i) {
+                    tail += std::format(" +{:X}={:016X}",
+                        kEmittanceTraceTailOffset + i * 8,
+                        snapshot.propertyTail[i]);
+                }
+                void* frames[kEmittanceTraceFrames]{};
+                const auto frameCount = RtlCaptureStackBackTrace(
+                    1, static_cast<DWORD>(kEmittanceTraceFrames), frames, nullptr);
+                std::string stack;
+                for (USHORT i = 0; i < frameCount; ++i) {
+                    stack += ' ';
+                    stack += describeReturnAddress(frames[i]);
+                }
+
+                logging::error(
+                    "Null emittance colour #{} before native SetupGeometry (crash site Fallout4VR.exe+287F514): "
+                    "thread={} snapshot={} descriptor=0x{:08X} "
+                    "geometry={} '{}' vtable=exe+{:X} refs={}{} | "
+                    "property={} '{}' vtable=exe+{:X} refs={} flags=0x{:016X} ownsEmit={} material={} |{} | stack:{}",
+                    occurrence,
+                    GetCurrentThreadId(),
+                    snapshot.complete ? "complete" : "faulted",
+                    snapshot.descriptor,
+                    geometry,
+                    snapshot.geometryName,
+                    snapshot.geometryVtable,
+                    snapshot.geometryRefs,
+                    parents,
+                    property,
+                    snapshot.propertyName,
+                    snapshot.propertyVtable,
+                    snapshot.propertyRefs,
+                    snapshot.propertyFlags,
+                    (snapshot.propertyFlags & 0x400000) != 0,
+                    snapshot.material,
+                    tail,
+                    stack);
+            } catch (...) {
+            }
+        }
+
         bool __fastcall hookSetupTechnique(
             void* receiver,
             std::uint32_t descriptor,
@@ -321,6 +552,9 @@ namespace csah::render
             const auto original = originalSetupGeometry;
             if (!original) {
                 return;
+            }
+            if (pass) {
+                traceNullEmittanceColor(pass, geometryState);
             }
 
             if (!installed.load(std::memory_order_acquire) ||
