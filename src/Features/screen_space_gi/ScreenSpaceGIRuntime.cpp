@@ -146,6 +146,15 @@ namespace csah::screen_space_gi
         composeVertex_.Reset();composePixel_.Reset();composeBlend_.Reset();composeRaster_.Reset();composeDepth_.Reset();
         composeConstants_={};composeTargets_={};frameNative_={};frameAuthored_.Reset();frameSurface_.Reset();frameStereo_.Reset();frameCamera_.Reset();emissive_.Reset();
         frame_=preparedFrame_=radianceFrame_=composedFrame_=nextRetry_=0;width_=height_=current_=0;ready_=historyValid_=loggedFailure_=loggedActive_=false;
+        compositeScope_={};generationTiming_.reset();compositeTiming_.reset();
+        if(device_ && context_) {
+            using Group=render::GpuTimingProfiler::Group;
+            if(!generationTiming_.initialize(device_.Get(),context_.Get(),"Screen Space GI generation",
+                    {"prepare + position mips","reproject + radiance mips","trace","blur"},4,120,1,Group::ScreenSpaceGI) ||
+                !compositeTiming_.initialize(device_.Get(),context_.Get(),"Screen Space GI composite",
+                    {"radiance capture","occlusion compose",nullptr,nullptr},2,120,1,Group::ScreenSpaceGI))
+                logging::warn("Screen Space GI could not allocate GPU timing queries; rendering remains active without performance telemetry.");
+        }
         resetHistory();
     }
     void Runtime::beginFrame() noexcept
@@ -314,17 +323,23 @@ namespace csah::screen_space_gi
         const auto previous=current_^1;
         const UINT mipWidth=std::max(width/2,1u),mipHeight=std::max(height/2,1u);
         auto& position=positions_[current_];auto& surfaceNormal=normals_[current_];
+        generationTiming_.poll();
+        auto timing=generationTiming_.begin();
         dispatch(Pass::prepare,{inputs[0].Get(),inputs[2].Get(),inputs[1].Get(),authored,surface},{position.output.Get(),surfaceNormal.output.Get()},width,height);
         dispatch(Pass::prefilterPosition,{position.topView.Get()},
             {position.mipOutputs[0].Get(),position.mipOutputs[1].Get(),position.mipOutputs[2].Get(),position.mipOutputs[3].Get()},mipWidth,mipHeight);
+        timing.mark();
         dispatch(Pass::reproject,{position.view.Get(),positions_[previous].view.Get(),radiance_.view.Get(),luma_[previous].view.Get(),chroma_[previous].view.Get(),specular_[previous].view.Get()},
             {radianceMips_.output.Get(),remappedLuma_.output.Get(),remappedChroma_.output.Get(),remappedSpecular_.output.Get()},width,height);
         dispatch(Pass::prefilterRadiance,{radianceMips_.topView.Get()},
             {radianceMips_.mipOutputs[0].Get(),radianceMips_.mipOutputs[1].Get(),radianceMips_.mipOutputs[2].Get(),radianceMips_.mipOutputs[3].Get()},mipWidth,mipHeight);
+        timing.mark();
         dispatch(Pass::trace,{position.view.Get(),surfaceNormal.view.Get(),radianceMips_.view.Get(),noise_.Get(),remappedLuma_.view.Get(),remappedChroma_.view.Get(),remappedSpecular_.view.Get(),emissive_.Get()},
             {tracedLuma_.output.Get(),tracedChroma_.output.Get(),specular_[current_].output.Get()},width,height);
+        timing.mark();
         dispatch(Pass::blur,{position.view.Get(),surfaceNormal.view.Get(),tracedLuma_.view.Get(),tracedChroma_.view.Get()},
             {luma_[current_].output.Get(),chroma_[current_].output.Get()},width,height);
+        timing.finish();
         context->CopyResource(previousCamera_.Get(),camera.Get());
         frameNative_={inputs[0],inputs[1],inputs[2]};frameAuthored_=authored;frameSurface_=surface;frameStereo_=stereo;frameCamera_=camera;
         preparedFrame_=frame_;ready_=true;preparedFrames_.fetch_add(1,std::memory_order_relaxed);
@@ -362,7 +377,10 @@ namespace csah::screen_space_gi
         if(!restore.captured()) return;
         context->UpdateSubresource(constants_.Get(),0,nullptr,&uploaded_,0,0);
         auto* cb=constants_.Get();context->CSSetConstantBuffers(13,1,&cb);
+        compositeTiming_.poll();
+        compositeScope_=compositeTiming_.begin();
         dispatch(Pass::capture,{inputs[0].Get(),inputs[1].Get(),inputs[2].Get(),inputs[3].Get(),positions_[current_].view.Get()},{radiance_.output.Get()},width_,height_);
+        compositeScope_.mark();
         radianceFrame_=frame_;radianceCaptures_.fetch_add(1,std::memory_order_relaxed);
     }
     bool Runtime::internalRenderActive() noexcept {return gComposeRender;}
@@ -456,6 +474,7 @@ namespace csah::screen_space_gi
                 context->Draw(3,0);
             }
         }
+        compositeScope_.finish();
         composedFrames_.fetch_add(1,std::memory_order_relaxed);
     }
     bool Runtime::reject(Rejection reason) noexcept

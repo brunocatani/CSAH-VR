@@ -1,6 +1,7 @@
 #pragma once
 #include "Features/screen_space_gi/ScreenSpaceGISettings.h"
 #include "Features/pbr/PbrSettings.h"
+#include "render/GpuTimingProfiler.h"
 #include <d3d11.h>
 #include <wrl/client.h>
 #include <array>
@@ -140,6 +141,10 @@ namespace csah::screen_space_gi
         std::array<Texture,2> positions_,normals_,luma_,chroma_,specular_;
         Texture remappedLuma_,remappedChroma_,remappedSpecular_,tracedLuma_,tracedChroma_;
         Texture radiance_,radianceMips_;
+        // GpuProfilingMode group 16: generation passes at the ambient pass, and
+        // the composite-time capture and compose (one scope across both calls).
+        render::GpuTimingProfiler generationTiming_,compositeTiming_;
+        render::GpuTimingProfiler::Scope compositeScope_;
         Constants uploaded_{};
         Settings settings_{};
         UINT width_{},height_{},current_{};

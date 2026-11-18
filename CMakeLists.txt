@@ -3507,7 +3507,7 @@ if(BUILD_CSAH_TESTS)
 
   add_executable(CSAHScreenSpaceGITests "${ROOT_DIR}/tests/ScreenSpaceGITests.cpp"
     "${SOURCE_DIR}/Features/screen_space_gi/ScreenSpaceGIRuntime.cpp" "${SOURCE_DIR}/render/ComputeStateScope.cpp"
-    "${SOURCE_DIR}/Features/screen_space_gi/ScreenSpaceGINoise.rc")
+    "${SOURCE_DIR}/render/GpuTimingProfiler.cpp" "${SOURCE_DIR}/Features/screen_space_gi/ScreenSpaceGINoise.rc")
   add_dependencies(CSAHScreenSpaceGITests ScreenSpaceGIShaders SkylightingShaders)
   target_compile_features(CSAHScreenSpaceGITests PRIVATE cxx_std_23)
   target_compile_options(CSAHScreenSpaceGITests PRIVATE /Zi)

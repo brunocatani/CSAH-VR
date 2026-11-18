@@ -435,7 +435,7 @@ namespace csah::settings_file
             option("Diagnostics", "GpuProfilingMode", "25. Diagnostics (leave off for normal play)", ValueType::Integer, "0",
                 "Writes continuous image-neutral GPU and CPU submission timings for the selected expensive feature group. Off\n"
                 "disables timing collection, including startup captures. Choices: 0 Off, 1 Contact Shadows, 2 Skylighting, 3\n"
-                "Contact + Skylighting, 4 IBL + Upscaling, 7 All Profiled Features."),
+                "Contact + Skylighting, 4 IBL + Upscaling, 16 Screen Space GI, 23 All Profiled Features."),
             option("Diagnostics", "RenderDocCapture", "25. Diagnostics (leave off for normal play)", ValueType::Boolean, "false",
                 "Loads RenderDoc for PALM Developer wheel captures. Restart required. RenderDoc disables NVAPI, so DLAA/DLSS\n"
                 "are unavailable while it is on."),

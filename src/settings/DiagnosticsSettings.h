@@ -22,7 +22,7 @@ namespace csah::diagnostics_settings
     {
         const auto value = values.integer(kSection, kGpuProfilingModeKey, 0);
         return {
-            .gpuProfilingGroups = static_cast<std::uint32_t>(value >= 0 && value <= 7 ? value : 0),
+            .gpuProfilingGroups = static_cast<std::uint32_t>(value >= 0 && (value & ~0x17) == 0 ? value : 0),
             .measureStereoSharing = values.boolean(kSection, "MeasureStereoSharing", false),
         };
     }

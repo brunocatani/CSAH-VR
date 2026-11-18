@@ -20,6 +20,7 @@ namespace csah::render
             Skylighting = 2u,
             General = 4u,
             StereoMeasurements = 8u,
+            ScreenSpaceGI = 16u,
         };
 
         static constexpr std::size_t kMaximumSegments = 4;
