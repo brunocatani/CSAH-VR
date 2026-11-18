@@ -27,6 +27,7 @@
 #include "Features/surface_classification/SurfaceClassificationRuntime.h"
 #include "Features/terrain_shadows/TerrainShadowRuntime.h"
 #include "Features/volumetric_lighting/VolumetricLightingRuntime.h"
+#include "render/BSDFPrePassShaderHook.h"
 #include "support/Logger.h"
 
 #include <Windows.h>
@@ -58,6 +59,13 @@ namespace csah::diagnostics
             std::uint64_t unmatchedSelections{};
             std::uint64_t complexEnvironment{};
             std::uint64_t complexEnvironmentRejects{};
+            std::uint64_t complexEnvironmentNoDescriptorRejects{};
+            std::uint64_t prepassTechniqueEntries{};
+            std::uint64_t prepassTechniqueAccepted{};
+            std::uint64_t prepassGeometryEntries{};
+            std::uint64_t prepassGeometryDescriptors{};
+            std::uint32_t prepassConsumerMask{};
+            bool prepassVtableOwned{};
             std::uint64_t descriptorMisses{};
             std::uint64_t descriptorContractMisses{};
             std::uint64_t pbrScopes{};
@@ -108,6 +116,7 @@ namespace csah::diagnostics
             const auto ibl = ibl::Runtime::get().snapshot();
             const auto dlaa = dlaa::Runtime::get().snapshot();
             const auto sky = sky_sync::Runtime::get().snapshot();
+            const auto prepass = render::dFPrePassHookSnapshot();
             return {
                 .skyUpdates = sky.skyUpdates,
                 .shaderSelections = lighting.shaderSelectionCalls,
@@ -117,6 +126,13 @@ namespace csah::diagnostics
                 .unmatchedSelections = lighting.unmatchedShaderSelections,
                 .complexEnvironment = lighting.complexEnvironmentReplacementBinds,
                 .complexEnvironmentRejects = lighting.complexEnvironmentDescriptorRejects,
+                .complexEnvironmentNoDescriptorRejects = lighting.complexEnvironmentNoDescriptorRejects,
+                .prepassTechniqueEntries = prepass.techniqueEntries,
+                .prepassTechniqueAccepted = prepass.techniqueAccepted,
+                .prepassGeometryEntries = prepass.geometryEntries,
+                .prepassGeometryDescriptors = prepass.setupCalls,
+                .prepassConsumerMask = prepass.consumerMask,
+                .prepassVtableOwned = prepass.vtableCellOwned,
                 .descriptorMisses = classification.descriptorObservationMisses,
                 .descriptorContractMisses = classification.descriptorContractMisses,
                 .pbrScopes = pbr.drawScopes,
@@ -232,8 +248,20 @@ namespace csah::diagnostics
                     misses += std::format(" 0x{:08X}", descriptor);
                 }
             }
+            // Rejects that carried a descriptor:
+            // descriptor/expected producer/alias producer (0 none, FFFF other family).
+            std::string complexRejects;
+            for (const auto packed : linear_lighting::Runtime::get().takeRecentComplexEnvironmentRejects()) {
+                if (packed) {
+                    complexRejects += std::format(" 0x{:08X}/{}/{:X}",
+                        static_cast<std::uint32_t>(packed >> 32),
+                        static_cast<std::uint32_t>((packed >> 16) & 0xFFFFu),
+                        static_cast<std::uint32_t>(packed & 0xFFFFu));
+                }
+            }
             return std::format(
-                "skyUpdates={} | shaders selections={} material={} ambient={} inactive={} unmatched={} complexEnv={} complexEnvRejects={} | "
+                "skyUpdates={} | shaders selections={} material={} ambient={} inactive={} unmatched={} complexEnv={} complexEnvRejects={} noDescriptor={} rejected=[{}] | "
+                "prepass technique={} accepted={} geometry={} geometryDescriptors={} mask=0x{:X} owned={} | "
                 "descriptorMisses={} contractMisses={} missing=[{}] | pbr scopes={} fallbacks={} failures={} | "
                 "ssgi scopes={} prepared={} radiance={} rejects=[{}] | skylighting captures={} rejects={} dispatches={} ambient={} | "
                 "volumetric rendered={} rejected={} | contact scopes={} fallbacks={} | ibl material={} fits={} fitRejects={} | dlaa committed={} failures={}",
@@ -245,6 +273,14 @@ namespace csah::diagnostics
                 d(now.unmatchedSelections, base.unmatchedSelections),
                 d(now.complexEnvironment, base.complexEnvironment),
                 d(now.complexEnvironmentRejects, base.complexEnvironmentRejects),
+                d(now.complexEnvironmentNoDescriptorRejects, base.complexEnvironmentNoDescriptorRejects),
+                complexRejects.empty() ? std::string() : complexRejects.substr(1),
+                d(now.prepassTechniqueEntries, base.prepassTechniqueEntries),
+                d(now.prepassTechniqueAccepted, base.prepassTechniqueAccepted),
+                d(now.prepassGeometryEntries, base.prepassGeometryEntries),
+                d(now.prepassGeometryDescriptors, base.prepassGeometryDescriptors),
+                now.prepassConsumerMask,
+                now.prepassVtableOwned,
                 d(now.descriptorMisses, base.descriptorMisses),
                 d(now.descriptorContractMisses, base.descriptorContractMisses),
                 misses.empty() ? std::string() : misses.substr(1),
@@ -294,6 +330,7 @@ namespace csah::diagnostics
             state.sunRequested = false;
             state.settled = false;
             (void)surface_classification::Runtime::get().takeRecentMissDescriptors();
+            (void)linear_lighting::Runtime::get().takeRecentComplexEnvironmentRejects();
             state.baseline = capture();
             logging::info("World trace #{} enter: {} | {}",
                 state.sequence, describeLocation(cell), describeEnabled());

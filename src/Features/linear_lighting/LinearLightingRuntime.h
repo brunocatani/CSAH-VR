@@ -109,6 +109,7 @@ namespace csah::linear_lighting
         bool complexEnvironmentConsumerReady{};
         std::uint64_t complexEnvironmentReplacementBinds{};
         std::uint64_t complexEnvironmentDescriptorRejects{};
+        std::uint64_t complexEnvironmentNoDescriptorRejects{};
         bool gpuResourcesReady{};
         bool geometryProviderReady{};
         std::uint32_t verifiedShaderContracts{};
@@ -325,8 +326,19 @@ namespace csah::linear_lighting
 
         [[nodiscard]] RuntimeSnapshot snapshot() const noexcept;
 
+        // Distinct complex-environment rejects that carried a DFPrePass
+        // descriptor since the last call, for the world trace. Each entry
+        // packs the descriptor (bits 63..32), the producer contract the linear
+        // contract expects (31..16) and the alias found for the descriptor
+        // (15..0: 0 none, 0xFFFF another family, else its producer contract).
+        static constexpr std::size_t kRecentComplexEnvironmentRejectCapacity = 8;
+        [[nodiscard]] std::array<std::uint64_t, kRecentComplexEnvironmentRejectCapacity>
+            takeRecentComplexEnvironmentRejects() noexcept;
+
     private:
         Runtime() = default;
+
+        void recordComplexEnvironmentReject(std::uint64_t packed) noexcept;
 
         [[nodiscard]] PixelShaderSelection selectPixelShaderImpl(
             ID3D11DeviceContext* context,
@@ -537,6 +549,9 @@ namespace csah::linear_lighting
         std::atomic_uint64_t complexParallaxReplacementBinds_{};
         std::atomic_uint64_t complexEnvironmentReplacementBinds_{};
         std::atomic_uint64_t complexEnvironmentDescriptorRejects_{};
+        std::atomic_uint64_t complexEnvironmentNoDescriptorRejects_{};
+        std::array<std::atomic_uint64_t, kRecentComplexEnvironmentRejectCapacity>
+            recentComplexEnvironmentRejects_{};
         std::atomic_uint64_t skyReplacementBinds_{};
         std::atomic_uint64_t distantTreeReplacementBinds_{};
         std::atomic_uint64_t particleReplacementBinds_{};

@@ -1989,6 +1989,22 @@ namespace csah::linear_lighting
                     complexEnvironmentDescriptorRejects_.fetch_add(
                         1,
                         std::memory_order_relaxed);
+                    if (!descriptorActive) {
+                        complexEnvironmentNoDescriptorRejects_.fetch_add(
+                            1,
+                            std::memory_order_relaxed);
+                    } else {
+                        const std::uint64_t aliasCode = !alias ? 0u :
+                            (alias->family == complex_materials::
+                                    ComplexMaterialProducerFamily::kEnvironmentMap ?
+                                alias->contractPlusOne :
+                                0xFFFFu);
+                        recordComplexEnvironmentReject(
+                            (static_cast<std::uint64_t>(descriptor) << 32) |
+                            (static_cast<std::uint64_t>(complexEnvironmentProducer)
+                                << 16) |
+                            aliasCode);
+                    }
                 }
             }
 
@@ -2658,6 +2674,36 @@ namespace csah::linear_lighting
         frameDataUploads_.fetch_add(1, std::memory_order_relaxed);
     }
 
+    void Runtime::recordComplexEnvironmentReject(
+        const std::uint64_t packed) noexcept
+    {
+        for (auto& slot : recentComplexEnvironmentRejects_) {
+            auto value = slot.load(std::memory_order_relaxed);
+            if (value == packed) {
+                return;
+            }
+            if (value == 0 &&
+                slot.compare_exchange_strong(
+                    value, packed, std::memory_order_relaxed)) {
+                return;
+            }
+            if (value == packed) {
+                return;
+            }
+        }
+    }
+
+    std::array<std::uint64_t, Runtime::kRecentComplexEnvironmentRejectCapacity>
+        Runtime::takeRecentComplexEnvironmentRejects() noexcept
+    {
+        std::array<std::uint64_t, kRecentComplexEnvironmentRejectCapacity> result{};
+        for (std::size_t index = 0; index < result.size(); ++index) {
+            result[index] = recentComplexEnvironmentRejects_[index].exchange(
+                0, std::memory_order_relaxed);
+        }
+        return result;
+    }
+
     RuntimeSnapshot Runtime::snapshot() const noexcept
     {
         return {
@@ -2683,6 +2729,9 @@ namespace csah::linear_lighting
                     std::memory_order_relaxed),
             .complexEnvironmentDescriptorRejects =
                 complexEnvironmentDescriptorRejects_.load(
+                    std::memory_order_relaxed),
+            .complexEnvironmentNoDescriptorRejects =
+                complexEnvironmentNoDescriptorRejects_.load(
                     std::memory_order_relaxed),
             .gpuResourcesReady = gpuResourcesReady_.load(std::memory_order_acquire),
             .geometryProviderReady =

@@ -11,6 +11,13 @@ namespace csah::render
         std::uint64_t setupCalls{};
         std::uint64_t validationFailures{};
         std::uint32_t lastDescriptor{};
+        // Every hook entry, counted before any gate, plus the published
+        // consumer mask, so a hook the engine never calls is distinguishable
+        // from one that is gated off.
+        std::uint64_t techniqueEntries{};
+        std::uint64_t techniqueAccepted{};
+        std::uint64_t geometryEntries{};
+        std::uint32_t consumerMask{};
     };
 
     // Fallout4VR.exe 1.2.72 BSDFPrePassShader slots 4/5 own the complete

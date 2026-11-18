@@ -139,6 +139,8 @@ namespace csah::render
         std::atomic_uint64_t techniqueSetupCalls{};
         std::atomic_uint64_t techniqueRestoreCalls{};
         std::atomic_uint64_t geometrySetupCalls{};
+        std::atomic_uint64_t techniqueEntries{};
+        std::atomic_uint64_t geometryEntries{};
         std::atomic_uint64_t validationFailures{};
         std::atomic_uint32_t lastDescriptor{};
 
@@ -501,6 +503,7 @@ namespace csah::render
             if (!original) {
                 return false;
             }
+            techniqueEntries.fetch_add(1, std::memory_order_relaxed);
             if (!installed.load(std::memory_order_acquire) ||
                 descriptorConsumerMask.load(std::memory_order_acquire) == 0) {
                 return original(receiver, descriptor, techniqueState);
@@ -553,6 +556,7 @@ namespace csah::render
             if (!original) {
                 return;
             }
+            geometryEntries.fetch_add(1, std::memory_order_relaxed);
             if (pass) {
                 traceNullEmittanceColor(pass, geometryState);
             }
@@ -880,6 +884,14 @@ namespace csah::render
                 validationFailures.load(std::memory_order_relaxed),
             .lastDescriptor =
                 lastDescriptor.load(std::memory_order_relaxed),
+            .techniqueEntries =
+                techniqueEntries.load(std::memory_order_relaxed),
+            .techniqueAccepted =
+                techniqueSetupCalls.load(std::memory_order_relaxed),
+            .geometryEntries =
+                geometryEntries.load(std::memory_order_relaxed),
+            .consumerMask =
+                descriptorConsumerMask.load(std::memory_order_acquire),
         };
     }
 }
