@@ -91,6 +91,11 @@ namespace csah::render
     // reach every shader family, so one left unconsumed by a non-material
     // bind is dropped there.
     void publishDFPrePassShaderKey(std::uint32_t key) noexcept;
+    // Cached record replay: the base texture of the record being drawn,
+    // used by every draw of that record; null ends the record.
+    void setDFPrePassRecordBaseTexture(RE::NiTexture* baseTexture) noexcept;
+    // The pixel shader bound on this thread is a DFPrepass material program.
+    [[nodiscard]] bool dFPrePassMaterialBound() noexcept;
 
     // A new session invalidates render-thread-local proof state through its
     // monotonically increasing ID. All counters below are session-local.

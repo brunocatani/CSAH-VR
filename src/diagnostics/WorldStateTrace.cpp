@@ -20,6 +20,7 @@
 #include "Features/dlaa/DlaaRuntime.h"
 #include "Features/ibl/IblRuntime.h"
 #include "Features/linear_lighting/LinearLightingRuntime.h"
+#include "Features/lod_blending/LodBlendingRuntime.h"
 #include "Features/pbr/PbrRuntime.h"
 #include "Features/screen_space_gi/ScreenSpaceGIRuntime.h"
 #include "Features/sky_sync/SkySyncRuntime.h"
@@ -65,6 +66,9 @@ namespace csah::diagnostics
             std::uint64_t prepassGeometryEntries{};
             std::uint64_t prepassGeometryDescriptors{};
             std::uint64_t prepassShaderKeys{};
+            std::uint64_t prepassRecordGeometry{};
+            std::uint64_t lodClassified{};
+            std::uint64_t lodObjectGeometry{};
             std::uint32_t prepassConsumerMask{};
             bool prepassVtableOwned{};
             std::uint64_t descriptorMisses{};
@@ -135,6 +139,9 @@ namespace csah::diagnostics
                 .prepassGeometryEntries = prepass.geometryEntries,
                 .prepassGeometryDescriptors = prepass.setupCalls,
                 .prepassShaderKeys = prepass.shaderKeyPublications,
+                .prepassRecordGeometry = prepass.replayedRecordGeometry,
+                .lodClassified = lod_blending::Runtime::get().snapshot().classified,
+                .lodObjectGeometry = lod_blending::Runtime::get().snapshot().objectLod,
                 .prepassConsumerMask = prepass.consumerMask,
                 .prepassVtableOwned = prepass.vtableCellOwned,
                 .descriptorMisses = classification.descriptorObservationMisses,
@@ -278,9 +285,11 @@ namespace csah::diagnostics
                     address - reinterpret_cast<std::uintptr_t>(module));
             };
             const auto prepassDispatch = std::format(
-                "setShaders={} shaderKeys={} liveVtable={} isPatchedVtable={} liveSetupTechnique={} liveSetupGeometry={}",
+                "setShaders={} shaderKeys={} replay={} recordGeometry={} liveVtable={} isPatchedVtable={} liveSetupTechnique={} liveSetupGeometry={}",
                 prepass.setShadersInstalled,
                 d(now.prepassShaderKeys, base.prepassShaderKeys),
+                prepass.replayInstalled,
+                d(now.prepassRecordGeometry, base.prepassRecordGeometry),
                 describeAddress(prepass.liveVtable),
                 prepass.liveVtable == prepass.patchedVtable,
                 describeAddress(prepass.liveSetupTechnique),
@@ -301,7 +310,7 @@ namespace csah::diagnostics
                 "prepass technique={} accepted={} geometry={} geometryDescriptors={} mask=0x{:X} owned={} {} | "
                 "descriptorMisses={} contractMisses={} missing=[{}] | pbr scopes={} fallbacks={} failures={} | "
                 "ssgi scopes={} prepared={} radiance={} rejects=[{}] | skylighting captures={} rejects={} dispatches={} ambient={} | "
-                "volumetric rendered={} rejected={} | contact scopes={} fallbacks={} | ibl material={} engineCubes={}/{} missingContracts=0x{:X} fits={} fitRejects={} | dlaa committed={} failures={}",
+                "volumetric rendered={} rejected={} | contact scopes={} fallbacks={} | lod classified={} objectLod={} | ibl material={} engineCubes={}/{} missingContracts=0x{:X} fits={} fitRejects={} | dlaa committed={} failures={}",
                 d(now.skyUpdates, base.skyUpdates),
                 d(now.shaderSelections, base.shaderSelections),
                 d(now.materialReplacements, base.materialReplacements),
@@ -337,6 +346,8 @@ namespace csah::diagnostics
                 d(now.volumetricRejected, base.volumetricRejected),
                 d(now.contactScopes, base.contactScopes),
                 d(now.contactFallbacks, base.contactFallbacks),
+                d(now.lodClassified, base.lodClassified),
+                d(now.lodObjectGeometry, base.lodObjectGeometry),
                 d(now.iblMaterial, base.iblMaterial),
                 d(now.iblEngineCubesBound, base.iblEngineCubesBound),
                 d(now.iblEngineCubesMissing, base.iblEngineCubesMissing),

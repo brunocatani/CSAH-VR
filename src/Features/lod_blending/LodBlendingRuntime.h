@@ -32,6 +32,8 @@ namespace csah::lod_blending
         void beginGeometry(void* pass) noexcept;
         void endGeometry() noexcept;
         [[nodiscard]] ScopedBindings scopeDraw(ID3D11DeviceContext* context,bool material) noexcept;
+        struct Snapshot {std::uint64_t classified{};std::uint64_t objectLod{};};
+        [[nodiscard]] Snapshot snapshot() const noexcept {return {classified_.load(std::memory_order_relaxed),objectLodGeometry_.load(std::memory_order_relaxed)};}
     private:
         Runtime()=default;
         void publish() noexcept;
@@ -40,6 +42,7 @@ namespace csah::lod_blending
         std::uint32_t missingResourceDraws_{};
         std::atomic<float> terrainBrightness_{1},terrainGamma_{1},objectBrightness_{1},objectGamma_{1};
         std::atomic_bool requested_{},objectRequested_{};
+        std::atomic_uint64_t classified_{},objectLodGeometry_{};
         const std::byte* image_{};
         std::atomic_uint64_t revision_{1};
         std::uint64_t published_{};

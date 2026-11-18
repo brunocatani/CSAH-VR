@@ -351,6 +351,7 @@ namespace csah::render
         thread_local ActiveDFPrePassTechniques activeDFPrePassTechniques{};
         thread_local PendingDFPrePassDescriptor pendingDFPrePassDescriptor{};
         thread_local RE::NiTexture* activeAuthoredPbrBaseTexture{};
+        thread_local RE::NiTexture* recordAuthoredPbrBaseTexture{};
         std::atomic_bool firstDFPrePassTechniqueOverflowLogged{};
         std::atomic_bool firstDFPrePassTechniqueMismatchLogged{};
         std::atomic_bool firstGrassVertexDrawRebindLogged{};
@@ -2485,6 +2486,9 @@ namespace csah::render
             auto* baseTexture = std::exchange(
                 activeAuthoredPbrBaseTexture,
                 nullptr);
+            if (!baseTexture) {
+                baseTexture = recordAuthoredPbrBaseTexture;
+            }
             if (!originalPSSetShader ||
                 activeReplacementBinding.family !=
                     linear_lighting::ReplacementShaderFamily::material) {
@@ -4932,6 +4936,17 @@ namespace csah::render
             baseTexture,
             true,
         };
+    }
+
+    void setDFPrePassRecordBaseTexture(RE::NiTexture* baseTexture) noexcept
+    {
+        recordAuthoredPbrBaseTexture = baseTexture;
+    }
+
+    bool dFPrePassMaterialBound() noexcept
+    {
+        return activeReplacementBinding.family ==
+            linear_lighting::ReplacementShaderFamily::material;
     }
 
     void publishDFPrePassShaderKey(std::uint32_t key) noexcept

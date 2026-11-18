@@ -22,6 +22,8 @@ namespace csah::render
         // command records, which never call the vtable slots above.
         bool setShadersInstalled{};
         std::uint64_t shaderKeyPublications{};
+        bool replayInstalled{};
+        std::uint64_t replayedRecordGeometry{};
         // Live dispatch of the engine's BSDFPrePassShader singleton: its
         // vtable pointer and the SetupTechnique/SetupGeometry entries the
         // renderer actually calls (0 when unreadable).

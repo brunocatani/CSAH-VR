@@ -86,7 +86,14 @@ namespace csah::lod_blending
         for(unsigned i=0;i<2;++i) {data[5]=static_cast<float>(i);context_->UpdateSubresource(buffers_[i].Get(),0,nullptr,data.data(),0,0);}
         published_=revision;
     }
-    void Runtime::beginGeometry(void* pass) noexcept {objectLod=requested() && objectRequested_.load(std::memory_order_relaxed) && classify(pass,image_);}
+    void Runtime::beginGeometry(void* pass) noexcept
+    {
+        objectLod=false;
+        if(!requested() || !objectRequested_.load(std::memory_order_relaxed)) return;
+        classified_.fetch_add(1,std::memory_order_relaxed);
+        objectLod=classify(pass,image_);
+        if(objectLod) objectLodGeometry_.fetch_add(1,std::memory_order_relaxed);
+    }
     void Runtime::endGeometry() noexcept {objectLod=false;}
     ScopedBindings Runtime::scopeDraw(ID3D11DeviceContext* context,bool material) noexcept
     {

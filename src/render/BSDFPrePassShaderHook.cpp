@@ -243,6 +243,199 @@ namespace csah::render
             }
         }
 
+        // Pass -> geometry -> lighting shader property -> material -> base
+        // texture, each hop checked before it is followed.
+        [[nodiscard]] RE::NiTexture* authoredBaseTexture(void* pass) noexcept
+        {
+            if (!plausibleEnginePointer(pass)) {
+                recordAuthoredPbrPointerFailure(1u << 0, "pass owner");
+                return nullptr;
+            }
+            void* geometryOwner{};
+            std::memcpy(&geometryOwner,
+                static_cast<const std::byte*>(pass) + kPassGeometryOwnerOffset,
+                sizeof(geometryOwner));
+            if (!plausibleEnginePointer(geometryOwner)) {
+                recordAuthoredPbrPointerFailure(1u << 0, "pass owner");
+                return nullptr;
+            }
+            void* shaderProperty{};
+            std::memcpy(&shaderProperty,
+                static_cast<const std::byte*>(geometryOwner) + kGeometryShaderPropertyOffset,
+                sizeof(shaderProperty));
+            if (!plausibleEnginePointer(shaderProperty)) {
+                recordAuthoredPbrPointerFailure(1u << 1, "shader property");
+                return nullptr;
+            }
+            void* material{};
+            std::memcpy(&material,
+                static_cast<const std::byte*>(shaderProperty) + kShaderPropertyMaterialOffset,
+                sizeof(material));
+            if (!plausibleEnginePointer(material)) {
+                recordAuthoredPbrPointerFailure(1u << 2, "lighting material");
+                return nullptr;
+            }
+            RE::NiTexture* baseTexture{};
+            std::memcpy(&baseTexture,
+                static_cast<const std::byte*>(material) + kLightingMaterialBaseTextureOffset,
+                sizeof(baseTexture));
+            if (!plausibleEnginePointer(baseTexture)) {
+                recordAuthoredPbrPointerFailure(1u << 3, "base texture");
+                return nullptr;
+            }
+            return baseTexture;
+        }
+
+        // Cached command-record replay never calls SetupGeometry, so the
+        // per-geometry inputs of LOD blending and Authored PBR are published
+        // here from the pass each replayed record was built from. Fallout4VR
+        // 1.2.72 raw disassembly:
+        //   0x1428AA8D0 ReplayPassGroup(group, flag, context): [group]+0x3D0
+        //     is the pass array, group+0x08 the batch end indices (batch
+        //     count at group+0x18), group+0x20 the record array, and
+        //     records[i] was built from passes[i]. A null record draws its
+        //     passes immediately (0x142891040, SetupGeometry); a record batch
+        //     binds its shaders through SetShaders and is replayed by
+        //   0x141D97AA0 ReplayRecords(renderer, records, count), which draws
+        //     each record through 0x141DA51E0 / 0x141DA4C40 / 0x141DA4FA0
+        //     (renderer, record, ...).
+        // All state is thread-local to the replaying thread and lives only
+        // for the call that set it.
+        constexpr std::uintptr_t kReplayPassGroupRva = 0x028AA8D0;
+        constexpr std::uintptr_t kReplayRecordsRva = 0x01D97AA0;
+        constexpr std::array<std::uintptr_t, 3> kRecordDrawRvas{
+            0x01DA51E0, 0x01DA4C40, 0x01DA4FA0,
+        };
+        constexpr std::array<std::uint8_t, 24> kReplayPassGroupSignature{
+            0x48, 0x89, 0x5C, 0x24, 0x20, 0x55, 0x41, 0x54, 0x41, 0x55, 0x41, 0x56,
+            0x41, 0x57, 0x48, 0x83, 0xEC, 0x30, 0x4C, 0x8B, 0xE9, 0x48, 0x8B, 0x09,
+        };
+        constexpr std::array<std::uint8_t, 24> kReplayRecordsSignature{
+            0x48, 0x89, 0x54, 0x24, 0x10, 0x48, 0x89, 0x4C, 0x24, 0x08, 0x55, 0x53,
+            0x56, 0x57, 0x41, 0x54, 0x41, 0x55, 0x41, 0x56, 0x41, 0x57, 0x48, 0x8D,
+        };
+        constexpr std::array<std::array<std::uint8_t, 16>, 3> kRecordDrawSignatures{ {
+            { 0x48, 0x89, 0x5C, 0x24, 0x18, 0x56, 0x48, 0x83, 0xEC, 0x30, 0x80, 0x79, 0x01, 0x00, 0x48, 0x8B },
+            { 0x48, 0x89, 0x4C, 0x24, 0x08, 0x55, 0x56, 0x57, 0x41, 0x54, 0x41, 0x55, 0x41, 0x56, 0x41, 0x57 },
+            { 0x48, 0x8B, 0xC4, 0x41, 0x54, 0x41, 0x55, 0x48, 0x83, 0xEC, 0x78, 0x48, 0x89, 0x58, 0x20, 0x48 },
+        } };
+        constexpr std::size_t kGroupPassOwnerOffset = 0x3D0;
+        constexpr std::size_t kGroupBatchEndsOffset = 0x08;
+        constexpr std::size_t kGroupBatchCountOffset = 0x18;
+        constexpr std::size_t kGroupRecordsOffset = 0x20;
+
+        using ReplayPassGroupFunction = std::uintptr_t(__fastcall*)(void*, std::uintptr_t, void*);
+        using ReplayRecordsFunction = std::uintptr_t(__fastcall*)(void*, void* const*, std::uintptr_t);
+        using RecordDrawFunction = std::uintptr_t(__fastcall*)(void*, void*, void*);
+        ReplayPassGroupFunction originalReplayPassGroup{};
+        ReplayRecordsFunction originalReplayRecords{};
+        std::array<RecordDrawFunction, 3> originalRecordDraws{};
+        std::atomic_bool replayInstalled{};
+        std::atomic_uint64_t replayedRecordGeometry{};
+
+        struct ReplayGroup
+        {
+            void* const* passes{};
+            void* const* records{};
+            std::uint32_t count{};
+        };
+        struct ReplayBatch
+        {
+            void* const* records{};
+            void* const* passes{};
+            std::uint32_t count{};
+            std::uint32_t cursor{};
+        };
+        thread_local ReplayGroup replayGroup{};
+        thread_local ReplayBatch replayBatch{};
+
+        [[nodiscard]] bool recordGeometryConsumers() noexcept
+        {
+            return authoredPbrEnabled.load(std::memory_order_acquire) ||
+                lod_blending::Runtime::get().requested();
+        }
+
+        [[nodiscard]] ReplayGroup readReplayGroup(const void* group) noexcept
+        {
+            const auto* bytes = static_cast<const std::byte*>(group);
+            const void* owner{};
+            const std::uint32_t* ends{};
+            std::uint32_t batches{};
+            void* const* records{};
+            std::memcpy(&owner, bytes, sizeof(owner));
+            std::memcpy(&ends, bytes + kGroupBatchEndsOffset, sizeof(ends));
+            std::memcpy(&batches, bytes + kGroupBatchCountOffset, sizeof(batches));
+            std::memcpy(&records, bytes + kGroupRecordsOffset, sizeof(records));
+            if (!plausibleEnginePointer(owner) || !plausibleEnginePointer(records) ||
+                batches == 0 || !plausibleEnginePointer(ends)) {
+                return {};
+            }
+            void* const* passes{};
+            std::memcpy(&passes, static_cast<const std::byte*>(owner) + kGroupPassOwnerOffset, sizeof(passes));
+            if (!plausibleEnginePointer(passes)) {
+                return {};
+            }
+            return { passes, records, ends[batches - 1] };
+        }
+
+        std::uintptr_t __fastcall hookReplayPassGroup(void* group, std::uintptr_t flag, void* context) noexcept
+        {
+            const auto previous = replayGroup;
+            replayGroup = group && recordGeometryConsumers() ? readReplayGroup(group) : ReplayGroup{};
+            const auto result = originalReplayPassGroup(group, flag, context);
+            replayGroup = previous;
+            return result;
+        }
+
+        std::uintptr_t __fastcall hookReplayRecords(void* renderer, void* const* records, std::uintptr_t count) noexcept
+        {
+            const auto previous = replayBatch;
+            const auto& group = replayGroup;
+            const auto requested = static_cast<std::uint32_t>(count);
+            // Only a batch replayed from the active group, under a DFPrepass
+            // material program, carries geometry the consumers read.
+            if (group.records && records >= group.records && requested != 0 &&
+                static_cast<std::size_t>(records - group.records) + requested <= group.count &&
+                dFPrePassMaterialBound()) {
+                replayBatch = { records, group.passes + (records - group.records), requested, 0 };
+            } else {
+                replayBatch = {};
+            }
+            const auto result = originalReplayRecords(renderer, records, count);
+            replayBatch = previous;
+            return result;
+        }
+
+        [[nodiscard]] void* passForRecord(const void* record) noexcept
+        {
+            auto& batch = replayBatch;
+            if (!batch.records) {
+                return nullptr;
+            }
+            // Records draw in array order, so the cursor only moves forward.
+            while (batch.cursor < batch.count && batch.records[batch.cursor] != record) {
+                ++batch.cursor;
+            }
+            return batch.cursor < batch.count ? batch.passes[batch.cursor] : nullptr;
+        }
+
+        template <std::size_t Index>
+        std::uintptr_t __fastcall hookRecordDraw(void* renderer, void* record, void* extra) noexcept
+        {
+            auto* pass = passForRecord(record);
+            if (!pass) {
+                return originalRecordDraws[Index](renderer, record, extra);
+            }
+            replayedRecordGeometry.fetch_add(1, std::memory_order_relaxed);
+            lod_blending::Runtime::get().beginGeometry(pass);
+            setDFPrePassRecordBaseTexture(
+                authoredPbrEnabled.load(std::memory_order_acquire) ? authoredBaseTexture(pass) : nullptr);
+            const auto result = originalRecordDraws[Index](renderer, record, extra);
+            setDFPrePassRecordBaseTexture(nullptr);
+            lod_blending::Runtime::get().endGeometry();
+            return result;
+        }
+
         [[nodiscard]] bool readable(
             const void* address,
             std::size_t size) noexcept
@@ -652,57 +845,10 @@ namespace csah::render
                     "BSDFPrePass SetupGeometry produced its first exact draw descriptor 0x{:08X}.",
                     descriptor);
             }
-            RE::NiTexture* baseTexture{};
-            if (authoredPbrEnabled.load(std::memory_order_acquire)) {
-                void* geometryOwner{};
-                if (!plausibleEnginePointer(pass)) {
-                    recordAuthoredPbrPointerFailure(1u << 0, "pass owner");
-                } else {
-                    std::memcpy(
-                        &geometryOwner,
-                        static_cast<const std::byte*>(pass) +
-                            kPassGeometryOwnerOffset,
-                        sizeof(geometryOwner));
-                    if (!plausibleEnginePointer(geometryOwner)) {
-                        recordAuthoredPbrPointerFailure(
-                            1u << 0, "pass owner");
-                    }
-                }
-                if (plausibleEnginePointer(geometryOwner)) {
-                    void* shaderProperty{};
-                    std::memcpy(
-                        &shaderProperty,
-                        static_cast<const std::byte*>(geometryOwner) +
-                            kGeometryShaderPropertyOffset,
-                        sizeof(shaderProperty));
-                    if (!plausibleEnginePointer(shaderProperty)) {
-                        recordAuthoredPbrPointerFailure(
-                            1u << 1, "shader property");
-                    } else {
-                        void* material{};
-                        std::memcpy(
-                            &material,
-                            static_cast<const std::byte*>(shaderProperty) +
-                                kShaderPropertyMaterialOffset,
-                            sizeof(material));
-                        if (!plausibleEnginePointer(material)) {
-                            recordAuthoredPbrPointerFailure(
-                                1u << 2, "lighting material");
-                        } else {
-                            std::memcpy(
-                                &baseTexture,
-                                static_cast<const std::byte*>(material) +
-                                    kLightingMaterialBaseTextureOffset,
-                                sizeof(baseTexture));
-                            if (!plausibleEnginePointer(baseTexture)) {
-                                recordAuthoredPbrPointerFailure(
-                                    1u << 3, "base texture");
-                                baseTexture = nullptr;
-                            }
-                        }
-                    }
-                }
-            }
+            auto* baseTexture =
+                authoredPbrEnabled.load(std::memory_order_acquire) ?
+                authoredBaseTexture(pass) :
+                nullptr;
             lod_blending::Runtime::get().beginGeometry(pass);
             publishDFPrePassGeometry(pixelShaderKey(descriptor), baseTexture);
             original(receiver, pass, geometryState);
@@ -799,6 +945,76 @@ namespace csah::render
                 "Installed verified renderer SetShaders descriptor source (RVA 0x01D92C00); every DFPrepass bind, including cached command records, publishes its pixel-shader key.");
             return true;
         }
+        [[nodiscard]] bool installReplayHooks(std::byte* image) noexcept
+        {
+            struct Target
+            {
+                std::uintptr_t rva;
+                const std::uint8_t* signature;
+                std::size_t size;
+                void* detour;
+                void** original;
+            };
+            const std::array<Target, 5> targets{ {
+                { kReplayPassGroupRva, kReplayPassGroupSignature.data(), kReplayPassGroupSignature.size(),
+                    reinterpret_cast<void*>(&hookReplayPassGroup), reinterpret_cast<void**>(&originalReplayPassGroup) },
+                { kReplayRecordsRva, kReplayRecordsSignature.data(), kReplayRecordsSignature.size(),
+                    reinterpret_cast<void*>(&hookReplayRecords), reinterpret_cast<void**>(&originalReplayRecords) },
+                { kRecordDrawRvas[0], kRecordDrawSignatures[0].data(), kRecordDrawSignatures[0].size(),
+                    reinterpret_cast<void*>(&hookRecordDraw<0>), reinterpret_cast<void**>(&originalRecordDraws[0]) },
+                { kRecordDrawRvas[1], kRecordDrawSignatures[1].data(), kRecordDrawSignatures[1].size(),
+                    reinterpret_cast<void*>(&hookRecordDraw<1>), reinterpret_cast<void**>(&originalRecordDraws[1]) },
+                { kRecordDrawRvas[2], kRecordDrawSignatures[2].data(), kRecordDrawSignatures[2].size(),
+                    reinterpret_cast<void*>(&hookRecordDraw<2>), reinterpret_cast<void**>(&originalRecordDraws[2]) },
+            } };
+            for (const auto& target : targets) {
+                auto* address = image + target.rva;
+                if (!executable(address, target.size) ||
+                    std::memcmp(address, target.signature, target.size) != 0) {
+                    logging::error(
+                        "Cached record replay live identity gate failed at RVA 0x{:08X}; cached draws keep no LOD or authored-PBR geometry.",
+                        target.rva);
+                    return false;
+                }
+            }
+            std::size_t created = 0;
+            auto status = MH_OK;
+            for (; created < targets.size(); ++created) {
+                status = MH_CreateHook(image + targets[created].rva, targets[created].detour, targets[created].original);
+                if (status != MH_OK) {
+                    break;
+                }
+            }
+            std::size_t enabled = 0;
+            if (status == MH_OK) {
+                // Replay context must exist before any draw consults it, so
+                // the draw detours are enabled last.
+                for (; enabled < targets.size(); ++enabled) {
+                    status = MH_EnableHook(image + targets[enabled].rva);
+                    if (status != MH_OK) {
+                        break;
+                    }
+                }
+            }
+            if (status != MH_OK) {
+                logging::error("Cached record replay detours failed ({}); cached draws keep no LOD or authored-PBR geometry.",
+                    MH_StatusToString(status));
+                for (std::size_t index = enabled; index-- > 0;) {
+                    (void)MH_DisableHook(image + targets[index].rva);
+                }
+                for (std::size_t index = created; index-- > 0;) {
+                    (void)MH_RemoveHook(image + targets[index].rva);
+                    *targets[index].original = nullptr;
+                }
+                return false;
+            }
+            replayInstalled.store(true, std::memory_order_release);
+            logging::info(
+                "Installed cached record replay geometry source (group RVA 0x{:08X}, records RVA 0x{:08X}); LOD blending and authored PBR receive each replayed record's pass.",
+                kReplayPassGroupRva, kReplayRecordsRva);
+            return true;
+        }
+
         void __fastcall hookRestoreGeometry(void* receiver,void* pass) noexcept
         {
             lod_blending::Runtime::get().endGeometry();
@@ -944,7 +1160,9 @@ namespace csah::render
         installed.store(true, std::memory_order_release);
         logging::info(
             "Installed verified Fallout4VR BSDFPrePass descriptor lifetime hooks (vtable 0x030B8C68: SetupTechnique slot 4 RVA 0x0287B720, RestoreTechnique slot 5 RVA 0x028789B0, SetupGeometry slot 9 RVA 0x0287CF60, geometry-state descriptor +0x40 verified at RVA 0x0287D1AB).");
-        return installSetShadersHook(image);
+        const auto setShaders = installSetShadersHook(image);
+        (void)installReplayHooks(image);
+        return setShaders;
     }
 
     bool validateBSDFPrePassShaderHook(const char* trigger) noexcept
@@ -1088,6 +1306,10 @@ namespace csah::render
                 setShadersInstalled.load(std::memory_order_acquire),
             .shaderKeyPublications =
                 shaderKeyPublications.load(std::memory_order_relaxed),
+            .replayInstalled =
+                replayInstalled.load(std::memory_order_acquire),
+            .replayedRecordGeometry =
+                replayedRecordGeometry.load(std::memory_order_relaxed),
             .liveVtable = live.vtable,
             .liveSetupTechnique = live.setupTechnique,
             .liveSetupGeometry = live.setupGeometry,
