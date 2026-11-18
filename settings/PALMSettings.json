@@ -298,7 +298,7 @@
                 {"id": "ssgi-bTemporal", "type": "toggle", "label": "Temporal Accumulation", "default": true, "binding": {"type": "toml", "root": "documents", "path": "Mods_Config/CSAH/CSAH.toml", "table": "ScreenSpaceGI", "key": "Temporal", "value": "boolean"}},
                 {"id": "ssgi-fRadius", "type": "slider", "label": "Sampling Radius", "default": 256, "min": 16, "max": 1024, "step": 16, "binding": {"type": "toml", "root": "documents", "path": "Mods_Config/CSAH/CSAH.toml", "table": "ScreenSpaceGI", "key": "Radius", "value": "float"}},
                 {"id": "ssgi-fThickness", "type": "slider", "label": "Surface Thickness", "default": 32, "min": 1, "max": 256, "step": 1, "binding": {"type": "toml", "root": "documents", "path": "Mods_Config/CSAH/CSAH.toml", "table": "ScreenSpaceGI", "key": "Thickness", "value": "float"}},
-                {"id": "ssgi-fAOPower", "type": "slider", "label": "Ambient Occlusion Strength", "default": 2, "min": 0, "max": 4, "step": 0.1, "binding": {"type": "toml", "root": "documents", "path": "Mods_Config/CSAH/CSAH.toml", "table": "ScreenSpaceGI", "key": "AOPower", "value": "float"}},
+                {"id": "ssgi-fAOPower", "type": "slider", "label": "Ambient Occlusion Strength", "default": 4, "min": 0, "max": 12, "step": 0.1, "binding": {"type": "toml", "root": "documents", "path": "Mods_Config/CSAH/CSAH.toml", "table": "ScreenSpaceGI", "key": "AOPower", "value": "float"}},
                 {"id": "ssgi-fGIStrength", "type": "slider", "label": "Indirect Light Strength", "default": 1, "min": 0, "max": 4, "step": 0.1, "binding": {"type": "toml", "root": "documents", "path": "Mods_Config/CSAH/CSAH.toml", "table": "ScreenSpaceGI", "key": "GIStrength", "value": "float"}}
               ]
             }

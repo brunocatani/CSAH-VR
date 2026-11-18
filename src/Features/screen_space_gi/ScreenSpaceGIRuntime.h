@@ -109,7 +109,7 @@ namespace csah::screen_space_gi
         std::uint64_t frame_{},preparedFrame_{},radianceFrame_{},composedFrame_{},nextRetry_{};
         bool ready_{},historyValid_{},loggedFailure_{},loggedActive_{},loggedComposeFailure_{};
         std::atomic_bool enabled_{},gi_{true},specularEnabled_{},temporal_{true},reset_{true};
-        std::atomic<float> radius_{256},thickness_{32},aoPower_{2},strength_{1};
+        std::atomic<float> radius_{256},thickness_{32},aoPower_{4},strength_{1};
         std::atomic_uint64_t ambientScopes_{},preparedFrames_{},radianceCaptures_{},composedFrames_{},composeFailures_{};
         std::array<std::atomic_uint64_t,kRejectionCount> rejections_{};
         std::array<std::atomic_uint32_t,3> lastRejectedFormats_{};
