@@ -9,6 +9,7 @@
 #include <cmath>
 #include <cstring>
 #include <initializer_list>
+#include <utility>
 namespace csah::screen_space_gi
 {
     using Microsoft::WRL::ComPtr;
@@ -131,6 +132,19 @@ namespace csah::screen_space_gi
         for(std::size_t i=0;i<kConsumerViewCount;i++) previous[i]=previous_[i].Get();
         context_->PSSetShaderResources(kConsumerFirstSlot,kConsumerViewCount,previous.data());
     }
+    ScopedTiledFold::ScopedTiledFold(ID3D11DeviceContext* context,ID3D11ShaderResourceView* black) noexcept:context_(context)
+    {
+        if(!context_) return;
+        context_->PSGetShaderResources(kTiledSlot,1,&previous_);
+        context_->PSSetShaderResources(kTiledSlot,1,&black);
+    }
+    ScopedTiledFold::ScopedTiledFold(ScopedTiledFold&& other) noexcept:context_(std::exchange(other.context_,nullptr)),previous_(std::move(other.previous_)) {}
+    ScopedTiledFold::~ScopedTiledFold()
+    {
+        if(!context_) return;
+        auto* previous=previous_.Get();
+        context_->PSSetShaderResources(kTiledSlot,1,&previous);
+    }
     Runtime& Runtime::get() noexcept {static Runtime runtime;return runtime;}
     void Runtime::applySettings(const Settings& value) noexcept
     {
@@ -143,8 +157,8 @@ namespace csah::screen_space_gi
         device_=device;context_=context;shaders_={};constants_.Reset();parameterView_.Reset();previousCamera_.Reset();noise_.Reset();
         positions_={};normals_={};luma_={};chroma_={};specular_={};
         remappedLuma_={};remappedChroma_={};remappedSpecular_={};tracedLuma_={};tracedChroma_={};estimateLuma_={};estimateChroma_={};radiance_={};radianceMips_={};
-        composeVertex_.Reset();composePixel_.Reset();composeScale_.Reset();composeBlend_.Reset();composeRaster_.Reset();composeDepth_.Reset();
-        composeTargets_={};frameNative_={};frameAuthored_.Reset();frameSurface_.Reset();frameStereo_.Reset();frameCamera_.Reset();emissive_.Reset();
+        composeVertex_.Reset();composePixel_.Reset();composeBlend_.Reset();composeRaster_.Reset();composeDepth_.Reset();
+        composeTarget_={};foldedTiled_.Reset();tiledBlack_.Reset();frameNative_={};frameAuthored_.Reset();frameSurface_.Reset();frameStereo_.Reset();frameCamera_.Reset();emissive_.Reset();
         frame_=preparedFrame_=radianceFrame_=composedFrame_=nextRetry_=0;width_=height_=current_=0;ready_=historyValid_=loggedFailure_=loggedActive_=false;
         compositeScope_={};generationTiming_.reset();compositeTiming_.reset();
         if(device_ && context_) {
@@ -398,10 +412,15 @@ namespace csah::screen_space_gi
     bool Runtime::internalRenderActive() noexcept {return gComposeRender;}
     bool Runtime::createComposeResources() noexcept
     {
-        if(composeVertex_ && composePixel_ && composeScale_ && composeBlend_ && composeRaster_ && composeDepth_) return true;
+        if(composeVertex_ && composePixel_ && composeBlend_ && composeRaster_ && composeDepth_ && tiledBlack_) return true;
         if(FAILED(device_->CreateVertexShader(kScreenSpaceGIComposeVS.data,kScreenSpaceGIComposeVS.size,nullptr,&composeVertex_)) ||
-            FAILED(device_->CreatePixelShader(kScreenSpaceGIComposePS.data,kScreenSpaceGIComposePS.size,nullptr,&composePixel_)) ||
-            FAILED(device_->CreatePixelShader(kScreenSpaceGIComposeScalePS.data,kScreenSpaceGIComposeScalePS.size,nullptr,&composeScale_))) return false;
+            FAILED(device_->CreatePixelShader(kScreenSpaceGIComposePS.data,kScreenSpaceGIComposePS.size,nullptr,&composePixel_))) return false;
+        D3D11_TEXTURE2D_DESC black{};black.Width=black.Height=black.MipLevels=black.ArraySize=black.SampleDesc.Count=1;
+        black.Format=DXGI_FORMAT_R8G8B8A8_UNORM;black.Usage=D3D11_USAGE_IMMUTABLE;black.BindFlags=D3D11_BIND_SHADER_RESOURCE;
+        const std::uint32_t blackPixel{};const D3D11_SUBRESOURCE_DATA blackData{&blackPixel,sizeof(blackPixel),0};
+        Ptr<ID3D11Texture2D> blackTexture;
+        if(FAILED(device_->CreateTexture2D(&black,&blackData,&blackTexture)) ||
+            FAILED(device_->CreateShaderResourceView(blackTexture.Get(),nullptr,&tiledBlack_))) return false;
         // dest * Target1 + Target0: the accumulator takes the root of the
         // occlusion and the added bounce; its alpha is kept.
         D3D11_BLEND_DESC blend{};
@@ -415,11 +434,11 @@ namespace csah::screen_space_gi
             FAILED(device_->CreateDepthStencilState(&depth,&composeDepth_))) return false;
         return true;
     }
-    ID3D11RenderTargetView* Runtime::composeTarget(std::size_t index,ID3D11ShaderResourceView* accumulator) noexcept
+    ID3D11RenderTargetView* Runtime::composeTarget(ID3D11ShaderResourceView* accumulator) noexcept
     {
         if(!accumulator) return nullptr;
         ComPtr<ID3D11Resource> resource;accumulator->GetResource(&resource);
-        auto& target=composeTargets_[index];
+        auto& target=composeTarget_;
         if(target.view && target.resource.Get()==resource.Get()) return target.view.Get();
         target={};
         ComPtr<ID3D11Texture2D> texture;
@@ -435,20 +454,23 @@ namespace csah::screen_space_gi
     void Runtime::composeOcclusion(ID3D11DeviceContext* context,bool tiled) noexcept
     {
         if(!requested() || context!=context_.Get() || !ready_ || preparedFrame_!=frame_ || composedFrame_==frame_) return;
-        composedFrame_=frame_;
+        composedFrame_=frame_;foldedTiled_.Reset();
         // Native DFComposite inputs: t0 albedo, t5 deferred diffuse, t11 tiled diffuse.
         std::array<ComPtr<ID3D11ShaderResourceView>,3> inputs;
         context->PSGetShaderResources(0,1,inputs[0].GetAddressOf());
         context->PSGetShaderResources(5,1,inputs[1].GetAddressOf());
-        context->PSGetShaderResources(11,1,inputs[2].GetAddressOf());
-        const std::array<ID3D11RenderTargetView*,2> targets{composeTarget(0,inputs[1].Get()),tiled?composeTarget(1,inputs[2].Get()):nullptr};
-        D3D11_TEXTURE2D_DESC accumulator{};
-        if(!inputs[0] || !targets[0] || (tiled && !targets[1]) || !textureDescription(inputs[1].Get(),accumulator)) {
+        if(tiled) context->PSGetShaderResources(ScopedTiledFold::kTiledSlot,1,inputs[2].GetAddressOf());
+        auto* const target=composeTarget(inputs[1].Get());
+        D3D11_TEXTURE2D_DESC accumulator{},tiledAccumulator{};
+        const bool described=textureDescription(inputs[1].Get(),accumulator);
+        const bool tiledReady=!tiled || (described && textureDescription(inputs[2].Get(),tiledAccumulator) &&
+            tiledAccumulator.Width==accumulator.Width && tiledAccumulator.Height==accumulator.Height);
+        if(!inputs[0] || !target || !described || !tiledReady) {
             composeFailures_.fetch_add(1,std::memory_order_relaxed);
             if(!loggedComposeFailure_) {
                 loggedComposeFailure_=true;
                 logging::error("Screen Space GI could not bind the composite diffuse accumulators (albedo={}, deferred={}, tiled={}/{}); this frame keeps only the ambient half of the occlusion.",
-                    static_cast<bool>(inputs[0]),targets[0]!=nullptr,tiled,targets[1]!=nullptr);
+                    static_cast<bool>(inputs[0]),target!=nullptr,tiled,tiledReady);
             }
             return;
         }
@@ -473,15 +495,26 @@ namespace csah::screen_space_gi
             context->PSSetShaderResources(kConsumerFirstSlot,kConsumerViewCount,gi.data());
             ID3D11Buffer* buffer=frameStereo_.Get();context->PSSetConstantBuffers(8,1,&buffer);
             buffer=frameCamera_.Get();context->PSSetConstantBuffers(12,1,&buffer);
-            for(UINT i=0;i<(tiled?2u:1u);i++) {
-                // The bounce is added once, to the deferred accumulator.
-                context->PSSetShader(i==0?composePixel_.Get():composeScale_.Get(),nullptr,0);
-                context->OMSetRenderTargets(1,&targets[i],nullptr);
-                context->Draw(3,0);
-            }
+            // The tiled accumulator stays a shader input: its light is folded
+            // into the deferred accumulator by the same draw.
+            ID3D11ShaderResourceView* const tiledView=tiled?inputs[2].Get():nullptr;
+            context->PSSetShaderResources(4,1,&tiledView);
+            context->PSSetShader(composePixel_.Get(),nullptr,0);
+            context->OMSetRenderTargets(1,&target,nullptr);
+            context->Draw(3,0);
         }
+        if(tiled) inputs[2]->GetResource(&foldedTiled_);
         compositeScope_.finish();
         composedFrames_.fetch_add(1,std::memory_order_relaxed);
+    }
+    ScopedTiledFold Runtime::scopeTiledFold(ID3D11DeviceContext* context) noexcept
+    {
+        if(context!=context_.Get() || composedFrame_!=frame_ || !foldedTiled_ || !tiledBlack_) return {};
+        ComPtr<ID3D11ShaderResourceView> bound;context->PSGetShaderResources(ScopedTiledFold::kTiledSlot,1,&bound);
+        if(!bound) return {};
+        ComPtr<ID3D11Resource> resource;bound->GetResource(&resource);
+        if(resource.Get()!=foldedTiled_.Get()) return {};
+        return {context,tiledBlack_.Get()};
     }
     bool Runtime::reject(Rejection reason) noexcept
     {

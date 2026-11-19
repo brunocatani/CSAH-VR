@@ -2304,10 +2304,15 @@ namespace csah::render
             return runtime.scopeReflections(context,water,environment);
         }
 
-        void recordActiveIblCaptureProbe(
+        // The returned scope must outlive the native draw: Screen Space GI
+        // folds the tiled accumulator into the deferred one, and the scope
+        // keeps the composite from adding the tiled light a second time.
+        [[nodiscard]] screen_space_gi::ScopedTiledFold recordActiveIblCaptureProbe(
             ID3D11DeviceContext* context) noexcept
         {
-            if (activeWorldCameraComposite && activeWorldCameraContext == context) {
+            const bool worldComposite =
+                activeWorldCameraComposite && activeWorldCameraContext == context;
+            if (worldComposite) {
                 dlaa::Runtime::get().onWorldCompositeDraw(context);
                 cloud_shadows::Runtime::get().observeMainView(context);
                 if(activeWorldCompositeDiffuse) {
@@ -2316,12 +2321,15 @@ namespace csah::render
                     ssgi.composeOcclusion(context,activeWorldCompositeTiled);
                 }
             }
-            if (activeIblCaptureProbePass.lastEnvironmentContractPlusOne == 0) {
-                return;
+            auto tiledFold = worldComposite && activeWorldCompositeTiled ?
+                screen_space_gi::Runtime::get().scopeTiledFold(context) :
+                screen_space_gi::ScopedTiledFold{};
+            if (activeIblCaptureProbePass.lastEnvironmentContractPlusOne != 0) {
+                ibl::Runtime::get().onCaptureProbeDraw(
+                    context,
+                    activeIblCaptureProbePass.lastEnvironmentContractPlusOne);
             }
-            ibl::Runtime::get().onCaptureProbeDraw(
-                context,
-                activeIblCaptureProbePass.lastEnvironmentContractPlusOne);
+            return tiledFold;
         }
 
         void preserveActiveIblCaptureProbeDraw(
@@ -3682,7 +3690,7 @@ namespace csah::render
                 filmic_tonemapping::Runtime::get().scopeDraw(
                     context,
                     activeFilmicTonemappingBinding);
-            recordActiveIblCaptureProbe(context);
+            const auto tiledFold = recordActiveIblCaptureProbe(context);
             if (qualificationSessionActive.load(std::memory_order_acquire)) {
                 qualificationDrawIndexedCalls.fetch_add(
                     1,
@@ -3789,7 +3797,7 @@ namespace csah::render
                 filmic_tonemapping::Runtime::get().scopeDraw(
                     context,
                     activeFilmicTonemappingBinding);
-            recordActiveIblCaptureProbe(context);
+            const auto tiledFold = recordActiveIblCaptureProbe(context);
             if (qualificationSessionActive.load(std::memory_order_acquire)) {
                 qualificationDrawCalls.fetch_add(1, std::memory_order_relaxed);
                 recordQualificationDraw(context);
@@ -3908,7 +3916,7 @@ namespace csah::render
                 filmic_tonemapping::Runtime::get().scopeDraw(
                     context,
                     activeFilmicTonemappingBinding);
-            recordActiveIblCaptureProbe(context);
+            const auto tiledFold = recordActiveIblCaptureProbe(context);
             if (qualificationSessionActive.load(std::memory_order_acquire)) {
                 qualificationDrawIndexedInstancedCalls.fetch_add(
                     1,
@@ -4030,7 +4038,7 @@ namespace csah::render
                 filmic_tonemapping::Runtime::get().scopeDraw(
                     context,
                     activeFilmicTonemappingBinding);
-            recordActiveIblCaptureProbe(context);
+            const auto tiledFold = recordActiveIblCaptureProbe(context);
             if (qualificationSessionActive.load(std::memory_order_acquire)) {
                 qualificationDrawInstancedCalls.fetch_add(
                     1,

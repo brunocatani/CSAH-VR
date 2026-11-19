@@ -51,6 +51,24 @@ namespace csah::screen_space_gi
         ID3D11DeviceContext* context_{};
         std::array<Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>,kConsumerViewCount> previous_;
     };
+    // Shows one native composite draw a black tiled accumulator, because
+    // composeOcclusion already folded that light into the deferred one.
+    class ScopedTiledFold final
+    {
+    public:
+        static constexpr UINT kTiledSlot = 11;
+        ScopedTiledFold() noexcept=default;
+        ScopedTiledFold(ID3D11DeviceContext* context,ID3D11ShaderResourceView* black) noexcept;
+        ~ScopedTiledFold();
+        ScopedTiledFold(ScopedTiledFold&& other) noexcept;
+        ScopedTiledFold(const ScopedTiledFold&)=delete;
+        ScopedTiledFold& operator=(const ScopedTiledFold&)=delete;
+        ScopedTiledFold& operator=(ScopedTiledFold&&)=delete;
+        [[nodiscard]] bool active() const noexcept {return context_!=nullptr;}
+    private:
+        ID3D11DeviceContext* context_{};
+        Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> previous_;
+    };
     // Thread model: applySettings runs on the settings owner's thread and only
     // writes pending_ under settingsMutex_; every other entry point runs on the
     // render thread that owns the immediate context, which copies pending_
@@ -68,10 +86,14 @@ namespace csah::screen_space_gi
         [[nodiscard]] ScopedBindings scopeAmbient(ID3D11DeviceContext* context,bool ambient,ID3D11ShaderResourceView* authoredPbr=nullptr, const pbr::FrameData& material={}, ID3D11ShaderResourceView* surface=nullptr) noexcept;
         // Called with the native DFComposite bound, before it draws. Capture
         // first: it records this frame's direct and ambient light for the next
-        // frame's bounce, before composeOcclusion scales the accumulators by
-        // the root of the occlusion and adds the bounce.
+        // frame's bounce, before composeOcclusion scales the deferred
+        // accumulator by the root of the occlusion, folds the tiled
+        // accumulator's light into it and adds the bounce.
         void captureRadiance(ID3D11DeviceContext* context,bool tiled) noexcept;
         void composeOcclusion(ID3D11DeviceContext* context,bool tiled) noexcept;
+        // For every native composite draw after composeOcclusion in a frame:
+        // active when the draw reads the tiled accumulator that was folded.
+        [[nodiscard]] ScopedTiledFold scopeTiledFold(ID3D11DeviceContext* context) noexcept;
         // True while that pass sets and restores pipeline state, so the D3D11
         // hooks pass its calls straight through instead of re-deriving the
         // active native draw from the pass's own shaders.
@@ -118,7 +140,7 @@ namespace csah::screen_space_gi
         bool prepareAmbient(ID3D11DeviceContext* context, ID3D11ShaderResourceView* authored, const pbr::FrameData& material, ID3D11ShaderResourceView* surface) noexcept;
         bool createTexture(Texture& texture,DXGI_FORMAT format,UINT width,UINT height,UINT mips=1) noexcept;
         bool createComposeResources() noexcept;
-        [[nodiscard]] ID3D11RenderTargetView* composeTarget(std::size_t index,ID3D11ShaderResourceView* accumulator) noexcept;
+        [[nodiscard]] ID3D11RenderTargetView* composeTarget(ID3D11ShaderResourceView* accumulator) noexcept;
         [[nodiscard]] ConsumerViews consumerViews(ID3D11ShaderResourceView* albedo,ID3D11ShaderResourceView* authored,ID3D11ShaderResourceView* surface) const noexcept;
         void dispatch(Pass pass,std::initializer_list<ID3D11ShaderResourceView*> inputs,
             std::initializer_list<ID3D11UnorderedAccessView*> outputs,UINT width,UINT height,UINT eyes=2) noexcept;
@@ -130,11 +152,14 @@ namespace csah::screen_space_gi
         // G-buffer views and camera buffers captured by this frame's ambient
         // preparation (released at the next preparation or device reset).
         struct ComposeTarget {Ptr<ID3D11Resource> resource;Ptr<ID3D11RenderTargetView> view;};
-        // composePixel_ composes the deferred accumulator (root and bounce);
-        // composeScale_ only scales the tiled one.
-        Ptr<ID3D11VertexShader> composeVertex_;Ptr<ID3D11PixelShader> composePixel_,composeScale_;
+        Ptr<ID3D11VertexShader> composeVertex_;Ptr<ID3D11PixelShader> composePixel_;
         Ptr<ID3D11BlendState> composeBlend_;Ptr<ID3D11RasterizerState> composeRaster_;Ptr<ID3D11DepthStencilState> composeDepth_;
-        std::array<ComposeTarget,2> composeTargets_;
+        ComposeTarget composeTarget_;
+        // The tiled accumulator folded into the deferred one by this frame's
+        // compose (released at the next compose or device reset), and the
+        // black texture the composite reads in its place.
+        Ptr<ID3D11Resource> foldedTiled_;
+        Ptr<ID3D11ShaderResourceView> tiledBlack_;
         std::array<Ptr<ID3D11ShaderResourceView>,3> frameNative_;
         Ptr<ID3D11ShaderResourceView> frameAuthored_,frameSurface_;
         Ptr<ID3D11Buffer> frameStereo_,frameCamera_;
