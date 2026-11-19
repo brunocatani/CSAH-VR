@@ -4,14 +4,25 @@ import subprocess
 from pathlib import Path
 
 SOURCE_DIR = 'package/Shaders/Community/ScreenSpaceGI'
-# Dispatch order; the runtime indexes kScreenSpaceGIShaders with ScreenSpaceGIPass.
-PASSES = ('PrepareCS', 'PrefilterPositionCS', 'ReprojectCS', 'PrefilterRadianceCS', 'TraceCS', 'BlurCS', 'CaptureCS')
+# Runtime Pass order: (embedded name, source, defines). The runtime indexes
+# kScreenSpaceGIShaders with Runtime::Pass.
+PASSES = (
+    ('PrepareCS', 'PrepareCS', ()),
+    ('PrefilterPositionCS', 'PrefilterPositionCS', ()),
+    ('ReprojectCS', 'ReprojectCS', ()),
+    ('PrefilterRadianceCS', 'PrefilterRadianceCS', ()),
+    ('TraceCS', 'TraceCS', ()),
+    ('BlurCS', 'BlurCS', ()),
+    ('CaptureCS', 'CaptureCS', ()),
+    ('TraceDiffuseCS', 'TraceCS', ('CSAH_SSGI_SPECULAR_TRACE=0',)),
+)
 
 
-def compile_shader(root, fxc, output, name, source, profile, entry):
+def compile_shader(root, fxc, output, name, source, profile, entry, defines=()):
     binary = output.parent / (name + '.dxbc')
     source_path = root / SOURCE_DIR / (source + '.hlsl')
-    subprocess.run([str(fxc), '/nologo', '/T', profile, '/E', entry, '/O3', '/Ges', '/WX', '/Fo', str(binary), str(source_path)], check=True)
+    flags = [part for define in defines for part in ('/D', define)]
+    subprocess.run([str(fxc), '/nologo', '/T', profile, '/E', entry, '/O3', '/Ges', '/WX', *flags, '/Fo', str(binary), str(source_path)], check=True)
     return binary.read_bytes()
 
 
@@ -26,8 +37,8 @@ def array_rows(symbol, data):
 def generate(root, fxc, output):
     output.parent.mkdir(parents=True, exist_ok=True)
     rows = ['#pragma once', '#include <cstddef>', 'struct ScreenSpaceGIShader {const unsigned char* data;std::size_t size;};']
-    for index, name in enumerate(PASSES):
-        rows.extend(array_rows(f'kScreenSpaceGI{index}', compile_shader(root, fxc, output, name, name, 'cs_5_0', 'main')))
+    for index, (name, source, defines) in enumerate(PASSES):
+        rows.extend(array_rows(f'kScreenSpaceGI{index}', compile_shader(root, fxc, output, name, source, 'cs_5_0', 'main', defines)))
     rows.append('inline constexpr ScreenSpaceGIShader kScreenSpaceGIShaders[]={')
     rows.extend(f'{{kScreenSpaceGI{i},sizeof(kScreenSpaceGI{i})}},' for i in range(len(PASSES)))
     rows.append('};')

@@ -42,7 +42,7 @@ namespace
         float pbr[16]{};
     };
     static_assert(sizeof(Constants)==192);
-    enum Pass : UINT {Prepare,PrefilterPosition,Reproject,PrefilterRadiance,Trace,Blur,Capture,PassCount};
+    enum Pass : UINT {Prepare,PrefilterPosition,Reproject,PrefilterRadiance,Trace,Blur,Capture,TraceDiffuse,PassCount};
     struct Texture
     {
         ComPtr<ID3D11Texture2D> texture;ComPtr<ID3D11ShaderResourceView> view,top;ComPtr<ID3D11UnorderedAccessView> output;
@@ -58,10 +58,12 @@ namespace
         Fixture(const std::filesystem::path& root,D3D_DRIVER_TYPE driver)
         {
             D3D_FEATURE_LEVEL level;check(D3D11CreateDevice(nullptr,driver,nullptr,0,nullptr,0,D3D11_SDK_VERSION,&device,&level,&context),"device");
-            const std::array names{L"PrepareCS.hlsl",L"PrefilterPositionCS.hlsl",L"ReprojectCS.hlsl",L"PrefilterRadianceCS.hlsl",L"TraceCS.hlsl",L"BlurCS.hlsl",L"CaptureCS.hlsl"};
+            const std::array names{L"PrepareCS.hlsl",L"PrefilterPositionCS.hlsl",L"ReprojectCS.hlsl",L"PrefilterRadianceCS.hlsl",L"TraceCS.hlsl",L"BlurCS.hlsl",L"CaptureCS.hlsl",L"TraceCS.hlsl"};
+            static_assert(names.size()==PassCount);
+            const D3D_SHADER_MACRO diffuseOnly[]{{"CSAH_SSGI_SPECULAR_TRACE","0"},{nullptr,nullptr}};
             for(std::size_t i=0;i<names.size();i++) {
                 ComPtr<ID3DBlob> code,error;auto p=root/L"package/Shaders/Community/ScreenSpaceGI"/names[i];
-                const auto hr=D3DCompileFromFile(p.c_str(),nullptr,D3D_COMPILE_STANDARD_FILE_INCLUDE,"main","cs_5_0",D3DCOMPILE_ENABLE_STRICTNESS|D3DCOMPILE_WARNINGS_ARE_ERRORS|D3DCOMPILE_OPTIMIZATION_LEVEL3,0,&code,&error);
+                const auto hr=D3DCompileFromFile(p.c_str(),i==TraceDiffuse?diffuseOnly:nullptr,D3D_COMPILE_STANDARD_FILE_INCLUDE,"main","cs_5_0",D3DCOMPILE_ENABLE_STRICTNESS|D3DCOMPILE_WARNINGS_ARE_ERRORS|D3DCOMPILE_OPTIMIZATION_LEVEL3,0,&code,&error);
                 if(error) std::cerr.write(static_cast<const char*>(error->GetBufferPointer()),error->GetBufferSize());check(hr,"compile");
                 if(i==Prepare) {require(csah::render::declaresTexture2D(code->GetBufferPointer(),code->GetBufferSize(),0),"native texture slot metadata");require(!csah::render::declaresTexture2D(code->GetBufferPointer(),code->GetBufferSize(),11),"stale tiled slot metadata");require(!csah::render::declaresTexture2D(code->GetBufferPointer(),16,0),"truncated DXBC metadata");}
                 check(device->CreateComputeShader(code->GetBufferPointer(),code->GetBufferSize(),nullptr,&shader[i]),"compute shader");
@@ -163,9 +165,9 @@ namespace
                 {radianceMips.output.Get(),remappedLuma.output.Get(),remappedChroma.output.Get(),remappedSpecular.output.Get()});
             f.mips(PrefilterRadiance,radianceMips);
         }
-        void trace()
+        void trace(Pass kernel=Trace)
         {
-            f.dispatch(Trace,{position.view.Get(),normal.view.Get(),radianceMips.view.Get(),f.noise.Get(),remappedLuma.view.Get(),remappedChroma.view.Get(),remappedSpecular.view.Get()},
+            f.dispatch(kernel,{position.view.Get(),normal.view.Get(),radianceMips.view.Get(),f.noise.Get(),remappedLuma.view.Get(),remappedChroma.view.Get(),remappedSpecular.view.Get()},
                 {tracedLuma.output.Get(),tracedChroma.output.Get(),specular.output.Get()});
             f.dispatch(Blur,{position.view.Get(),normal.view.Get(),tracedLuma.view.Get(),tracedChroma.view.Get()},{luma.output.Get(),chroma.output.Get()});
         }
@@ -330,6 +332,19 @@ namespace
             minAO=(std::min)(minAO,k.z);maxGI=(std::max)(maxGI,l.x);
         }
         require(minAO<.95f,"corner occlusion missing");require(maxGI>.001f,"visible indirect light missing");
+        // With the specular trace off, the diffuse-only build must match the
+        // full build exactly on the same corner frame.
+        f.settings.specular=0;
+        c.reproject();c.trace();const auto fullLuma=f.read(c.tracedLuma),fullChroma=f.read(c.tracedChroma);
+        c.trace(TraceDiffuse);const auto diffuseLuma=f.read(c.tracedLuma),diffuseChroma=f.read(c.tracedChroma);
+        // Separate builds may fuse operations differently: allow rounding only.
+        const auto same=[](const V& a,const V& b) {
+            const auto close=[](float x,float y) {return std::abs(x-y)<=1e-5f*(std::max)(1.0f,std::abs(x));};
+            return close(a.x,b.x)&&close(a.y,b.y)&&close(a.z,b.z)&&close(a.w,b.w);
+        };
+        for(UINT i=0;i<fullLuma.size();i++)
+            require(same(fullLuma[i],diffuseLuma[i]) && same(fullChroma[i],diffuseChroma[i]),"diffuse-only trace differs from the full trace with specular off");
+        f.settings.specular=1;
         f.settings.history=0;c.frame();auto reset=f.read(c.luma);
         for(const auto v:reset) require(v.x==0&&v.y==0&&v.z==0&&v.w==0,"reset used stale radiance");
         f.settings.history=1;f.settings.gi=0;c.frame();auto aoOnly=f.read(c.luma),aoOnlyChroma=f.read(c.chroma);

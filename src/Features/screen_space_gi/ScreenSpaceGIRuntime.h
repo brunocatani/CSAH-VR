@@ -79,7 +79,9 @@ namespace csah::screen_space_gi
         [[nodiscard]] RuntimeSnapshot snapshot() const noexcept;
     private:
         static constexpr UINT kMipCount=5;
-        enum class Pass : std::uint8_t {prepare,prefilterPosition,reproject,prefilterRadiance,trace,blur,capture,count};
+        // traceDiffuse is the trace compiled without the experimental
+        // specular path, used whenever that setting is off.
+        enum class Pass : std::uint8_t {prepare,prefilterPosition,reproject,prefilterRadiance,trace,blur,capture,traceDiffuse,count};
         bool reject(Rejection reason) noexcept;
         Runtime()=default;
         template<class T> using Ptr=Microsoft::WRL::ComPtr<T>;

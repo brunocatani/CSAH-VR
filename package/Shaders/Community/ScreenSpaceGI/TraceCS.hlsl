@@ -7,6 +7,12 @@
 // on the receiver's own plane are skipped, and AO is temporally accumulated
 // with the bounce (upstream leaves AO per-frame).
 #include "ScreenSpaceGICommon.hlsli"
+// The runtime embeds a second build with CSAH_SSGI_SPECULAR_TRACE 0 for the
+// default (specular trace off): without the specular cone, NDF and its masks
+// the kernel needs fewer registers, so more of it runs at once.
+#ifndef CSAH_SSGI_SPECULAR_TRACE
+#define CSAH_SSGI_SPECULAR_TRACE 1
+#endif
 Texture2DArray<float> Position : register(t0);
 Texture2DArray<float4> Normal : register(t1);
 Texture2DArray<float4> Radiance : register(t2);
@@ -47,7 +53,7 @@ void main(uint3 id:SV_DispatchThreadID)
     if(traced)
     {
         const bool gi=EnableGI!=0 && geometry>0;
-        const bool specularGI=gi && EnableSpecular!=0;
+        const bool specularGI=CSAH_SSGI_SPECULAR_TRACE && gi && EnableSpecular!=0;
         const float roughness=max(.2,saturate(surface.w));
         const float nv=clamp(dot(view,n),1e-5,1);
         const float pixelSize=center.z*PixelViewScale(rays);

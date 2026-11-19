@@ -218,6 +218,7 @@ namespace csah::screen_space_gi
         if(frame_<nextRetry_) return false;
         width_=height_=0;historyValid_=false;
         const auto create=[&]() noexcept {
+            static_assert(std::size(kScreenSpaceGIShaders)==static_cast<std::size_t>(Pass::count),"generate_screen_space_gi_shaders.py PASSES must follow Runtime::Pass");
             for(std::size_t i=0;i<shaders_.size();i++) {
                 if(!shaders_[i] && FAILED(device_->CreateComputeShader(kScreenSpaceGIShaders[i].data,kScreenSpaceGIShaders[i].size,nullptr,&shaders_[i]))) return false;
             }
@@ -335,7 +336,7 @@ namespace csah::screen_space_gi
         dispatch(Pass::prefilterRadiance,{radianceMips_.topView.Get()},
             {radianceMips_.mipOutputs[0].Get(),radianceMips_.mipOutputs[1].Get(),radianceMips_.mipOutputs[2].Get(),radianceMips_.mipOutputs[3].Get()},mipWidth,mipHeight);
         timing.mark();
-        dispatch(Pass::trace,{position.view.Get(),surfaceNormal.view.Get(),radianceMips_.view.Get(),noise_.Get(),remappedLuma_.view.Get(),remappedChroma_.view.Get(),remappedSpecular_.view.Get(),emissive_.Get()},
+        dispatch(uploaded_.specular!=0?Pass::trace:Pass::traceDiffuse,{position.view.Get(),surfaceNormal.view.Get(),radianceMips_.view.Get(),noise_.Get(),remappedLuma_.view.Get(),remappedChroma_.view.Get(),remappedSpecular_.view.Get(),emissive_.Get()},
             {tracedLuma_.output.Get(),tracedChroma_.output.Get(),specular_[current_].output.Get()},width,height);
         timing.mark();
         dispatch(Pass::blur,{position.view.Get(),surfaceNormal.view.Get(),tracedLuma_.view.Get(),tracedChroma_.view.Get()},
