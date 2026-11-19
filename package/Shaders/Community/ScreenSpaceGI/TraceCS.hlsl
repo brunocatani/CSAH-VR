@@ -24,16 +24,6 @@ Texture2D<float4> NativeEmissive : register(t7);
 RWTexture2DArray<float4> Luma : register(u0);
 RWTexture2DArray<float4> Chroma : register(u1);
 RWTexture2DArray<float4> Specular : register(u2);
-// Horizon angles of every step, as upstream gi.cs.hlsl (FastMath::ACos:
-// Eberly's degree-1 polynomial, Drobot's FastMath, MIT). Its maximum error,
-// 9.0e-3 rad, is 9% of one of the 32 bitmask sectors; it replaces fxc's
-// 4th-order acos expansion (6.7e-5 rad) with 7 instructions instead of 10.
-float HorizonAcos(float inX)
-{
-    const float x=abs(inX);
-    const float result=(-.156583*x+Pi*.5)*sqrt(1-x);
-    return inX>=0?result:Pi-result;
-}
 float DistributionGGX(float roughness,float nh)
 {
     float a=roughness*roughness,a2=a*a;
@@ -109,15 +99,15 @@ void main(uint3 id:SV_DispatchThreadID)
                 // Integer sampling can leave the analytic slice plane. A
                 // coplanar/below-surface point cannot occlude this hemisphere.
                 if(dot(n,horizon)<=1e-4) continue;
-                float front=HorizonAcos(clamp(dot(horizon,view),-1,1));
-                float back=HorizonAcos(clamp(dot(SafeNormal(delta-view*Thickness),view),-1,1));
+                float front=acos(clamp(dot(horizon,view),-1,1));
+                float back=acos(clamp(dot(SafeNormal(delta-view*Thickness),view),-1,1));
                 float2 range=-side*(side==-1?float2(front,back):float2(back,front));
                 uint covered=s<AORadius?AngleMask(smoothstep(0,1,(range+angle)/Pi+.5)):0;
                 uint giCovered=0,specularCovered=0;
                 if(gi)
                 {
                     // Bounce light uses a deeper surface (upstream: 300 units).
-                    float backGI=HorizonAcos(clamp(dot(SafeNormal(delta-view*300),view),-1,1));
+                    float backGI=acos(clamp(dot(SafeNormal(delta-view*300),view),-1,1));
                     float2 rangeGI=-side*(side==-1?float2(front,backGI):float2(backGI,front));
                     if(specularGI)
                     {
