@@ -79,9 +79,11 @@ namespace csah::screen_space_gi
         [[nodiscard]] RuntimeSnapshot snapshot() const noexcept;
     private:
         static constexpr UINT kMipCount=5;
-        // traceDiffuse is the trace compiled without the experimental
-        // specular path, used whenever that setting is off.
-        enum class Pass : std::uint8_t {prepare,prefilterPosition,reproject,prefilterRadiance,trace,blur,capture,traceDiffuse,count};
+        // trace covers both eyes and includes the experimental specular
+        // path. With that setting off, tracePrimary traces the frame's
+        // primary eye and traceSecondary resolves the other eye from it
+        // (TraceCS.hlsl).
+        enum class Pass : std::uint8_t {prepare,prefilterPosition,reproject,prefilterRadiance,trace,blur,capture,tracePrimary,traceSecondary,count};
         bool reject(Rejection reason) noexcept;
         Runtime()=default;
         template<class T> using Ptr=Microsoft::WRL::ComPtr<T>;
@@ -119,7 +121,7 @@ namespace csah::screen_space_gi
         [[nodiscard]] ID3D11RenderTargetView* composeTarget(std::size_t index,ID3D11ShaderResourceView* accumulator) noexcept;
         [[nodiscard]] ConsumerViews consumerViews(ID3D11ShaderResourceView* albedo,ID3D11ShaderResourceView* authored,ID3D11ShaderResourceView* surface) const noexcept;
         void dispatch(Pass pass,std::initializer_list<ID3D11ShaderResourceView*> inputs,
-            std::initializer_list<ID3D11UnorderedAccessView*> outputs,UINT width,UINT height) noexcept;
+            std::initializer_list<ID3D11UnorderedAccessView*> outputs,UINT width,UINT height,UINT eyes=2) noexcept;
         Ptr<ID3D11Device> device_;Ptr<ID3D11DeviceContext> context_;
         std::array<Ptr<ID3D11ComputeShader>,static_cast<std::size_t>(Pass::count)> shaders_;
         Ptr<ID3D11Buffer> constants_,previousCamera_;
@@ -143,6 +145,9 @@ namespace csah::screen_space_gi
         // History ping-pongs on current_; remapped and traced are per-frame.
         std::array<Texture,2> positions_,normals_,luma_,chroma_,specular_;
         Texture remappedLuma_,remappedChroma_,remappedSpecular_,tracedLuma_,tracedChroma_;
+        // The primary eye's trace before temporal accumulation, read by the
+        // other eye in the same frame.
+        Texture estimateLuma_,estimateChroma_;
         Texture radiance_,radianceMips_;
         // GpuProfilingMode group 16: generation passes at the ambient pass, and
         // the composite-time capture and compose (one scope across both calls).

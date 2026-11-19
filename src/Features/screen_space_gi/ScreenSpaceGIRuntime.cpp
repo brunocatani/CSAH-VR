@@ -15,7 +15,7 @@ namespace csah::screen_space_gi
     namespace
     {
         // Compute bindings one SSGI pass may use, saved and restored as a block.
-        constexpr UINT kComputeInputs=8,kComputeOutputs=4;
+        constexpr UINT kComputeInputs=10,kComputeOutputs=4;
         // Render thread only: set for the whole composite-time pass, including
         // the state restore that rebinds the native composite.
         bool gComposeRender{};
@@ -142,7 +142,7 @@ namespace csah::screen_space_gi
     {
         device_=device;context_=context;shaders_={};constants_.Reset();parameterView_.Reset();previousCamera_.Reset();noise_.Reset();
         positions_={};normals_={};luma_={};chroma_={};specular_={};
-        remappedLuma_={};remappedChroma_={};remappedSpecular_={};tracedLuma_={};tracedChroma_={};radiance_={};radianceMips_={};
+        remappedLuma_={};remappedChroma_={};remappedSpecular_={};tracedLuma_={};tracedChroma_={};estimateLuma_={};estimateChroma_={};radiance_={};radianceMips_={};
         composeVertex_.Reset();composePixel_.Reset();composeScale_.Reset();composeBlend_.Reset();composeRaster_.Reset();composeDepth_.Reset();
         composeTargets_={};frameNative_={};frameAuthored_.Reset();frameSurface_.Reset();frameStereo_.Reset();frameCamera_.Reset();emissive_.Reset();
         frame_=preparedFrame_=radianceFrame_=composedFrame_=nextRetry_=0;width_=height_=current_=0;ready_=historyValid_=loggedFailure_=loggedActive_=false;
@@ -244,7 +244,8 @@ namespace csah::screen_space_gi
             return createComposeResources() &&
                 createTexture(remappedLuma_,half,width,height) && createTexture(remappedChroma_,half,width,height) &&
                 createTexture(remappedSpecular_,half,width,height) && createTexture(tracedLuma_,half,width,height) &&
-                createTexture(tracedChroma_,half,width,height) && createTexture(radiance_,half,width,height) &&
+                createTexture(tracedChroma_,half,width,height) && createTexture(estimateLuma_,half,width,height) &&
+                createTexture(estimateChroma_,half,width,height) && createTexture(radiance_,half,width,height) &&
                 createTexture(radianceMips_,half,width,height,kMipCount);
         };
         if(!create()) return failAllocation();
@@ -252,7 +253,7 @@ namespace csah::screen_space_gi
         return true;
     }
     void Runtime::dispatch(Pass pass,std::initializer_list<ID3D11ShaderResourceView*> inputs,
-        std::initializer_list<ID3D11UnorderedAccessView*> outputs,UINT width,UINT height) noexcept
+        std::initializer_list<ID3D11UnorderedAccessView*> outputs,UINT width,UINT height,UINT eyes) noexcept
     {
         std::array<ID3D11ShaderResourceView*,kComputeInputs> views{};std::copy(inputs.begin(),inputs.end(),views.begin());
         std::array<ID3D11UnorderedAccessView*,kComputeOutputs> targets{};std::copy(outputs.begin(),outputs.end(),targets.begin());
@@ -260,7 +261,7 @@ namespace csah::screen_space_gi
         const std::array<ID3D11UnorderedAccessView*,kComputeOutputs> noOutputs{};
         context_->CSSetShaderResources(0,kComputeInputs,views.data());context_->CSSetUnorderedAccessViews(0,kComputeOutputs,targets.data(),nullptr);
         context_->CSSetShader(shaders_[static_cast<std::size_t>(pass)].Get(),nullptr,0);
-        context_->Dispatch((std::max(width,1u)+7)/8,(std::max(height,1u)+7)/8,2);
+        context_->Dispatch((std::max(width,1u)+7)/8,(std::max(height,1u)+7)/8,eyes);
         context_->CSSetUnorderedAccessViews(0,kComputeOutputs,noOutputs.data(),nullptr);context_->CSSetShaderResources(0,kComputeInputs,noInputs.data());
     }
     bool Runtime::prepareAmbient(ID3D11DeviceContext* context, ID3D11ShaderResourceView* authored, const pbr::FrameData& materialSettings, ID3D11ShaderResourceView* surface) noexcept
@@ -336,8 +337,17 @@ namespace csah::screen_space_gi
         dispatch(Pass::prefilterRadiance,{radianceMips_.topView.Get()},
             {radianceMips_.mipOutputs[0].Get(),radianceMips_.mipOutputs[1].Get(),radianceMips_.mipOutputs[2].Get(),radianceMips_.mipOutputs[3].Get()},mipWidth,mipHeight);
         timing.mark();
-        dispatch(uploaded_.specular!=0?Pass::trace:Pass::traceDiffuse,{position.view.Get(),surfaceNormal.view.Get(),radianceMips_.view.Get(),noise_.Get(),remappedLuma_.view.Get(),remappedChroma_.view.Get(),remappedSpecular_.view.Get(),emissive_.Get()},
-            {tracedLuma_.output.Get(),tracedChroma_.output.Get(),specular_[current_].output.Get()},width,height);
+        if(uploaded_.specular!=0) {
+            dispatch(Pass::trace,{position.view.Get(),surfaceNormal.view.Get(),radianceMips_.view.Get(),noise_.Get(),remappedLuma_.view.Get(),remappedChroma_.view.Get(),remappedSpecular_.view.Get(),emissive_.Get()},
+                {tracedLuma_.output.Get(),tracedChroma_.output.Get(),specular_[current_].output.Get()},width,height);
+        } else {
+            // One eye slice per dispatch; each kernel picks its eye from the
+            // frame parity. The second reads what the first just estimated.
+            dispatch(Pass::tracePrimary,{position.view.Get(),surfaceNormal.view.Get(),radianceMips_.view.Get(),noise_.Get(),remappedLuma_.view.Get(),remappedChroma_.view.Get(),nullptr,emissive_.Get()},
+                {tracedLuma_.output.Get(),tracedChroma_.output.Get(),estimateLuma_.output.Get(),estimateChroma_.output.Get()},width,height,1);
+            dispatch(Pass::traceSecondary,{position.view.Get(),surfaceNormal.view.Get(),radianceMips_.view.Get(),noise_.Get(),remappedLuma_.view.Get(),remappedChroma_.view.Get(),nullptr,emissive_.Get(),estimateLuma_.view.Get(),estimateChroma_.view.Get()},
+                {tracedLuma_.output.Get(),tracedChroma_.output.Get()},width,height,1);
+        }
         timing.mark();
         dispatch(Pass::blur,{position.view.Get(),surfaceNormal.view.Get(),tracedLuma_.view.Get(),tracedChroma_.view.Get()},
             {luma_[current_].output.Get(),chroma_[current_].output.Get()},width,height);
@@ -345,7 +355,7 @@ namespace csah::screen_space_gi
         context->CopyResource(previousCamera_.Get(),camera.Get());
         frameNative_={inputs[0],inputs[1],inputs[2]};frameAuthored_=authored;frameSurface_=surface;frameStereo_=stereo;frameCamera_=camera;
         preparedFrame_=frame_;ready_=true;preparedFrames_.fetch_add(1,std::memory_order_relaxed);
-        if(!loggedActive_) {loggedActive_=true;logging::info("Screen Space GI active: two isolated {}x{} eye slices, {} slices x {} steps, AO={}, indirect={}, experimentalSpecular={}, temporal={}, blur={}; current geometry and prior-frame surface lighting.",
+        if(!loggedActive_) {loggedActive_=true;logging::info("Screen Space GI active: two {}x{} eye slices, {} slices x {} steps, AO={}, indirect={}, experimentalSpecular={}, temporal={}, blur={}; current geometry and prior-frame surface lighting.",
             width_,height_,uploaded_.slices,uploaded_.steps,uploaded_.aoPower,uploaded_.gi!=0,uploaded_.specular!=0,uploaded_.temporal!=0,uploaded_.blur!=0);}
         return true;
     }

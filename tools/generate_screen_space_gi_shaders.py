@@ -14,7 +14,8 @@ PASSES = (
     ('TraceCS', 'TraceCS', ()),
     ('BlurCS', 'BlurCS', ()),
     ('CaptureCS', 'CaptureCS', ()),
-    ('TraceDiffuseCS', 'TraceCS', ('CSAH_SSGI_SPECULAR_TRACE=0',)),
+    ('TracePrimaryCS', 'TraceCS', ('CSAH_SSGI_SPECULAR_TRACE=0', 'CSAH_SSGI_STEREO=1')),
+    ('TraceSecondaryCS', 'TraceCS', ('CSAH_SSGI_SPECULAR_TRACE=0', 'CSAH_SSGI_STEREO=2')),
 )
 
 

@@ -42,7 +42,7 @@ namespace
         float pbr[16]{};
     };
     static_assert(sizeof(Constants)==192);
-    enum Pass : UINT {Prepare,PrefilterPosition,Reproject,PrefilterRadiance,Trace,Blur,Capture,TraceDiffuse,PassCount};
+    enum Pass : UINT {Prepare,PrefilterPosition,Reproject,PrefilterRadiance,Trace,Blur,Capture,TracePrimary,TraceSecondary,PassCount};
     struct Texture
     {
         ComPtr<ID3D11Texture2D> texture;ComPtr<ID3D11ShaderResourceView> view,top;ComPtr<ID3D11UnorderedAccessView> output;
@@ -58,12 +58,13 @@ namespace
         Fixture(const std::filesystem::path& root,D3D_DRIVER_TYPE driver)
         {
             D3D_FEATURE_LEVEL level;check(D3D11CreateDevice(nullptr,driver,nullptr,0,nullptr,0,D3D11_SDK_VERSION,&device,&level,&context),"device");
-            const std::array names{L"PrepareCS.hlsl",L"PrefilterPositionCS.hlsl",L"ReprojectCS.hlsl",L"PrefilterRadianceCS.hlsl",L"TraceCS.hlsl",L"BlurCS.hlsl",L"CaptureCS.hlsl",L"TraceCS.hlsl"};
+            const std::array names{L"PrepareCS.hlsl",L"PrefilterPositionCS.hlsl",L"ReprojectCS.hlsl",L"PrefilterRadianceCS.hlsl",L"TraceCS.hlsl",L"BlurCS.hlsl",L"CaptureCS.hlsl",L"TraceCS.hlsl",L"TraceCS.hlsl"};
             static_assert(names.size()==PassCount);
-            const D3D_SHADER_MACRO diffuseOnly[]{{"CSAH_SSGI_SPECULAR_TRACE","0"},{nullptr,nullptr}};
+            const D3D_SHADER_MACRO primary[]{{"CSAH_SSGI_SPECULAR_TRACE","0"},{"CSAH_SSGI_STEREO","1"},{nullptr,nullptr}};
+            const D3D_SHADER_MACRO secondary[]{{"CSAH_SSGI_SPECULAR_TRACE","0"},{"CSAH_SSGI_STEREO","2"},{nullptr,nullptr}};
             for(std::size_t i=0;i<names.size();i++) {
                 ComPtr<ID3DBlob> code,error;auto p=root/L"package/Shaders/Community/ScreenSpaceGI"/names[i];
-                const auto hr=D3DCompileFromFile(p.c_str(),i==TraceDiffuse?diffuseOnly:nullptr,D3D_COMPILE_STANDARD_FILE_INCLUDE,"main","cs_5_0",D3DCOMPILE_ENABLE_STRICTNESS|D3DCOMPILE_WARNINGS_ARE_ERRORS|D3DCOMPILE_OPTIMIZATION_LEVEL3,0,&code,&error);
+                const auto hr=D3DCompileFromFile(p.c_str(),i==TracePrimary?primary:i==TraceSecondary?secondary:nullptr,D3D_COMPILE_STANDARD_FILE_INCLUDE,"main","cs_5_0",D3DCOMPILE_ENABLE_STRICTNESS|D3DCOMPILE_WARNINGS_ARE_ERRORS|D3DCOMPILE_OPTIMIZATION_LEVEL3,0,&code,&error);
                 if(error) std::cerr.write(static_cast<const char*>(error->GetBufferPointer()),error->GetBufferSize());check(hr,"compile");
                 if(i==Prepare) {require(csah::render::declaresTexture2D(code->GetBufferPointer(),code->GetBufferSize(),0),"native texture slot metadata");require(!csah::render::declaresTexture2D(code->GetBufferPointer(),code->GetBufferSize(),11),"stale tiled slot metadata");require(!csah::render::declaresTexture2D(code->GetBufferPointer(),16,0),"truncated DXBC metadata");}
                 check(device->CreateComputeShader(code->GetBufferPointer(),code->GetBufferSize(),nullptr,&shader[i]),"compute shader");
@@ -136,15 +137,15 @@ namespace
                 context->Unmap(staging.Get(),sub);}
             return result;
         }
-        void dispatch(Pass pass,std::initializer_list<ID3D11ShaderResourceView*> inputs,std::initializer_list<ID3D11UnorderedAccessView*> outputs,UINT width=Width,UINT height=Height)
+        void dispatch(Pass pass,std::initializer_list<ID3D11ShaderResourceView*> inputs,std::initializer_list<ID3D11UnorderedAccessView*> outputs,UINT width=Width,UINT height=Height,UINT eyes=2)
         {
-            std::array<ID3D11ShaderResourceView*,8> views{};std::copy(inputs.begin(),inputs.end(),views.begin());
+            std::array<ID3D11ShaderResourceView*,10> views{};std::copy(inputs.begin(),inputs.end(),views.begin());
             std::array<ID3D11UnorderedAccessView*,4> targets{};std::copy(outputs.begin(),outputs.end(),targets.begin());
-            const std::array<ID3D11ShaderResourceView*,8> noInputs{};const std::array<ID3D11UnorderedAccessView*,4> none{};
+            const std::array<ID3D11ShaderResourceView*,10> noInputs{};const std::array<ID3D11UnorderedAccessView*,4> none{};
             context->UpdateSubresource(constants.Get(),0,nullptr,&settings,0,0);context->CSSetShader(shader[pass].Get(),nullptr,0);
-            context->CSSetShaderResources(0,8,views.data());context->CSSetUnorderedAccessViews(0,4,targets.data(),nullptr);
-            context->Dispatch((width+7)/8,(height+7)/8,2);
-            context->CSSetUnorderedAccessViews(0,4,none.data(),nullptr);context->CSSetShaderResources(0,8,noInputs.data());
+            context->CSSetShaderResources(0,10,views.data());context->CSSetUnorderedAccessViews(0,4,targets.data(),nullptr);
+            context->Dispatch((width+7)/8,(height+7)/8,eyes);
+            context->CSSetUnorderedAccessViews(0,4,none.data(),nullptr);context->CSSetShaderResources(0,10,noInputs.data());
         }
         void mips(Pass pass,Texture& t) {dispatch(pass,{t.top.Get()},{t.mips[0].Get(),t.mips[1].Get(),t.mips[2].Get(),t.mips[3].Get()},Width/2,Height/2);}
     };
@@ -154,10 +155,10 @@ namespace
     {
         Fixture& f;
         Texture position,oldPosition,normal,radiance,radianceMips,luma,chroma,specular,oldLuma,oldChroma,oldSpecular,
-            remappedLuma,remappedChroma,remappedSpecular,tracedLuma,tracedChroma;
+            remappedLuma,remappedChroma,remappedSpecular,tracedLuma,tracedChroma,estimateLuma,estimateChroma;
         explicit Chain(Fixture& fixture):f(fixture),position(f.texture(Mips,DXGI_FORMAT_R32_FLOAT)),oldPosition(f.texture(1,DXGI_FORMAT_R32_FLOAT)),normal(f.texture()),radiance(f.texture()),
             radianceMips(f.texture(Mips)),luma(f.texture()),chroma(f.texture()),specular(f.texture()),oldLuma(f.texture()),oldChroma(f.texture()),
-            oldSpecular(f.texture()),remappedLuma(f.texture()),remappedChroma(f.texture()),remappedSpecular(f.texture()),tracedLuma(f.texture()),tracedChroma(f.texture()) {}
+            oldSpecular(f.texture()),remappedLuma(f.texture()),remappedChroma(f.texture()),remappedSpecular(f.texture()),tracedLuma(f.texture()),tracedChroma(f.texture()),estimateLuma(f.texture()),estimateChroma(f.texture()) {}
         void reproject()
         {
             f.mips(PrefilterPosition,position);
@@ -165,11 +166,19 @@ namespace
                 {radianceMips.output.Get(),remappedLuma.output.Get(),remappedChroma.output.Get(),remappedSpecular.output.Get()});
             f.mips(PrefilterRadiance,radianceMips);
         }
-        void trace(Pass kernel=Trace)
+        void trace()
         {
-            f.dispatch(kernel,{position.view.Get(),normal.view.Get(),radianceMips.view.Get(),f.noise.Get(),remappedLuma.view.Get(),remappedChroma.view.Get(),remappedSpecular.view.Get()},
+            f.dispatch(Trace,{position.view.Get(),normal.view.Get(),radianceMips.view.Get(),f.noise.Get(),remappedLuma.view.Get(),remappedChroma.view.Get(),remappedSpecular.view.Get()},
                 {tracedLuma.output.Get(),tracedChroma.output.Get(),specular.output.Get()});
             f.dispatch(Blur,{position.view.Get(),normal.view.Get(),tracedLuma.view.Get(),tracedChroma.view.Get()},{luma.output.Get(),chroma.output.Get()});
+        }
+        // The specular-off path: the frame's primary eye, then the other eye.
+        void traceShared()
+        {
+            f.dispatch(TracePrimary,{position.view.Get(),normal.view.Get(),radianceMips.view.Get(),f.noise.Get(),remappedLuma.view.Get(),remappedChroma.view.Get()},
+                {tracedLuma.output.Get(),tracedChroma.output.Get(),estimateLuma.output.Get(),estimateChroma.output.Get()},Width,Height,1);
+            f.dispatch(TraceSecondary,{position.view.Get(),normal.view.Get(),radianceMips.view.Get(),f.noise.Get(),remappedLuma.view.Get(),remappedChroma.view.Get(),nullptr,nullptr,estimateLuma.view.Get(),estimateChroma.view.Get()},
+                {tracedLuma.output.Get(),tracedChroma.output.Get()},Width,Height,1);
         }
         void frame() {reproject();trace();}
     };
@@ -332,19 +341,39 @@ namespace
             minAO=(std::min)(minAO,k.z);maxGI=(std::max)(maxGI,l.x);
         }
         require(minAO<.95f,"corner occlusion missing");require(maxGI>.001f,"visible indirect light missing");
-        // With the specular trace off, the diffuse-only build must match the
-        // full build exactly on the same corner frame.
+        // With the specular trace off the eyes share one estimate. On the same
+        // corner frame the primary eye (frame parity) must match the two-eye
+        // kernel, and the other eye must hold the primary eye's result where
+        // both see the same world surface (the fixture's eyes coincide, so
+        // that is the same pixel) and its own trace elsewhere.
         f.settings.specular=0;
-        c.reproject();c.trace();const auto fullLuma=f.read(c.tracedLuma),fullChroma=f.read(c.tracedChroma);
-        c.trace(TraceDiffuse);const auto diffuseLuma=f.read(c.tracedLuma),diffuseChroma=f.read(c.tracedChroma);
         // Separate builds may fuse operations differently: allow rounding only.
         const auto same=[](const V& a,const V& b) {
             const auto close=[](float x,float y) {return std::abs(x-y)<=1e-5f*(std::max)(1.0f,std::abs(x));};
             return close(a.x,b.x)&&close(a.y,b.y)&&close(a.z,b.z)&&close(a.w,b.w);
         };
-        for(UINT i=0;i<fullLuma.size();i++)
-            require(same(fullLuma[i],diffuseLuma[i]) && same(fullChroma[i],diffuseChroma[i]),"diffuse-only trace differs from the full trace with specular off");
-        f.settings.specular=1;
+        const auto checkShared=[&](UINT frame,const std::vector<float>& geometry,UINT sharedFromX,const char* message) {
+            f.settings.frame=frame;f.upload(c.position,geometry);f.upload(c.oldPosition,geometry);
+            c.reproject();c.trace();const auto fullLuma=f.read(c.tracedLuma),fullChroma=f.read(c.tracedChroma);
+            c.traceShared();const auto sharedLuma=f.read(c.tracedLuma),sharedChroma=f.read(c.tracedChroma);
+            const UINT primary=frame&1;
+            for(UINT eye=0;eye<2;eye++) for(UINT y=0;y<Height;y++) for(UINT x=0;x<Width;x++) {
+                const UINT i=eye*Width*Height+y*Width+x,source=eye!=primary && x>=sharedFromX?primary*Width*Height+y*Width+x:i;
+                require(same(sharedLuma[i],fullLuma[source]) && same(sharedChroma[i],fullChroma[source]),message);
+            }
+        };
+        checkShared(0,positions,0,"left-primary frame: an eye lost its trace or the right eye did not take the left estimate");
+        checkShared(1,positions,0,"right-primary frame: an eye lost its trace or the left eye did not take the right estimate");
+        // The primary eye holds a nearer surface on its left: the other eye
+        // has nothing to share there and must trace those pixels itself.
+        auto occluded=positions;
+        for(UINT y=0;y<Height;y++) for(UINT x=0;x<8;x++) occluded[y*Width+x]=1.0f/50;
+        checkShared(0,occluded,8,"a surface the primary eye cannot see was not traced by the other eye");
+        // First-person surfaces are never shared.
+        auto firstPerson=positions;for(auto& v:firstPerson) v=-v;
+        checkShared(0,firstPerson,Width,"first-person surfaces were shared between the eyes");
+        f.settings.frame=0;f.settings.specular=1;
+        f.upload(c.position,positions);f.upload(c.oldPosition,positions);
         f.settings.history=0;c.frame();auto reset=f.read(c.luma);
         for(const auto v:reset) require(v.x==0&&v.y==0&&v.z==0&&v.w==0,"reset used stale radiance");
         f.settings.history=1;f.settings.gi=0;c.frame();auto aoOnly=f.read(c.luma),aoOnlyChroma=f.read(c.chroma);
@@ -368,7 +397,7 @@ namespace
         auto unblurred=f.read(c.tracedLuma);
         for(UINT i=0;i<unblurred.size();i++) require(unblurred[i].x==clamped[i].x,"disabled blur changed the trace");
         f.settings.blur=1;f.settings.temporal=0;
-        std::cout<<(driver==D3D_DRIVER_TYPE_WARP?"WARP":"Hardware")<<": stereo AO/GI, no self-occlusion, reset, disocclusion and temporal clamp passed\n";
+        std::cout<<(driver==D3D_DRIVER_TYPE_WARP?"WARP":"Hardware")<<": stereo AO/GI, eye sharing, no self-occlusion, reset, disocclusion and temporal clamp passed\n";
 
         // Exercise the actual render transaction with native packed inputs,
         // including GPU preparation, per-eye outputs, capture and restoration.

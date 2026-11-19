@@ -7,11 +7,26 @@
 // on the receiver's own plane are skipped, and AO is temporally accumulated
 // with the bounce (upstream leaves AO per-frame).
 #include "ScreenSpaceGICommon.hlsli"
-// The runtime embeds a second build with CSAH_SSGI_SPECULAR_TRACE 0 for the
-// default (specular trace off): without the specular cone, NDF and its masks
-// the kernel needs fewer registers, so more of it runs at once.
+// The runtime embeds three builds of this kernel.
+//
+// CSAH_SSGI_SPECULAR_TRACE 1 (the experimental specular trace) is view
+// dependent, so it traces both eyes in one dispatch. Without the specular
+// cone, NDF and its masks the kernel needs fewer registers, so more of it
+// runs at once.
+//
+// With the specular trace off, occlusion and bounce are properties of the
+// surface point (the luma is world-space SH), so the two eyes share them:
+// CSAH_SSGI_STEREO 1 traces the frame's primary eye (Frame parity) and also
+// stores its estimate before temporal accumulation; CSAH_SSGI_STEREO 2 then
+// resolves the other eye, taking that estimate wherever the primary eye sees
+// the same surface and tracing only where it does not. The primary eye
+// alternates, so every pixel receives a fresh estimate every frame and each
+// eye keeps its own history on its own grid.
 #ifndef CSAH_SSGI_SPECULAR_TRACE
 #define CSAH_SSGI_SPECULAR_TRACE 1
+#endif
+#ifndef CSAH_SSGI_STEREO
+#define CSAH_SSGI_STEREO 0
 #endif
 Texture2DArray<float> Position : register(t0);
 Texture2DArray<float4> Normal : register(t1);
@@ -19,11 +34,22 @@ Texture2DArray<float4> Radiance : register(t2);
 Texture2D<float2> Noise : register(t3);
 Texture2DArray<float4> HistoryLuma : register(t4);
 Texture2DArray<float4> HistoryChroma : register(t5);
-Texture2DArray<float4> HistorySpecular : register(t6);
 Texture2D<float4> NativeEmissive : register(t7);
 RWTexture2DArray<float4> Luma : register(u0);
 RWTexture2DArray<float4> Chroma : register(u1);
+#if CSAH_SSGI_SPECULAR_TRACE
+Texture2DArray<float4> HistorySpecular : register(t6);
 RWTexture2DArray<float4> Specular : register(u2);
+#endif
+// The primary eye's estimate of this frame: luma SH, then chroma and the
+// visibility before vertex AO is divided out.
+#if CSAH_SSGI_STEREO==1
+RWTexture2DArray<float4> EstimateLuma : register(u2);
+RWTexture2DArray<float4> EstimateChroma : register(u3);
+#elif CSAH_SSGI_STEREO==2
+Texture2DArray<float4> PrimaryLuma : register(t8);
+Texture2DArray<float4> PrimaryChroma : register(t9);
+#endif
 float DistributionGGX(float roughness,float nh)
 {
     float a=roughness*roughness,a2=a*a;
@@ -36,21 +62,70 @@ float VisibilitySmithJoint(float roughness,float nv,float nl)
     float v=nl*(nv*(1-a)+a)+nv*(nl*(1-a)+a);
     return v>0?.5/v:0;
 }
+#if CSAH_SSGI_STEREO==2
+// The primary eye's estimate at a world surface point of this eye: four
+// bilinear taps, each kept only when the primary eye holds the same surface
+// there (within half a percent of its depth of the receiver's plane, facing
+// the same way). First-person surfaces are never shared: their depth range
+// has its own projection. False when under half the footprint qualifies.
+bool PrimaryEstimate(float3 center,float3 n,uint eye,out float4 luma,out float3 chroma)
+{
+    luma=0;chroma=0;
+    const uint primary=1-eye;
+    const float3 relative=WorldRelative(center)+Camera[59+eye].xyz-Camera[59+primary].xyz;
+    const float4 expected=float4(dot(Camera[0].xyz,relative),dot(Camera[1].xyz,relative),dot(Camera[2].xyz,relative),1);
+    const uint r=4+primary*4;
+    const float4 clip=float4(dot(Camera[r],expected),dot(Camera[r+1],expected),dot(Camera[r+2],expected),dot(Camera[r+3],expected));
+    if(!(clip.w>0)) return false;
+    const float2 coordinate=(clip.xy/clip.w*float2(.5,-.5)+.5)*Extent-.5;
+    if(!all(isfinite(coordinate))) return false;
+    const int2 base=int2(floor(coordinate));const float2 f=coordinate-base;
+    const ViewRays rays=CurrentRays(primary,false);
+    const float tolerance=expected.z*.005;
+    float total=0;
+    [unroll] for(uint tap=0;tap<4;tap++)
+    {
+        const int2 o=int2(tap&1,tap>>1);const int2 p=base+o;
+        if(any(p<0)||any(p>=int2(Extent))) continue;
+        const int4 t=int4(p,primary,0);
+        const float geometry=Position.Load(t);
+        if(!(geometry>0)) continue;
+        if(abs(dot(n,RebuildPosition(rays,p+.5,geometry)-expected.xyz))>tolerance) continue;
+        if(dot(Normal.Load(t).xyz,n)<.7) continue;
+        const float weight=(o.x?f.x:1-f.x)*(o.y?f.y:1-f.y);
+        luma+=PrimaryLuma.Load(t)*weight;chroma+=PrimaryChroma.Load(t).xyz*weight;total+=weight;
+    }
+    if(total<.5) {luma=0;chroma=0;return false;}
+    luma/=total;chroma/=total;
+    return true;
+}
+#endif
 [numthreads(8,8,1)]
 void main(uint3 id:SV_DispatchThreadID)
 {
+#if CSAH_SSGI_STEREO==0
     if(any(id.xy>=Extent)||id.z>=2) return;
     const uint eye=id.z;
-    const float geometry=Position.Load(int4(id,0));
+#else
+    if(any(id.xy>=Extent)||id.z!=0) return;
+    const uint eye=(Frame&1)^(CSAH_SSGI_STEREO-1);
+#endif
+    const uint3 texel=uint3(id.xy,eye);
+    const float geometry=Position.Load(int4(texel,0));
     const float domain=sign(geometry);
     const ViewRays rays=CurrentRays(eye,geometry<0);
     const float3 center=geometry!=0?RebuildPosition(rays,id.xy+.5,geometry):0;
-    float4 surface=Normal.Load(int4(id,0));
+    float4 surface=Normal.Load(int4(texel,0));
     float3 n=surface.xyz,view=SafeNormal(-center);
     float occlusion=0,specularOcclusion=0;float4 luma=0;float2 chroma=0;float3 specular=0;
     const float fadeEnd=DepthFadeStart+1/DepthFadeScale;
     const bool traced=geometry!=0 && center.z<fadeEnd;
-    if(traced)
+    bool trace=traced;
+#if CSAH_SSGI_STEREO==2
+    float3 primaryEstimate=float3(0,0,1);
+    [branch] if(traced && geometry>0) trace=!PrimaryEstimate(center,n,eye,luma,primaryEstimate);
+#endif
+    [branch] if(trace)
     {
         const bool gi=EnableGI!=0 && geometry>0;
         const bool specularGI=CSAH_SSGI_SPECULAR_TRACE && gi && EnableSpecular!=0;
@@ -89,10 +164,10 @@ void main(uint3 id:SV_DispatchThreadID)
                 float2 pixel=float2(id.xy)+.5+s*omega*side;
                 if(any(pixel<0)||any(pixel>=float2(Extent))) continue;
                 float mip=clamp(log2(s)+logLengthOmega-3.3,0,MipCount-1);
-                const int4 texel=MipTexel(pixel,eye,(uint)round(mip));
-                const float sampleGeometry=Position.Load(texel);
+                const int4 sampleTexel=MipTexel(pixel,eye,(uint)round(mip));
+                const float sampleGeometry=Position.Load(sampleTexel);
                 if(sign(sampleGeometry)!=domain) continue;
-                const float3 sample=RebuildPosition(rays,MipTexelCentre(texel),sampleGeometry);
+                const float3 sample=RebuildPosition(rays,MipTexelCentre(sampleTexel),sampleGeometry);
                 float3 delta=sample-center;
                 if(dot(delta,delta)<1e-6) continue;
                 float3 horizon=SafeNormal(delta);
@@ -150,15 +225,23 @@ void main(uint3 id:SV_DispatchThreadID)
         specularOcclusion=lerp(saturate(specularOcclusion*rcpSlices),0,fade);
     }
     float visibility=pow(saturate(1-occlusion),AOPower);
+#if CSAH_SSGI_STEREO==2
+    if(traced && !trace) {chroma=primaryEstimate.xy;visibility=primaryEstimate.z;}
+#elif CSAH_SSGI_STEREO==1
+    // A non-finite estimate must not reach the other eye either.
+    const float4 estimateLuma=luma;const float3 estimate=float3(chroma,visibility);
+    EstimateLuma[texel]=all(isfinite(estimateLuma))?clamp(estimateLuma,-60000,60000):0;
+    EstimateChroma[texel]=all(isfinite(estimate))?float4(clamp(estimate.xy,-60000,60000),estimate.z,1):float4(0,0,1,1);
+#endif
     // Native vertex AO already darkens the lit surface; divide it out so
     // SSGI does not occlude the same crease twice (upstream Masks2.x).
     uint w,h;NativeEmissive.GetDimensions(w,h);
-    float vertexAO=1-NativeEmissive.Load(int3(clamp(int2(PackedPixel(id)),0,int2(w,h)-1),0)).a;
+    float vertexAO=1-NativeEmissive.Load(int3(clamp(int2(PackedPixel(texel)),0,int2(w,h)-1),0)).a;
     if(w!=0) visibility=saturate(visibility/max(vertexAO,1e-3));
-    float4 historyChroma=HistoryChroma.Load(int4(id,0));
+    float4 historyChroma=HistoryChroma.Load(int4(texel,0));
     float frames=traced?max(historyChroma.w,1):1;
     float blend=1/frames;
-    float4 previousLuma=HistoryLuma.Load(int4(id,0));
+    float4 previousLuma=HistoryLuma.Load(int4(texel,0));
     float3 previousChroma=historyChroma.xyz;
     float3 current=float3(chroma,visibility);
     // Clamp history to the local neighbourhood (SVGF, Schied 2017) while it
@@ -177,12 +260,14 @@ void main(uint3 id:SV_DispatchThreadID)
     }
     luma=lerp(previousLuma,luma,blend);
     current=lerp(previousChroma,current,blend);
-    float4 specularOut=lerp(HistorySpecular.Load(int4(id,0)),float4(specular,specularOcclusion),blend);
     // Upstream filterNaN: a non-finite sample must not enter the history.
     if(any(!isfinite(luma))) luma=0;
     if(any(!isfinite(current))) current=float3(0,0,1);
+    Luma[texel]=min(luma,60000);
+    Chroma[texel]=float4(clamp(current.xy,-60000,60000),current.z,frames);
+#if CSAH_SSGI_SPECULAR_TRACE
+    float4 specularOut=lerp(HistorySpecular.Load(int4(texel,0)),float4(specular,specularOcclusion),blend);
     if(any(!isfinite(specularOut))) specularOut=0;
-    Luma[id]=min(luma,60000);
-    Chroma[id]=float4(clamp(current.xy,-60000,60000),current.z,frames);
-    Specular[id]=float4(min(specularOut.rgb,60000),specularOut.w);
+    Specular[texel]=float4(min(specularOut.rgb,60000),specularOut.w);
+#endif
 }
