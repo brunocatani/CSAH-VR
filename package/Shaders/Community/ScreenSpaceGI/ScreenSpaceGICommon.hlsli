@@ -19,6 +19,8 @@ cbuffer Settings : register(b13)
     float DepthDisocclusion; float BlurRadius; float DistanceNormalisation; uint MaxAccumFrames;
     uint NumSlices; uint NumSteps; uint EnableBlur; uint ResolutionMode;
     float4 PbrFeature0, PbrFeature1, PbrParams0, PbrParams1;
+    // Fewer samples per direction on flat or distant surfaces (TraceCS).
+    uint AdaptiveSampling; uint3 SettingsReserved;
 };
 cbuffer NativeCamera : register(b12) {float4 Camera[77];};
 cbuffer PreviousCamera : register(b10) {float4 Previous[77];};

@@ -14,6 +14,8 @@ namespace csah::screen_space_gi
         s.resolutionMode = values.integer(kSection, "ResolutionMode", s.resolutionMode);
         s.slices = values.integer(kSection, "NumSlices", s.slices);
         s.steps = values.integer(kSection, "NumSteps", s.steps);
+        s.adaptiveSampling = values.boolean(kSection, "AdaptiveSampling", s.adaptiveSampling);
+        s.cullDistance = values.number(kSection, "CullDistance", s.cullDistance);
         s.minScreenRadius = values.number(kSection, "MinScreenRadius", s.minScreenRadius);
         s.aoRadius = values.number(kSection, "AORadius", s.aoRadius);
         s.giRadius = values.number(kSection, "GIRadius", s.giRadius);

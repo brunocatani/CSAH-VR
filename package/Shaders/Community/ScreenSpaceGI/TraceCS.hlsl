@@ -134,7 +134,28 @@ void main(uint3 id:SV_DispatchThreadID)
         const float pixelSize=center.z*PixelViewScale(rays);
         const float screenRadius=max(MinScreenRadius,EffectRadius/max(pixelSize,1e-6));
         const float minS=1.3/screenRadius;
-        const float rcpSlices=1.0/NumSlices,rcpSteps=1.0/NumSteps;
+        // Adaptive sampling after upstream gi.cs.hlsl: a pixel whose four
+        // neighbours share its depth and normal has nothing nearby to
+        // occlude it, so it takes down to 55% of the samples per direction,
+        // and pixels inside the distance fade down to 45%. A neighbour in
+        // the other depth domain, or with nothing rendered, counts as an edge.
+        uint stepCount=NumSteps;
+        [branch] if(AdaptiveSampling!=0)
+        {
+            float depthVariance=0,normalVariance=0;
+            [unroll] for(uint neighbour=0;neighbour<4;neighbour++)
+            {
+                const int2 o=neighbour==0?int2(-1,0):neighbour==1?int2(1,0):neighbour==2?int2(0,-1):int2(0,1);
+                const int4 t=int4(clamp(int2(id.xy)+o,0,int2(Extent)-1),eye,0);
+                const float neighbourGeometry=Position.Load(t);
+                depthVariance+=sign(neighbourGeometry)==domain?abs(1/abs(neighbourGeometry)-center.z):center.z;
+                normalVariance+=1-saturate(dot(n,Normal.Load(t).xyz));
+            }
+            const float variance=saturate(depthVariance*.25/max(center.z,1)*6+normalVariance*.25*2);
+            const float farScale=lerp(1,.45,saturate((center.z-DepthFadeStart)*DepthFadeScale));
+            stepCount=clamp((uint)round(NumSteps*min(farScale,lerp(.55,1,variance))),1,NumSteps);
+        }
+        const float rcpSlices=1.0/NumSlices,rcpSteps=1.0/stepCount;
         // EA fastnoise spatiotemporal blue noise, 128x128 x 64 frames.
         const float2 noise=Noise.Load(int3(id.xy%128+uint2(0,((EnableTemporal!=0?Frame:0)%64)*128),0));
         const float minimumRadianceMip=min(1+ResolutionMode,MipCount-1);
@@ -158,7 +179,7 @@ void main(uint3 id:SV_DispatchThreadID)
             uint mask=0,giMask=0,specularMask=0;
             float stepNoise=frac(noise.y+slice*.6180339887498948);
             [unroll] for(int side=-1;side<=1;side+=2)
-            [loop] for(uint step=0;step<NumSteps;step++)
+            [loop] for(uint step=0;step<stepCount;step++)
             {
                 float s=(step+stepNoise)*rcpSteps;s*=s;s+=minS;
                 float2 pixel=float2(id.xy)+.5+s*omega*side;

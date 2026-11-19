@@ -180,6 +180,12 @@ namespace csah::settings_file
                 "Directions sampled per pixel. Range: 1 to 10."),
             option("ScreenSpaceGI", "NumSteps", "11. Screen-space GI", ValueType::Integer, "6",
                 "Samples per direction. Range: 1 to 20."),
+            option("ScreenSpaceGI", "AdaptiveSampling", "11. Screen-space GI", ValueType::Boolean, "true",
+                "Adaptive Sampling. Uses fewer samples per direction on flat surfaces and on distant pixels; edges and\n"
+                "corners keep the full count."),
+            option("ScreenSpaceGI", "CullDistance", "11. Screen-space GI", ValueType::Float, "1500",
+                "Cull Distance in game units. AO and indirect light fade out before this distance from the camera and\n"
+                "are not computed beyond it. 0 disables it. Range: 0 to 20480."),
             option("ScreenSpaceGI", "MinScreenRadius", "11. Screen-space GI", ValueType::Float, "0.01",
                 "Minimum Screen Radius as a share of the eye width. Range: 0 to 0.05."),
             option("ScreenSpaceGI", "AORadius", "11. Screen-space GI", ValueType::Float, "256",

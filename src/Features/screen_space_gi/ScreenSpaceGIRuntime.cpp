@@ -319,15 +319,23 @@ namespace csah::screen_space_gi
         // minimum screen radius in internal pixels, and compensation reaching
         // the AO radius.
         const float effect=std::max(s.aoRadius,s.giRadius);
+        // The cull distance is a nearer distance fade (upstream VR cull): its
+        // band is the last fifth of the distance, between 200 and 1200 units.
+        float fadeStart=s.fadeStart,fadeEnd=s.fadeEnd;
+        if(s.cullDistance>0) {
+            fadeEnd=std::min(fadeEnd,s.cullDistance);
+            fadeStart=std::max(0.0f,std::min(fadeStart,fadeEnd-std::clamp(s.cullDistance*.2f,200.0f,1200.0f)));
+        }
+        fadeEnd=std::max(fadeEnd,fadeStart+1);
         uploaded_={.width=width,.height=height,.frame=static_cast<UINT>(frame_),.history=historyValid_?1u:0u,
             .originX=viewport.TopLeftX,.originY=viewport.TopLeftY,.viewportWidth=viewport.Width,.viewportHeight=viewport.Height,
             .aoRadius=s.aoRadius/effect,.thickness=s.thickness,.aoPower=s.aoPower,.strength=s.strength,
             .gi=s.indirectLight?1u:0u,.specular=s.specular?1u:0u,.temporal=s.temporal?1u:0u,.tiled=uploaded_.tiled,
             .effectRadius=effect,.giRadius=s.giRadius/effect,.minScreenRadius=s.minScreenRadius*static_cast<float>(width),.saturation=s.saturation,
-            .distanceCompensation=s.distanceCompensation,.compensationMaxDistance=s.aoRadius,.fadeStart=s.fadeStart,.fadeScale=1.0f/(s.fadeEnd-s.fadeStart),
+            .distanceCompensation=s.distanceCompensation,.compensationMaxDistance=s.aoRadius,.fadeStart=fadeStart,.fadeScale=1.0f/(fadeEnd-fadeStart),
             .depthDisocclusion=s.depthDisocclusion,.blurRadius=s.blurRadius,.distanceNormalisation=s.distanceNormalisation,.maxAccumFrames=static_cast<UINT>(s.maxAccumFrames),
             .slices=static_cast<UINT>(s.slices),.steps=static_cast<UINT>(s.steps),.blur=s.blur?1u:0u,.resolutionMode=static_cast<UINT>(s.resolutionMode),
-            .material=materialSettings};
+            .material=materialSettings,.adaptive=s.adaptiveSampling?1u:0u};
         context->UpdateSubresource(constants_.Get(),0,nullptr,&uploaded_,0,0);
         // Separate typed buffer for pixel consumers; never bind a CB as an SRV.
         ComPtr<ID3D11Resource> parameters;parameterView_->GetResource(&parameters);

@@ -40,8 +40,9 @@ namespace
         float depthDisocclusion{.1f},blurRadius{2},distanceNormalisation{2};UINT maxFrames{16};
         UINT slices{4},steps{8},blur{1},resolutionMode{};
         float pbr[16]{};
+        UINT adaptive{},reserved[3]{};
     };
-    static_assert(sizeof(Constants)==192);
+    static_assert(sizeof(Constants)==208);
     enum Pass : UINT {Prepare,PrefilterPosition,Reproject,PrefilterRadiance,Trace,Blur,Capture,TracePrimary,TraceSecondary,PassCount};
     struct Texture
     {
@@ -352,6 +353,18 @@ namespace
             minAO=(std::min)(minAO,k.z);maxGI=(std::max)(maxGI,l.x);
         }
         require(minAO<.95f,"corner occlusion missing");require(maxGI>.001f,"visible indirect light missing");
+        // Adaptive sampling thins the samples on the flat walls only: the
+        // corner must keep its occlusion and bounce, and the result stays bounded.
+        f.settings.adaptive=1;c.frame();
+        {
+            const auto adaptiveLuma=f.read(c.luma),adaptiveChroma=f.read(c.chroma);float adaptiveAO=1,adaptiveGI=0;
+            for(UINT i=0;i<adaptiveLuma.size();i++) {
+                require(std::isfinite(adaptiveLuma[i].x)&&std::isfinite(adaptiveChroma[i].x)&&adaptiveChroma[i].z>=0&&adaptiveChroma[i].z<=1,"adaptive sampling left the bounded range");
+                adaptiveAO=(std::min)(adaptiveAO,adaptiveChroma[i].z);adaptiveGI=(std::max)(adaptiveGI,adaptiveLuma[i].x);
+            }
+            require(adaptiveAO<.95f && adaptiveGI>.001f,"adaptive sampling lost the corner's occlusion or bounce");
+        }
+        f.settings.adaptive=0;
         // With the specular trace off the eyes share one estimate. On the same
         // corner frame the primary eye (frame parity) must match the two-eye
         // kernel, and the other eye must hold the primary eye's result where
@@ -450,7 +463,7 @@ namespace
             auto scope=runtime.scopeAmbient(f.context.Get(),true,nullptr,material,nativeViews[3].Get());
             ComPtr<ID3D11ShaderResourceView> parameters;f.context->PSGetShaderResources(59,1,&parameters);
             require(parameters,"runtime failed to publish GI parameters");
-            D3D11_SHADER_RESOURCE_VIEW_DESC pd{};parameters->GetDesc(&pd);require(pd.Buffer.NumElements==12,"GI lost PBR parameter rows");
+            D3D11_SHADER_RESOURCE_VIEW_DESC pd{};parameters->GetDesc(&pd);require(pd.Buffer.NumElements==13,"GI lost PBR parameter rows");
             ComPtr<ID3D11Resource> data;parameters->GetResource(&data);ComPtr<ID3D11Buffer> source;check(data.As(&source),"GI parameter buffer");
             D3D11_BUFFER_DESC copyDesc{};source->GetDesc(&copyDesc);copyDesc.BindFlags=0;copyDesc.Usage=D3D11_USAGE_STAGING;copyDesc.CPUAccessFlags=D3D11_CPU_ACCESS_READ;
             ComPtr<ID3D11Buffer> copy;check(f.device->CreateBuffer(&copyDesc,nullptr,&copy),"GI parameter readback");f.context->CopyResource(copy.Get(),source.Get());

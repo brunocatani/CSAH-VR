@@ -19,6 +19,11 @@ namespace csah::screen_space_gi
         std::int32_t resolutionMode{1};
         std::int32_t slices{3};
         std::int32_t steps{6};
+        // Fewer samples per direction on flat or distant surfaces.
+        bool adaptiveSampling{true};
+        // AO and bounce fade out before this distance from the camera and are
+        // not computed beyond it; 0 leaves only the far fade below.
+        float cullDistance{1500.0f};
         float minScreenRadius{0.01f};
         float aoRadius{256.0f};
         float giRadius{256.0f};
@@ -44,6 +49,7 @@ namespace csah::screen_space_gi
         s.minScreenRadius=finite(s.minScreenRadius,0.01f,0,0.05f);
         s.aoRadius=finite(s.aoRadius,256,10,1024);s.giRadius=finite(s.giRadius,256,10,1024);
         s.thickness=finite(s.thickness,32,0,256);
+        s.cullDistance=finite(s.cullDistance,1500,0,20480);
         s.fadeStart=finite(s.fadeStart,40000,0,200000);s.fadeEnd=finite(s.fadeEnd,50000,0,200000);
         if(s.fadeEnd<s.fadeStart+1) s.fadeEnd=s.fadeStart+1;
         s.saturation=finite(s.saturation,0.8f,0,1);s.distanceCompensation=finite(s.distanceCompensation,0,-5,5);

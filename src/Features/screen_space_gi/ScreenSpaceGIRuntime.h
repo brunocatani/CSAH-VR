@@ -132,8 +132,9 @@ namespace csah::screen_space_gi
             float depthDisocclusion{},blurRadius{},distanceNormalisation{};UINT maxAccumFrames{};
             UINT slices{},steps{},blur{},resolutionMode{};
             pbr::FrameData material{};
+            UINT adaptive{};UINT reserved[3]{};
         };
-        static_assert(sizeof(Constants)==192);
+        static_assert(sizeof(Constants)==208);
         bool failAllocation() noexcept;
         bool ensureResources(UINT width,UINT height) noexcept;
         bool createNoise() noexcept;
