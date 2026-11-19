@@ -6,7 +6,7 @@
 // denoises AO, which upstream leaves raw. With blur disabled it forwards the
 // trace output unchanged.
 #include "ScreenSpaceGICommon.hlsli"
-Texture2DArray<float4> Position : register(t0);
+Texture2DArray<float> Position : register(t0);
 Texture2DArray<float4> Normal : register(t1);
 Texture2DArray<float4> TracedLuma : register(t2);
 Texture2DArray<float4> TracedChroma : register(t3);
@@ -23,8 +23,11 @@ void main(uint3 id:SV_DispatchThreadID)
     if(any(id.xy>=Extent)||id.z>=2) return;
     const int4 self=int4(id,0);
     float4 luma=TracedLuma.Load(self),chroma=TracedChroma.Load(self);
-    float4 center=Position.Load(self);
-    if(EnableBlur==0 || center.w==0) {Luma[id]=luma;Chroma[id]=chroma;return;}
+    const float geometry=Position.Load(self);
+    if(EnableBlur==0 || geometry==0) {Luma[id]=luma;Chroma[id]=chroma;return;}
+    const float domain=sign(geometry);
+    const ViewRays rays=CurrentRays(id.z,geometry<0);
+    const float3 center=RebuildPosition(rays,id.xy+.5,geometry);
     float3 n=Normal.Load(self).xyz;
     float frames=chroma.w;
     float radius=lerp(BlurRadius,2,1/(1+frames));
@@ -36,11 +39,12 @@ void main(uint3 id:SV_DispatchThreadID)
         int2 p=int2(float2(id.xy)+.5+offset);
         if(any(p<0)||any(p>=int2(Extent))) continue;
         int4 t=int4(p,id.z,0);
-        float4 position=Position.Load(t);
-        if(position.w!=center.w) continue;
+        const float sampleGeometry=Position.Load(t);
+        if(sign(sampleGeometry)!=domain) continue;
+        const float3 position=RebuildPosition(rays,p+.5,sampleGeometry);
         float3 normal=Normal.Load(t).xyz;
         float w=exp(-.66*Poisson8[i].z*Poisson8[i].z);
-        w*=saturate(1-abs(dot(n,position.xyz-center.xyz))*DistanceNormalisation);
+        w*=saturate(1-abs(dot(n,position-center))*DistanceNormalisation);
         w*=1-saturate(acos(saturate(dot(normal,n)))/halfAngle);
         w=max(w,.01);
         luma+=TracedLuma.Load(t)*w;chroma+=TracedChroma.Load(t)*w;wsum+=w;

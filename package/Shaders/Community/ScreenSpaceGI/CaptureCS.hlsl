@@ -8,7 +8,7 @@ Texture2D<float4> Albedo : register(t0);
 Texture2D<float4> Emissive : register(t1);
 Texture2D<float4> DiffuseLighting : register(t2);
 Texture2D<float4> TiledDiffuse : register(t3);
-Texture2DArray<float4> Position : register(t4);
+Texture2DArray<float> Position : register(t4);
 RWTexture2DArray<float4> Radiance : register(u0);
 [numthreads(8,8,1)]
 void main(uint3 id:SV_DispatchThreadID)
@@ -18,6 +18,6 @@ void main(uint3 id:SV_DispatchThreadID)
     float3 lighting=DiffuseLighting.Load(int3(p,0)).rgb;
     if(TiledLighting!=0) lighting+=TiledDiffuse.Load(int3(p,0)).rgb;
     float3 colour=Albedo.Load(int3(p,0)).rgb*max(0,lighting)*3+Emissive.Load(int3(p,0)).rgb;
-    bool valid=Position.Load(int4(id,0)).w>0 && all(isfinite(colour));
+    bool valid=Position.Load(int4(id,0))>0 && all(isfinite(colour));
     Radiance[id]=valid?float4(min(max(colour,0),60000),1):0;
 }

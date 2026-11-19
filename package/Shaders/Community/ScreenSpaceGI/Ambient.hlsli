@@ -13,7 +13,8 @@ Texture2DArray<float4> ScreenSpaceSpecular : register(t58);
 Buffer<float4> ScreenSpaceParameters : register(t59);
 Texture2D<float4> ScreenSpaceAlbedo : register(t60);
 Texture2D<float4> ScreenSpaceAuthoredPbr : register(t61);
-Texture2DArray<float4> ScreenSpaceGeometry : register(t62);
+// Signed inverse view depth (see ScreenSpaceGICommon.hlsli).
+Texture2DArray<float> ScreenSpaceGeometry : register(t62);
 Texture2DArray<float4> ScreenSpaceNormal : register(t63);
 Texture2DArray<float4> ScreenSpaceChroma : register(t65);
 // The parameter buffer holds the SSGI constants block as float4 rows:
@@ -55,15 +56,15 @@ ScreenSpaceAmbientResult ScreenSpaceAmbient(float2 pixel,uint eye)
     {
         int2 p=clamp(base+int2(tap&1,tap>>1),0,int2(extent)-1);
         int4 location=int4(p,eye,0);
-        float4 geometry=ScreenSpaceGeometry.Load(location);
+        const float geometry=ScreenSpaceGeometry.Load(location);
         float3 n=ScreenSpaceNormal.Load(location).xyz;
         // Normal texture is stored in view space; the receiver helper
         // returns world normals, so rotate the tap by the same camera.
         n=normalize(float3(dot(Camera[20].xyz,n),dot(Camera[21].xyz,n),dot(Camera[22].xyz,n)));
         float weight=(tap&1?fraction.x:1-fraction.x)*(tap&2?fraction.y:1-fraction.y);
         weight*=pow(saturate(dot(normal,n)),16);
-        weight*=geometry.w==(depth<=.01?-1:1)?1:0;
-        weight*=exp(-abs(geometry.z-receiver.z)/max(1,abs(receiver.z)*.01));
+        weight*=sign(geometry)==(depth<=.01?-1:1)?1:0;
+        weight*=geometry!=0?exp(-abs(1/abs(geometry)-receiver.z)/max(1,abs(receiver.z)*.01)):0;
         luma+=ScreenSpaceLuma.Load(location)*weight;chroma+=ScreenSpaceChroma.Load(location)*weight;
         specular+=ScreenSpaceSpecular.Load(location)*weight;total+=weight;
     }

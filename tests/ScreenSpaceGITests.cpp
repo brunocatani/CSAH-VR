@@ -52,7 +52,7 @@ namespace
     {
         ComPtr<ID3D11Device> device;ComPtr<ID3D11DeviceContext> context;
         std::array<ComPtr<ID3D11ComputeShader>,PassCount> shader;
-        ComPtr<ID3D11Buffer> constants,camera,previousCamera;
+        ComPtr<ID3D11Buffer> constants,camera,previousCamera,stereo;
         ComPtr<ID3D11ShaderResourceView> noise;
         Constants settings;
         Fixture(const std::filesystem::path& root,D3D_DRIVER_TYPE driver)
@@ -75,15 +75,19 @@ namespace
             for(auto& inverse:data.inverseProjection) inverse={V{1,0,0,0},V{0,1,0,0},V{0,0,0,1},V{0,0,.01f,0}};
             data.inverseFirstPersonProjection=data.inverseProjection;
             context->UpdateSubresource(camera.Get(),0,nullptr,&data,0,0);context->UpdateSubresource(previousCamera.Get(),0,nullptr,&data,0,0);
+            // Stereo 1 makes the fixture's view rays eye-local: x/z and y/z are
+            // each eye's own NDC, the space the synthetic scenes are built in.
+            bd.ByteWidth=16;check(device->CreateBuffer(&bd,nullptr,&stereo),"stereo");const V stereoData{1,0,0,0};context->UpdateSubresource(stereo.Get(),0,nullptr,&stereoData,0,0);
             auto* cb=camera.Get();context->CSSetConstantBuffers(12,1,&cb);cb=previousCamera.Get();context->CSSetConstantBuffers(10,1,&cb);cb=constants.Get();context->CSSetConstantBuffers(13,1,&cb);
+            cb=stereo.Get();context->CSSetConstantBuffers(8,1,&cb);
             D3D11_TEXTURE2D_DESC nd{};nd.Width=128;nd.Height=8192;nd.MipLevels=nd.ArraySize=nd.SampleDesc.Count=1;nd.Format=DXGI_FORMAT_R8G8_UNORM;nd.BindFlags=D3D11_BIND_SHADER_RESOURCE;
             std::vector<std::uint16_t> half(128*8192,0x8080);const D3D11_SUBRESOURCE_DATA initial{half.data(),256,0};
             ComPtr<ID3D11Texture2D> noiseTexture;check(device->CreateTexture2D(&nd,&initial,&noiseTexture),"noise");check(device->CreateShaderResourceView(noiseTexture.Get(),nullptr,&noise),"noise view");
         }
-        Texture texture(UINT mips=1)
+        Texture texture(UINT mips=1,DXGI_FORMAT format=DXGI_FORMAT_R32G32B32A32_FLOAT)
         {
             Texture t;D3D11_TEXTURE2D_DESC d{};d.Width=Width;d.Height=Height;d.ArraySize=2;d.MipLevels=mips;d.SampleDesc.Count=1;
-            d.Format=DXGI_FORMAT_R32G32B32A32_FLOAT;d.BindFlags=D3D11_BIND_SHADER_RESOURCE|D3D11_BIND_UNORDERED_ACCESS;
+            d.Format=format;d.BindFlags=D3D11_BIND_SHADER_RESOURCE|D3D11_BIND_UNORDERED_ACCESS;
             check(device->CreateTexture2D(&d,nullptr,&t.texture),"texture");check(device->CreateShaderResourceView(t.texture.Get(),nullptr,&t.view),"SRV");
             D3D11_UNORDERED_ACCESS_VIEW_DESC u{};u.Format=d.Format;u.ViewDimension=D3D11_UAV_DIMENSION_TEXTURE2DARRAY;u.Texture2DArray.ArraySize=2;
             check(device->CreateUnorderedAccessView(t.texture.Get(),&u,&t.output),"UAV");
@@ -94,10 +98,21 @@ namespace
             }
             return t;
         }
-        void upload(Texture& t,const std::vector<V>& pixels)
+        template<class T> void upload(Texture& t,const std::vector<T>& pixels)
         {
             D3D11_TEXTURE2D_DESC d{};t.texture->GetDesc(&d);
-            for(UINT eye=0;eye<2;eye++) context->UpdateSubresource(t.texture.Get(),D3D11CalcSubresource(0,eye,d.MipLevels),nullptr,pixels.data()+eye*Width*Height,Width*sizeof(V),0);
+            for(UINT eye=0;eye<2;eye++) context->UpdateSubresource(t.texture.Get(),D3D11CalcSubresource(0,eye,d.MipLevels),nullptr,pixels.data()+eye*Width*Height,Width*sizeof(T),0);
+        }
+        // Signed inverse view depth texture (R32_FLOAT), mip 0 of both eyes.
+        std::vector<float> readDepth(Texture& t)
+        {
+            D3D11_TEXTURE2D_DESC d{};t.texture->GetDesc(&d);d.Usage=D3D11_USAGE_STAGING;d.BindFlags=0;d.CPUAccessFlags=D3D11_CPU_ACCESS_READ;
+            ComPtr<ID3D11Texture2D> staging;check(device->CreateTexture2D(&d,nullptr,&staging),"depth staging");context->CopyResource(staging.Get(),t.texture.Get());
+            std::vector<float> result(Width*Height*2);
+            for(UINT eye=0;eye<2;eye++) {D3D11_MAPPED_SUBRESOURCE map{};const UINT sub=D3D11CalcSubresource(0,eye,d.MipLevels);check(context->Map(staging.Get(),sub,D3D11_MAP_READ,0,&map),"depth readback");
+                for(UINT y=0;y<Height;y++) std::memcpy(result.data()+eye*Width*Height+y*Width,static_cast<const std::byte*>(map.pData)+y*map.RowPitch,Width*sizeof(float));
+                context->Unmap(staging.Get(),sub);}
+            return result;
         }
         std::vector<V> read(Texture& t)
         {
@@ -138,7 +153,7 @@ namespace
         Fixture& f;
         Texture position,oldPosition,normal,radiance,radianceMips,luma,chroma,specular,oldLuma,oldChroma,oldSpecular,
             remappedLuma,remappedChroma,remappedSpecular,tracedLuma,tracedChroma;
-        explicit Chain(Fixture& fixture):f(fixture),position(f.texture(Mips)),oldPosition(f.texture()),normal(f.texture()),radiance(f.texture()),
+        explicit Chain(Fixture& fixture):f(fixture),position(f.texture(Mips,DXGI_FORMAT_R32_FLOAT)),oldPosition(f.texture(1,DXGI_FORMAT_R32_FLOAT)),normal(f.texture()),radiance(f.texture()),
             radianceMips(f.texture(Mips)),luma(f.texture()),chroma(f.texture()),specular(f.texture()),oldLuma(f.texture()),oldChroma(f.texture()),
             oldSpecular(f.texture()),remappedLuma(f.texture()),remappedChroma(f.texture()),remappedSpecular(f.texture()),tracedLuma(f.texture()),tracedChroma(f.texture()) {}
         void reproject()
@@ -285,10 +300,12 @@ namespace
             check(f.device->CreatePixelShader(contract.replacementBytecode,contract.replacementBytecodeLength,nullptr,&candidate),"native ambient shader composition rejected by D3D11");
         }
         Chain c(f);
-        std::vector<V> positions(Width*Height*2),normals(positions.size(),{0,0,-1,.5f}),light(positions.size());
+        // Geometry is signed inverse view depth; the shaders rebuild each
+        // position along the fixture's eye-local view ray.
+        std::vector<float> positions(Width*Height*2,1.0f/100);
+        std::vector<V> normals(positions.size(),{0,0,-1,.5f}),light(positions.size());
         for(UINT eye=0;eye<2;eye++) for(UINT y=0;y<Height;y++) for(UINT x=0;x<Width;x++) {
             const auto i=eye*Width*Height+y*Width+x;
-            positions[i]={((x+.5f)/Width*2-1)*100,(1-(y+.5f)/Height*2)*100,100,1};
             light[i]=eye?V{0,0,4,1}:V{4,0,0,1};
         }
         f.upload(c.position,positions);f.upload(c.oldPosition,positions);f.upload(c.normal,normals);f.upload(c.radiance,light);
@@ -297,7 +314,7 @@ namespace
         c.frame();auto flatLuma=f.read(c.luma),flatChroma=f.read(c.chroma);
         for(UINT i=0;i<flatLuma.size();i++) require(flatChroma[i].z>.9999f && std::abs(flatLuma[i].x)<1e-5f && std::abs(flatChroma[i].x)<1e-5f,"flat plane must not self-occlude or bounce");
         for(UINT eye=0;eye<2;eye++) for(UINT y=0;y<Height;y++) for(UINT x=19;x<Width;x++) {
-            const auto i=eye*Width*Height+y*Width+x;positions[i].x*=.7f;positions[i].y*=.7f;positions[i].z=70;normals[i]={-1,0,0,.5f};
+            const auto i=eye*Width*Height+y*Width+x;positions[i]=1.0f/70;normals[i]={-1,0,0,.5f};
         }
         f.upload(c.position,positions);f.upload(c.oldPosition,positions);f.upload(c.normal,normals);
         c.frame();auto cornerLuma=f.read(c.luma),cornerChroma=f.read(c.chroma);float minAO=1,maxGI=0;
@@ -321,7 +338,7 @@ namespace
         f.upload(c.oldLuma,staleLuma);f.upload(c.oldChroma,staleChroma);f.upload(c.oldSpecular,std::vector<V>(positions.size()));
         c.reproject();auto kept=f.read(c.remappedLuma),keptChroma=f.read(c.remappedChroma);
         for(UINT i=0;i<kept.size();i++) require(std::abs(kept[i].x-100)<.5f && std::abs(keptChroma[i].w-9)<1e-3f,"static history was not retained or counted");
-        auto moved=positions;for(auto& v:moved) v.z+=10000;f.upload(c.oldPosition,moved);
+        auto moved=positions;for(auto& v:moved) v=1/(1/v+10000);f.upload(c.oldPosition,moved);
         c.reproject();auto rejected=f.read(c.remappedLuma),rejectedChroma=f.read(c.remappedChroma);
         for(UINT i=0;i<rejected.size();i++) require(rejected[i].x==0 && rejectedChroma[i].w==1,"disocclusion retained history");
         // A history outlier is clamped to its neighbourhood while young.
@@ -411,7 +428,7 @@ namespace
         // full-size allocation. The inactive capacity contains invalid depth.
         cb=f.constants.Get();f.context->CSSetConstantBuffers(13,1,&cb);cb=f.camera.Get();f.context->CSSetConstantBuffers(12,1,&cb);
         cb=stereo.Get();f.context->CSSetConstantBuffers(8,1,&cb);cb=pass.Get();f.context->CSSetConstantBuffers(2,1,&cb);
-        auto position=f.texture(),normal=f.texture();
+        auto position=f.texture(1,DXGI_FORMAT_R32_FLOAT),normal=f.texture();
         for(const auto rect:std::array<D3D11_VIEWPORT,4>{{{0,0,84,22,0,1},{0,0,74,18,0,1},{0,0,64,16,0,1},{4,2,42,10,0,1}}}) {
             f.settings.x=rect.TopLeftX;f.settings.y=rect.TopLeftY;f.settings.vw=rect.Width;f.settings.vh=rect.Height;
             std::vector<float> depths(Width*4*Height*2,1);
@@ -419,12 +436,12 @@ namespace
                 depths[y*Width*4+x]=(x-UINT(rect.TopLeftX))<UINT(rect.Width/2)?.5f:.75f;
             f.context->UpdateSubresource(native[2].Get(),0,nullptr,depths.data(),Width*4*sizeof(float),0);
             f.dispatch(Prepare,{nativeViews[0].Get(),nativeViews[2].Get(),nativeViews[1].Get()},{position.output.Get(),normal.output.Get()});
-            const auto prepared=f.read(position);
+            const auto prepared=f.readDepth(position);
+            // Each eye's half holds its own native depth: a world surface at
+            // view depth 100 / projected, stored as its positive inverse.
             for(UINT eyeIndex=0;eyeIndex<2;eyeIndex++)for(UINT y=0;y<Height;y++)for(UINT x=0;x<Width;x++) {
                 const auto p=prepared[(eyeIndex*Height+y)*Width+x];const float projected=(eyeIndex?.75f:.5f)*1.01f-.01f;
-                const float expectedX=((float(x)+.5f)/Width*2-1)/(.01f*projected);
-                const float expectedY=(1-(float(y)+.5f)/Height*2)/(.01f*projected);
-                require(p.w==1 && std::abs(p.x-expectedX)<.001f && std::abs(p.y-expectedY)<.001f && std::abs(p.z-100/projected)<.001f,"reduced GI reconstruction sampled the wrong eye, depth or coordinate system");
+                require(p>0 && std::abs(1/p-100/projected)<.001f,"reduced GI reconstruction sampled the wrong eye, depth or domain");
             }
         }
         f.context->ClearState();

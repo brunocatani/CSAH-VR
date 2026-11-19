@@ -7,7 +7,7 @@
 // on the receiver's own plane are skipped, and AO is temporally accumulated
 // with the bounce (upstream leaves AO per-frame).
 #include "ScreenSpaceGICommon.hlsli"
-Texture2DArray<float4> Position : register(t0);
+Texture2DArray<float> Position : register(t0);
 Texture2DArray<float4> Normal : register(t1);
 Texture2DArray<float4> Radiance : register(t2);
 Texture2D<float2> Noise : register(t3);
@@ -35,19 +35,22 @@ void main(uint3 id:SV_DispatchThreadID)
 {
     if(any(id.xy>=Extent)||id.z>=2) return;
     const uint eye=id.z;
-    float4 center=Position.Load(int4(id,0));
+    const float geometry=Position.Load(int4(id,0));
+    const float domain=sign(geometry);
+    const ViewRays rays=CurrentRays(eye,geometry<0);
+    const float3 center=geometry!=0?RebuildPosition(rays,id.xy+.5,geometry):0;
     float4 surface=Normal.Load(int4(id,0));
-    float3 n=surface.xyz,view=SafeNormal(-center.xyz);
+    float3 n=surface.xyz,view=SafeNormal(-center);
     float occlusion=0,specularOcclusion=0;float4 luma=0;float2 chroma=0;float3 specular=0;
     const float fadeEnd=DepthFadeStart+1/DepthFadeScale;
-    const bool traced=center.w!=0 && center.z<fadeEnd;
+    const bool traced=geometry!=0 && center.z<fadeEnd;
     if(traced)
     {
-        const bool gi=EnableGI!=0 && center.w>0;
+        const bool gi=EnableGI!=0 && geometry>0;
         const bool specularGI=gi && EnableSpecular!=0;
         const float roughness=max(.2,saturate(surface.w));
         const float nv=clamp(dot(view,n),1e-5,1);
-        const float pixelSize=center.z*PixelViewScale(eye,center.w<0);
+        const float pixelSize=center.z*PixelViewScale(rays);
         const float screenRadius=max(MinScreenRadius,EffectRadius/max(pixelSize,1e-6));
         const float minS=1.3/screenRadius;
         const float rcpSlices=1.0/NumSlices,rcpSteps=1.0/NumSteps;
@@ -80,9 +83,11 @@ void main(uint3 id:SV_DispatchThreadID)
                 float2 pixel=float2(id.xy)+.5+s*omega*side;
                 if(any(pixel<0)||any(pixel>=float2(Extent))) continue;
                 float mip=clamp(log2(s)+logLengthOmega-3.3,0,MipCount-1);
-                float4 sample=Position.Load(MipTexel(pixel,eye,(uint)round(mip)));
-                if(sample.w!=center.w) continue;
-                float3 delta=sample.xyz-center.xyz;
+                const int4 texel=MipTexel(pixel,eye,(uint)round(mip));
+                const float sampleGeometry=Position.Load(texel);
+                if(sign(sampleGeometry)!=domain) continue;
+                const float3 sample=RebuildPosition(rays,MipTexelCentre(texel),sampleGeometry);
+                float3 delta=sample-center;
                 if(dot(delta,delta)<1e-6) continue;
                 float3 horizon=SafeNormal(delta);
                 // Integer sampling can leave the analytic slice plane. A
@@ -109,7 +114,7 @@ void main(uint3 id:SV_DispatchThreadID)
                     if(fresh!=0 || freshSpecular!=0)
                     {
                         float3 sampleNormal=Normal.Load(int4(clamp(int2(pixel),0,int2(Extent)-1),eye,0)).xyz;
-                        if(dot(sample.xyz,sampleNormal)>0) sampleNormal=-sampleNormal;
+                        if(dot(sample,sampleNormal)>0) sampleNormal=-sampleNormal;
                         float facing=max(0,-dot(sampleNormal,horizon));
                         if(facing>0)
                         {

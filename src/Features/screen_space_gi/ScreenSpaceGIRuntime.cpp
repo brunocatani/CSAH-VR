@@ -235,7 +235,8 @@ namespace csah::screen_space_gi
             if(!noise_ && !createNoise()) return false;
             constexpr auto half=DXGI_FORMAT_R16G16B16A16_FLOAT;
             for(UINT i=0;i<2;i++) {
-                if(!createTexture(positions_[i],DXGI_FORMAT_R32G32B32A32_FLOAT,width,height,kMipCount) ||
+                // Signed inverse view depth (ScreenSpaceGICommon.hlsli).
+                if(!createTexture(positions_[i],DXGI_FORMAT_R32_FLOAT,width,height,kMipCount) ||
                     !createTexture(normals_[i],half,width,height) || !createTexture(luma_[i],half,width,height) ||
                     !createTexture(chroma_[i],half,width,height) || !createTexture(specular_[i],half,width,height)) return false;
             }

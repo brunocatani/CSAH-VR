@@ -6,8 +6,8 @@
 // expected position. On disocclusion the frame count halves instead of
 // resetting, and fast motion lowers the accumulation ceiling.
 #include "ScreenSpaceGICommon.hlsli"
-Texture2DArray<float4> Position : register(t0);
-Texture2DArray<float4> PreviousPosition : register(t1);
+Texture2DArray<float> Position : register(t0);
+Texture2DArray<float> PreviousPosition : register(t1);
 Texture2DArray<float4> PreviousRadiance : register(t2);
 Texture2DArray<float4> PreviousLuma : register(t3);
 Texture2DArray<float4> PreviousChroma : register(t4);
@@ -20,13 +20,16 @@ RWTexture2DArray<float4> Specular : register(u3);
 void main(uint3 id:SV_DispatchThreadID)
 {
     if(any(id.xy>=Extent)||id.z>=2) return;
-    float4 center=Position.Load(int4(id,0));
+    const float geometry=Position.Load(int4(id,0));
     float4 luma=0,chroma=0,specular=0;float3 radiance=0;float wsum=0;
     float2 uv=(id.xy+.5)/Extent,previousUv=uv;
-    if(center.w!=0 && center.z<DepthFadeStart+1/DepthFadeScale)
+    const float domain=sign(geometry);
+    if(geometry!=0 && 1/abs(geometry)<DepthFadeStart+1/DepthFadeScale)
     {
+        const float3 center=RebuildPosition(CurrentRays(id.z,geometry<0),id.xy+.5,geometry);
+        const ViewRays previousRays=PreviousRays(id.z,geometry<0);
         float3 expected;
-        if(PreviousUV(center.xyz,id.z,previousUv,expected))
+        if(PreviousUV(center,id.z,previousUv,expected))
         {
             float2 coordinate=previousUv*Extent-.5;
             int2 base=int2(floor(coordinate));float2 f=coordinate-base;
@@ -36,9 +39,11 @@ void main(uint3 id:SV_DispatchThreadID)
                 int2 o=int2(tap&1,tap>>1);int2 p=base+o;
                 if(any(p<0)||any(p>=int2(Extent))) continue;
                 float weight=(o.x?f.x:1-f.x)*(o.y?f.y:1-f.y);
-                float4 old=PreviousPosition.Load(int4(p,id.z,0));
-                if(old.w!=center.w || abs(old.z-expected.z)>threshold*3) continue;
-                float3 delta=old.xyz-expected;
+                const float oldGeometry=PreviousPosition.Load(int4(p,id.z,0));
+                if(sign(oldGeometry)!=domain) continue;
+                const float3 old=RebuildPosition(previousRays,p+.5,oldGeometry);
+                if(abs(old.z-expected.z)>threshold*3) continue;
+                float3 delta=old-expected;
                 if(dot(delta,delta)>=threshold*threshold) continue;
                 int4 t=int4(p,id.z,0);
                 luma+=PreviousLuma.Load(t)*weight;chroma+=PreviousChroma.Load(t)*weight;specular+=PreviousSpecular.Load(t)*weight;
