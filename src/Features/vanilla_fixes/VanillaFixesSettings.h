@@ -36,6 +36,8 @@ namespace csah::vanilla_fixes
         bool enabled{ true };
         bool precipitationOcclusion{ true };
         bool imageSpaceModifiers{ true };
+        // Not a setting: the game's own ambient occlusion runs exactly while
+        // Screen Space GI, which replaces it, is off (loadSettings).
         bool sao{ true };
         bool screenSpaceReflections{ true };
         bool nativeScreenSpaceMaterialPipeline{ true };

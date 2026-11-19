@@ -74,7 +74,7 @@ The included features are listed individually below. Incomplete or unconfirmed e
 - **Vanilla Fixes** — Independent master for the integrated native-renderer corrections. Changing this master requires a restart.
 - **Precipitation Occlusion** — Enables native precipitation occlusion through the renderer-fix controls.
 - **Image Space Modifiers** — Enables native image-space modifier processing through the renderer-fix controls.
-- **Stereo SAO** — Provides the stereo-aware screen-space ambient-occlusion path.
+- **Stereo SAO** — Provides the stereo-aware screen-space ambient-occlusion path. It runs whenever Screen Space GI, which replaces it, is off.
 - **Stable Screen-Space Reflections** — Uses per-eye reflection traversal, geometric reflection rays, shared scene-radiance retention, and corrected cubemap fallback. Water uses separate shaders and is unaffected by this control.
 - **Native Screen-Space Material Pipeline** — Controls Bethesda's shared skin-scattering and reflection image-space pipeline. This can affect SSR and dynamic cubemap capture; the separate Subsurface Scattering feature controls isolated skin diffusion.
 - **VR Lens Flare** — Enables the native lens-flare path through the VR renderer fixes.

@@ -1,4 +1,5 @@
 #include "Features/vanilla_fixes/VanillaFixesSettingsStore.h"
+#include "Features/screen_space_gi/ScreenSpaceGISettings.h"
 #include "settings/SettingsFile.h"
 
 #include "support/Logger.h"
@@ -45,7 +46,7 @@ namespace csah::vanilla_fixes
             .imageSpaceModifiers = readBoolean(values,
                 "AllowImageSpaceModifiers",
                 defaults.imageSpaceModifiers),
-            .sao = readBoolean(values, "VrAllowSAO", defaults.sao),
+            .sao = !screen_space_gi::loadSettings(values).enabled,
             .screenSpaceReflections = readBoolean(values,
                 "VrAllowScreenSpaceReflections",
                 defaults.screenSpaceReflections),

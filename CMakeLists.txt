@@ -3080,6 +3080,7 @@ if(BUILD_CSAH_TESTS)
   add_executable(CSAHVanillaFixesSettingsTests
     "${ROOT_DIR}/tests/VanillaFixesSettingsTests.cpp"
     "${VANILLA_SETTINGS_STORE_SOURCE}"
+    "${SOURCE_DIR}/Features/screen_space_gi/ScreenSpaceGISettings.cpp"
     "${VANILLA_FIXES_SOURCE_DIR}/VanillaFixesSettingsStore.h"
     "${VANILLA_FIXES_SOURCE_DIR}/VanillaFixesSettings.h"
     ${SETTINGS_FILE_SOURCES})

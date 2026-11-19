@@ -41,7 +41,6 @@ int main()
         "Enabled = false\n"
         "PrecipitationOcclusion = false\n"
         "AllowImageSpaceModifiers = false\n"
-        "VrAllowSAO = false\n"
         "VrAllowScreenSpaceReflections = false\n"
         "NativeScreenSpaceMaterialPipeline = false\n"
         "LensFlareVr = false\n"
@@ -51,7 +50,6 @@ int main()
     require(!disabled.enabled, "master key");
     require(!disabled.precipitationOcclusion, "precipitation key");
     require(!disabled.imageSpaceModifiers, "image-space key");
-    require(!disabled.sao, "SAO key");
     require(!disabled.screenSpaceReflections, "SSLR key");
     require(
         !disabled.nativeScreenSpaceMaterialPipeline,
@@ -85,7 +83,6 @@ int main()
         "Enabled = true\n"
         "PrecipitationOcclusion = false\n"
         "AllowImageSpaceModifiers = true\n"
-        "VrAllowSAO = false\n"
         "VrAllowScreenSpaceReflections = true\n"
         "NativeScreenSpaceMaterialPipeline = false\n"
         "LensFlareVr = true\n"
@@ -97,7 +94,7 @@ int main()
         .enabled = true,
         .precipitationOcclusion = false,
         .imageSpaceModifiers = true,
-        .sao = false,
+        .sao = true,
         .screenSpaceReflections = true,
         .nativeScreenSpaceMaterialPipeline = false,
         .lensFlare = true,
@@ -107,6 +104,23 @@ int main()
             DirectionalLightDiagnosticMode::directSpecularOnly,
     };
     require(loadSettings(ini.values()) == mixed, "every Vanilla Fixes key");
+
+    // The game's own ambient occlusion and Screen Space GI are one choice:
+    // it runs exactly while Screen Space GI does not.
+    ini.write(
+        "[ScreenSpaceGI]\n"
+        "Enabled = true\n");
+    require(!loadSettings(ini.values()).sao, "the game's ambient occlusion stayed on beside Screen Space GI");
+    ini.write(
+        "[ScreenSpaceGI]\n"
+        "Enabled = false\n");
+    require(loadSettings(ini.values()).sao, "the game's ambient occlusion stayed off without Screen Space GI");
+    ini.write(
+        "[CommunityShaders]\n"
+        "Enabled = false\n"
+        "[ScreenSpaceGI]\n"
+        "Enabled = true\n");
+    require(loadSettings(ini.values()).sao, "the game's ambient occlusion stayed off while the visual suite gate keeps Screen Space GI off");
 
     std::cout << "Vanilla Fixes settings tests passed.\n";
     return EXIT_SUCCESS;

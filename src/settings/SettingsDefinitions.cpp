@@ -164,7 +164,8 @@ namespace csah::settings_file
                 "Caps the continuous wavefront reach in 32-pixel blocks. Eight permits the full 256-pixel close-shadow reach.\n"
                 "Range: 2 to 8."),
             option("ScreenSpaceGI", "Enabled", "11. Screen-space GI", ValueType::Boolean, "false",
-                "Screen Space AO and GI."),
+                "Screen Space AO and GI. While on, it replaces the game's own ambient occlusion (SAO); while off, SAO\n"
+                "runs instead."),
             option("ScreenSpaceGI", "IndirectLight", "11. Screen-space GI", ValueType::Boolean, "true",
                 "Indirect Diffuse Light."),
             option("ScreenSpaceGI", "ExperimentalSpecular", "11. Screen-space GI", ValueType::Boolean, "false",
@@ -327,8 +328,6 @@ namespace csah::settings_file
                 "Precipitation Occlusion."),
             option("VanillaFixes", "AllowImageSpaceModifiers", "20. Vanilla VR fixes", ValueType::Boolean, "true",
                 "Image Space Modifiers."),
-            option("VanillaFixes", "VrAllowSAO", "20. Vanilla VR fixes", ValueType::Boolean, "true",
-                "Stereo SAO."),
             option("VanillaFixes", "VrAllowScreenSpaceReflections", "20. Vanilla VR fixes", ValueType::Boolean, "false",
                 "Enables FO4VR screen-space reflections with per-eye traversal, geometric reflection rays, shared world-\n"
                 "radiance retention, and corrected cubemap fallback. Water uses separate shaders and is not changed."),
