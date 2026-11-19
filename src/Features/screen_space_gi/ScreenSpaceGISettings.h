@@ -5,7 +5,9 @@
 #include "settings/SettingsFile.h"
 namespace csah::screen_space_gi
 {
-    // Defaults and ranges follow upstream Community Shaders FO4 ScreenSpaceGI.
+    // Defaults and ranges follow upstream Community Shaders FO4 ScreenSpaceGI;
+    // the sample counts are the VR preset of the Skyrim feature it derives
+    // from (3 directions of 6 samples).
     struct Settings
     {
         bool enabled{false};
@@ -15,8 +17,8 @@ namespace csah::screen_space_gi
         bool blur{true};
         // Internal resolution per eye: 0 full, 1 half, 2 quarter.
         std::int32_t resolutionMode{1};
-        std::int32_t slices{4};
-        std::int32_t steps{8};
+        std::int32_t slices{3};
+        std::int32_t steps{6};
         float minScreenRadius{0.01f};
         float aoRadius{256.0f};
         float giRadius{256.0f};
