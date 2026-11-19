@@ -19,7 +19,8 @@ namespace csah::render
             static_cast<std::uint32_t>(
                 GpuTimingProfiler::Group::Skylighting) |
             static_cast<std::uint32_t>(GpuTimingProfiler::Group::General) |
-            static_cast<std::uint32_t>(GpuTimingProfiler::Group::StereoMeasurements);
+            static_cast<std::uint32_t>(GpuTimingProfiler::Group::StereoMeasurements) |
+            static_cast<std::uint32_t>(GpuTimingProfiler::Group::ScreenSpaceGI);
         std::atomic_uint32_t onDemandGroups{};
         std::atomic_uint64_t collectionRequestRevision{};
     }
