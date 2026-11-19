@@ -143,8 +143,8 @@ namespace csah::screen_space_gi
         device_=device;context_=context;shaders_={};constants_.Reset();parameterView_.Reset();previousCamera_.Reset();noise_.Reset();
         positions_={};normals_={};luma_={};chroma_={};specular_={};
         remappedLuma_={};remappedChroma_={};remappedSpecular_={};tracedLuma_={};tracedChroma_={};radiance_={};radianceMips_={};
-        composeVertex_.Reset();composePixel_.Reset();composeBlend_.Reset();composeRaster_.Reset();composeDepth_.Reset();
-        composeConstants_={};composeTargets_={};frameNative_={};frameAuthored_.Reset();frameSurface_.Reset();frameStereo_.Reset();frameCamera_.Reset();emissive_.Reset();
+        composeVertex_.Reset();composePixel_.Reset();composeScale_.Reset();composeBlend_.Reset();composeRaster_.Reset();composeDepth_.Reset();
+        composeTargets_={};frameNative_={};frameAuthored_.Reset();frameSurface_.Reset();frameStereo_.Reset();frameCamera_.Reset();emissive_.Reset();
         frame_=preparedFrame_=radianceFrame_=composedFrame_=nextRetry_=0;width_=height_=current_=0;ready_=historyValid_=loggedFailure_=loggedActive_=false;
         compositeScope_={};generationTiming_.reset();compositeTiming_.reset();
         if(device_ && context_) {
@@ -387,9 +387,10 @@ namespace csah::screen_space_gi
     bool Runtime::internalRenderActive() noexcept {return gComposeRender;}
     bool Runtime::createComposeResources() noexcept
     {
-        if(composeVertex_ && composePixel_ && composeBlend_ && composeRaster_ && composeDepth_ && composeConstants_[0] && composeConstants_[1]) return true;
+        if(composeVertex_ && composePixel_ && composeScale_ && composeBlend_ && composeRaster_ && composeDepth_) return true;
         if(FAILED(device_->CreateVertexShader(kScreenSpaceGIComposeVS.data,kScreenSpaceGIComposeVS.size,nullptr,&composeVertex_)) ||
-            FAILED(device_->CreatePixelShader(kScreenSpaceGIComposePS.data,kScreenSpaceGIComposePS.size,nullptr,&composePixel_))) return false;
+            FAILED(device_->CreatePixelShader(kScreenSpaceGIComposePS.data,kScreenSpaceGIComposePS.size,nullptr,&composePixel_)) ||
+            FAILED(device_->CreatePixelShader(kScreenSpaceGIComposeScalePS.data,kScreenSpaceGIComposeScalePS.size,nullptr,&composeScale_))) return false;
         // dest * Target1 + Target0: the accumulator takes the root of the
         // occlusion and the added bounce; its alpha is kept.
         D3D11_BLEND_DESC blend{};
@@ -401,12 +402,6 @@ namespace csah::screen_space_gi
         D3D11_DEPTH_STENCIL_DESC depth{};depth.DepthEnable=FALSE;depth.StencilEnable=FALSE;depth.DepthWriteMask=D3D11_DEPTH_WRITE_MASK_ZERO;depth.DepthFunc=D3D11_COMPARISON_ALWAYS;
         if(FAILED(device_->CreateBlendState(&blend,&composeBlend_)) || FAILED(device_->CreateRasterizerState(&raster,&composeRaster_)) ||
             FAILED(device_->CreateDepthStencilState(&depth,&composeDepth_))) return false;
-        for(UINT i=0;i<2;i++) {
-            const std::array<UINT,4> value{i,0,0,0};
-            D3D11_BUFFER_DESC d{};d.ByteWidth=sizeof(value);d.Usage=D3D11_USAGE_IMMUTABLE;d.BindFlags=D3D11_BIND_CONSTANT_BUFFER;
-            const D3D11_SUBRESOURCE_DATA initial{value.data(),0,0};
-            if(FAILED(device_->CreateBuffer(&d,&initial,&composeConstants_[i]))) return false;
-        }
         return true;
     }
     ID3D11RenderTargetView* Runtime::composeTarget(std::size_t index,ID3D11ShaderResourceView* accumulator) noexcept
@@ -458,7 +453,6 @@ namespace csah::screen_space_gi
             context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
             context->VSSetShader(composeVertex_.Get(),nullptr,0);
             context->GSSetShader(nullptr,nullptr,0);context->HSSetShader(nullptr,nullptr,0);context->DSSetShader(nullptr,nullptr,0);
-            context->PSSetShader(composePixel_.Get(),nullptr,0);
             // The accumulators become render targets: no composite input may stay bound.
             const std::array<ID3D11ShaderResourceView*,ScopedComposeState::kResources> none{};
             context->PSSetShaderResources(0,ScopedComposeState::kResources,none.data());
@@ -470,7 +464,7 @@ namespace csah::screen_space_gi
             buffer=frameCamera_.Get();context->PSSetConstantBuffers(12,1,&buffer);
             for(UINT i=0;i<(tiled?2u:1u);i++) {
                 // The bounce is added once, to the deferred accumulator.
-                buffer=composeConstants_[i==0?1:0].Get();context->PSSetConstantBuffers(0,1,&buffer);
+                context->PSSetShader(i==0?composePixel_.Get():composeScale_.Get(),nullptr,0);
                 context->OMSetRenderTargets(1,&targets[i],nullptr);
                 context->Draw(3,0);
             }

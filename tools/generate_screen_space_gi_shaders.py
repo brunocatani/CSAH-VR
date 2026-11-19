@@ -33,8 +33,10 @@ def generate(root, fxc, output):
     rows.append('};')
     rows.extend(array_rows('kScreenSpaceGIComposeVSData', compile_shader(root, fxc, output, 'ComposeOcclusionVS', 'ComposeOcclusion', 'vs_5_0', 'VSMain')))
     rows.extend(array_rows('kScreenSpaceGIComposePSData', compile_shader(root, fxc, output, 'ComposeOcclusionPS', 'ComposeOcclusion', 'ps_5_0', 'PSMain')))
+    rows.extend(array_rows('kScreenSpaceGIComposeScalePSData', compile_shader(root, fxc, output, 'ComposeOcclusionScalePS', 'ComposeOcclusion', 'ps_5_0', 'PSScale')))
     rows.append('inline constexpr ScreenSpaceGIShader kScreenSpaceGIComposeVS{kScreenSpaceGIComposeVSData,sizeof(kScreenSpaceGIComposeVSData)};')
     rows.append('inline constexpr ScreenSpaceGIShader kScreenSpaceGIComposePS{kScreenSpaceGIComposePSData,sizeof(kScreenSpaceGIComposePSData)};')
+    rows.append('inline constexpr ScreenSpaceGIShader kScreenSpaceGIComposeScalePS{kScreenSpaceGIComposeScalePSData,sizeof(kScreenSpaceGIComposeScalePSData)};')
     output.write_text('\n'.join(rows) + '\n')
 
 

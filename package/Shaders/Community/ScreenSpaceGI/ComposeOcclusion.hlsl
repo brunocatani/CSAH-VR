@@ -16,12 +16,6 @@ cbuffer NativeCamera : register(b12)
     float4 Camera[61];
 };
 
-cbuffer ComposeConstants : register(b0)
-{
-    uint AddIndirect;
-    uint3 ComposePad;
-};
-
 Texture2D<float4> NativeNormal : register(t1);
 Texture2D<float4> NativeMaterial : register(t2);
 Texture2D<float4> NativeDepth : register(t3);
@@ -42,18 +36,35 @@ float4 VSMain(uint vertex : SV_VertexID) : SV_Position
     return float4(uv * float2(2.0f, -2.0f) + float2(-1.0f, 1.0f), 0.0f, 1.0f);
 }
 
-ComposeOutput PSMain(float4 position : SV_Position)
+uint ComposeEye(float4 position)
 {
     uint count;
     ScreenSpaceParameters.GetDimensions(count);
-    uint eye = 0u;
-    if (count >= ScreenSpaceParameterCount) {
-        const float4 rect = ScreenSpaceParameters[1];
-        eye = position.x - rect.x >= rect.z * 0.5f ? 1u : 0u;
+    if (count < ScreenSpaceParameterCount) {
+        return 0u;
     }
-    const ScreenSpaceAmbientResult ssgi = ScreenSpaceAmbient(position.xy, eye);
+    const float4 rect = ScreenSpaceParameters[1];
+    return position.x - rect.x >= rect.z * 0.5f ? 1u : 0u;
+}
+
+// Deferred accumulator: occlusion root and the bounce, added once.
+ComposeOutput PSMain(float4 position : SV_Position)
+{
+    const ScreenSpaceAmbientResult ssgi = ScreenSpaceAmbient(position.xy, ComposeEye(position));
     ComposeOutput output;
-    output.Add = float4(AddIndirect != 0u ? ssgi.diffuse : 0.0f.xxx, 0.0f);
+    output.Add = float4(ssgi.diffuse, 0.0f);
+    output.Scale = float4(sqrt(ssgi.diffuseVisibility), 1.0f);
+    return output;
+}
+
+// Tiled accumulator: the occlusion root alone. A separate entry point lets
+// the compiler drop the bounce, its spherical-harmonic evaluation and the
+// material decode, none of which reach this output.
+ComposeOutput PSScale(float4 position : SV_Position)
+{
+    const ScreenSpaceAmbientResult ssgi = ScreenSpaceAmbient(position.xy, ComposeEye(position));
+    ComposeOutput output;
+    output.Add = 0.0f;
     output.Scale = float4(sqrt(ssgi.diffuseVisibility), 1.0f);
     return output;
 }

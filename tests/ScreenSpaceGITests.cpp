@@ -261,34 +261,37 @@ namespace
         // constant band evaluates to 0.9 luma, tinted by each eye's chroma.
         {
             auto composePath=root/L"package/Shaders/Community/ScreenSpaceGI/ComposeOcclusion.hlsl";
-            ComPtr<ID3DBlob> composeVertex,composePixel;
+            ComPtr<ID3DBlob> composeVertex,composePixel,composeScale;
             check(D3DCompileFromFile(composePath.c_str(),nullptr,D3D_COMPILE_STANDARD_FILE_INCLUDE,"VSMain","vs_5_0",D3DCOMPILE_OPTIMIZATION_LEVEL3,0,&composeVertex,&error),"compose vertex");
             check(D3DCompileFromFile(composePath.c_str(),nullptr,D3D_COMPILE_STANDARD_FILE_INCLUDE,"PSMain","ps_5_0",D3DCOMPILE_OPTIMIZATION_LEVEL3,0,&composePixel,&error),"compose pixel");
-            ComPtr<ID3D11VertexShader> cvs;ComPtr<ID3D11PixelShader> cps;
+            check(D3DCompileFromFile(composePath.c_str(),nullptr,D3D_COMPILE_STANDARD_FILE_INCLUDE,"PSScale","ps_5_0",D3DCOMPILE_OPTIMIZATION_LEVEL3,0,&composeScale,&error),"compose scale pixel");
+            ComPtr<ID3D11VertexShader> cvs;ComPtr<ID3D11PixelShader> cps,scaleShader;
             check(f.device->CreateVertexShader(composeVertex->GetBufferPointer(),composeVertex->GetBufferSize(),nullptr,&cvs),"compose VS");
             check(f.device->CreatePixelShader(composePixel->GetBufferPointer(),composePixel->GetBufferSize(),nullptr,&cps),"compose PS");
+            check(f.device->CreatePixelShader(composeScale->GetBufferPointer(),composeScale->GetBufferSize(),nullptr,&scaleShader),"compose scale PS");
             D3D11_BLEND_DESC blend{};blend.RenderTarget[0].BlendEnable=TRUE;
             blend.RenderTarget[0].SrcBlend=D3D11_BLEND_ONE;blend.RenderTarget[0].DestBlend=D3D11_BLEND_SRC1_COLOR;blend.RenderTarget[0].BlendOp=D3D11_BLEND_OP_ADD;
             blend.RenderTarget[0].SrcBlendAlpha=D3D11_BLEND_ZERO;blend.RenderTarget[0].DestBlendAlpha=D3D11_BLEND_ONE;blend.RenderTarget[0].BlendOpAlpha=D3D11_BLEND_OP_ADD;
             blend.RenderTarget[0].RenderTargetWriteMask=D3D11_COLOR_WRITE_ENABLE_ALL;
             ComPtr<ID3D11BlendState> blendState;check(f.device->CreateBlendState(&blend,&blendState),"compose blend");
-            D3D11_BUFFER_DESC cd{};cd.ByteWidth=16;cd.BindFlags=D3D11_BIND_CONSTANT_BUFFER;ComPtr<ID3D11Buffer> addIndirect;check(f.device->CreateBuffer(&cd,nullptr,&addIndirect),"compose constants");
-            std::array<UINT,4> flag{1,0,0,0};f.context->UpdateSubresource(addIndirect.Get(),0,nullptr,flag.data(),0,0);
-            auto* composeConstants=addIndirect.Get();f.context->PSSetConstantBuffers(0,1,&composeConstants);
             auto* parameterView=parameters.Get();f.context->PSSetShaderResources(59,1,&parameterView);
-            const float one[4]{1,1,1,1};f.context->ClearRenderTargetView(targets[0].Get(),one);
-            f.context->VSSetShader(cvs.Get(),nullptr,0);f.context->PSSetShader(cps.Get(),nullptr,0);f.context->OMSetBlendState(blendState.Get(),nullptr,0xFFFFFFFFu);
-            auto* accumulator=targets[0].Get();f.context->OMSetRenderTargets(1,&accumulator,nullptr);
-            D3D11_VIEWPORT full{0,0,Width*4,Height*2,0,1};f.context->RSSetViewports(1,&full);f.context->Draw(3,0);
+            const float one[4]{1,1,1,1};f.context->ClearRenderTargetView(targets[0].Get(),one);f.context->ClearRenderTargetView(targets[1].Get(),one);
+            f.context->VSSetShader(cvs.Get(),nullptr,0);f.context->OMSetBlendState(blendState.Get(),nullptr,0xFFFFFFFFu);
+            D3D11_VIEWPORT full{0,0,Width*4,Height*2,0,1};f.context->RSSetViewports(1,&full);
+            // Deferred accumulator through PSMain, tiled accumulator through PSScale.
+            for(UINT i=0;i<2;i++) {f.context->PSSetShader(i?scaleShader.Get():cps.Get(),nullptr,0);auto* accumulator=targets[i].Get();f.context->OMSetRenderTargets(1,&accumulator,nullptr);f.context->Draw(3,0);}
             f.context->OMSetRenderTargets(0,nullptr,nullptr);f.context->OMSetBlendState(nullptr,nullptr,0xFFFFFFFFu);
-            f.context->CopyResource(staging.Get(),textures[0].Get());D3D11_MAPPED_SUBRESOURCE mapped{};check(f.context->Map(staging.Get(),0,D3D11_MAP_READ,0,&mapped),"compose map");
-            for(UINT y=0;y<td.Height;y++) for(UINT x=0;x<td.Width;x++) {
-                const auto value=reinterpret_cast<const V*>(static_cast<const std::byte*>(mapped.pData)+y*mapped.RowPitch)[x];
-                const float co=x<Width*2?.45f:-.45f;
-                const V expected{std::sqrt(.5508f)+(.9f+co)/3,std::sqrt(.6809625f)+.9f/3,std::sqrt(.811125f)+(.9f-co)/3,1};
-                require(std::abs(value.x-expected.x)<.003f && std::abs(value.y-expected.y)<.003f && std::abs(value.z-expected.z)<.003f && value.w==1,"composite occlusion root, SH bounce, eye or alpha changed");
+            for(UINT i=0;i<2;i++) {
+                f.context->CopyResource(staging.Get(),textures[i].Get());D3D11_MAPPED_SUBRESOURCE mapped{};check(f.context->Map(staging.Get(),0,D3D11_MAP_READ,0,&mapped),"compose map");
+                for(UINT y=0;y<td.Height;y++) for(UINT x=0;x<td.Width;x++) {
+                    const auto value=reinterpret_cast<const V*>(static_cast<const std::byte*>(mapped.pData)+y*mapped.RowPitch)[x];
+                    const float co=x<Width*2?.45f:-.45f,bounce=i?0.0f:1.0f;
+                    const V expected{std::sqrt(.5508f)+bounce*(.9f+co)/3,std::sqrt(.6809625f)+bounce*.9f/3,std::sqrt(.811125f)+bounce*(.9f-co)/3,1};
+                    require(std::abs(value.x-expected.x)<.003f && std::abs(value.y-expected.y)<.003f && std::abs(value.z-expected.z)<.003f && value.w==1,
+                        i?"tiled accumulator lost the occlusion root or received the bounce":"composite occlusion root, SH bounce, eye or alpha changed");
+                }
+                f.context->Unmap(staging.Get(),0);
             }
-            f.context->Unmap(staging.Get(),0);
         }
         D3D11_VIEWPORT viewport{0,0,Width*4,Height*2,0,1};f.context->RSSetViewports(1,&viewport);
     }

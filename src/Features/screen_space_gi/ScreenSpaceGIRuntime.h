@@ -126,9 +126,10 @@ namespace csah::screen_space_gi
         // G-buffer views and camera buffers captured by this frame's ambient
         // preparation (released at the next preparation or device reset).
         struct ComposeTarget {Ptr<ID3D11Resource> resource;Ptr<ID3D11RenderTargetView> view;};
-        Ptr<ID3D11VertexShader> composeVertex_;Ptr<ID3D11PixelShader> composePixel_;
+        // composePixel_ composes the deferred accumulator (root and bounce);
+        // composeScale_ only scales the tiled one.
+        Ptr<ID3D11VertexShader> composeVertex_;Ptr<ID3D11PixelShader> composePixel_,composeScale_;
         Ptr<ID3D11BlendState> composeBlend_;Ptr<ID3D11RasterizerState> composeRaster_;Ptr<ID3D11DepthStencilState> composeDepth_;
-        std::array<Ptr<ID3D11Buffer>,2> composeConstants_;
         std::array<ComposeTarget,2> composeTargets_;
         std::array<Ptr<ID3D11ShaderResourceView>,3> frameNative_;
         Ptr<ID3D11ShaderResourceView> frameAuthored_,frameSurface_;
