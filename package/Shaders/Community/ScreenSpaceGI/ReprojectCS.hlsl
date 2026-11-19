@@ -46,7 +46,9 @@ void main(uint3 id:SV_DispatchThreadID)
                 float3 delta=old-expected;
                 if(dot(delta,delta)>=threshold*threshold) continue;
                 int4 t=int4(p,id.z,0);
-                luma+=PreviousLuma.Load(t)*weight;chroma+=PreviousChroma.Load(t)*weight;specular+=PreviousSpecular.Load(t)*weight;
+                luma+=PreviousLuma.Load(t)*weight;chroma+=PreviousChroma.Load(t)*weight;
+                // Only the experimental specular trace keeps a specular history.
+                [branch] if(EnableSpecular!=0) specular+=PreviousSpecular.Load(t)*weight;
                 float4 light=PreviousRadiance.Load(t);
                 radiance+=light.w>0?light.rgb*weight:0;
                 wsum+=weight;

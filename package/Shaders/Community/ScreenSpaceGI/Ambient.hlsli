@@ -44,6 +44,9 @@ ScreenSpaceAmbientResult ScreenSpaceAmbient(float2 pixel,uint eye)
     uint depthWidth,depthHeight;NativeDepth.GetDimensions(depthWidth,depthHeight);
     int2 nativePixel=clamp(int2(pixel),0,int2(depthWidth,depthHeight)-1);
     float depth=NativeDepth.Load(int3(nativePixel,0)).x;
+    // Nothing was rendered here (sky or the headset's hidden area): every
+    // tap would weigh nothing, so skip their reads.
+    [branch] if(depth<=0 || depth>=1) return result;
     float4 clip=NativeClip((pixel-rect.xy)/rect.zw,depth,eye);
     uint row=eye*4+(depth<=.01?40:32);
     float4 homogeneous=float4(dot(Camera[row],clip),dot(Camera[row+1],clip),dot(Camera[row+2],clip),dot(Camera[row+3],clip));
@@ -52,6 +55,7 @@ ScreenSpaceAmbientResult ScreenSpaceAmbient(float2 pixel,uint eye)
     // compressed first-person depth with world surfaces.
     float3 normal=DecodeNativeNormal(NativeNormal.Load(int3(nativePixel,0)).xy);
     float4 luma=0,chroma=0,specular=0;float total=0;
+    const bool traceSpecular=enableGI!=0 && enableSpecular!=0;
     [unroll] for(uint tap=0;tap<4;tap++)
     {
         int2 p=clamp(base+int2(tap&1,tap>>1),0,int2(extent)-1);
@@ -65,8 +69,9 @@ ScreenSpaceAmbientResult ScreenSpaceAmbient(float2 pixel,uint eye)
         weight*=pow(saturate(dot(normal,n)),16);
         weight*=sign(geometry)==(depth<=.01?-1:1)?1:0;
         weight*=geometry!=0?exp(-abs(1/abs(geometry)-receiver.z)/max(1,abs(receiver.z)*.01)):0;
-        luma+=ScreenSpaceLuma.Load(location)*weight;chroma+=ScreenSpaceChroma.Load(location)*weight;
-        specular+=ScreenSpaceSpecular.Load(location)*weight;total+=weight;
+        luma+=ScreenSpaceLuma.Load(location)*weight;chroma+=ScreenSpaceChroma.Load(location)*weight;total+=weight;
+        // Written only by the experimental specular trace.
+        [branch] if(traceSpecular) specular+=ScreenSpaceSpecular.Load(location)*weight;
     }
     if(total<=1e-6) return result;
     luma/=total;chroma/=total;specular/=total;
@@ -85,7 +90,7 @@ ScreenSpaceAmbientResult ScreenSpaceAmbient(float2 pixel,uint eye)
     // Upstream ComposeSpecular: specular occlusion from the same AO, reduced
     // by the experimental specular trace's own visibility.
     float specularVisibility=saturate(pow(abs(nv+v),response.roughness*response.roughness)-1+v);
-    if(enableGI!=0 && enableSpecular!=0) specularVisibility*=1-saturate(specular.w);
+    if(traceSpecular) specularVisibility*=1-saturate(specular.w);
     result.specularVisibility=specularVisibility;
     if(enableGI!=0)
     {
