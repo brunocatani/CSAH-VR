@@ -530,19 +530,20 @@ namespace csah::screen_space_gi
         traceRejection_=reason;traceRejectedFrame_=frame_;
         return false;
     }
-    void Runtime::traceComposite(bool tiled,const AmbientTrace& pass) noexcept
+    bool Runtime::traceComposite(bool tiled,const AmbientTrace& pass) noexcept
     {
-        if(!tracing()) return;
+        if(!tracing()) return false;
         const bool ambient=traceAmbientFrame_==frame_,prepared=preparedFrame_==frame_ && ready_,rejected=traceRejectedFrame_==frame_;
         const bool captured=radianceFrame_==frame_,composed=composedFrame_==frame_,folded=static_cast<bool>(foldedTiled_);
         const auto reason=rejected?static_cast<std::uint32_t>(traceRejection_)+1:0u;
         const std::uint32_t signature=(tiled?1u:0u)|(ambient?2u:0u)|(prepared?4u:0u)|(captured?8u:0u)|(composed?16u:0u)|(folded?32u:0u)|(reason<<8)|
             (pass.binds?1u<<12:0u)|(pass.replacedBinds?1u<<13:0u)|(pass.replacedDraws?1u<<14:0u)|(pass.unreplacedDraws?1u<<15:0u)|(pass.blocked<<16)|(pass.lastContract<<24);
-        if(signature==traceSignature_) return;
+        if(signature==traceSignature_) return false;
         traceSignature_=signature;++traceLines_;
         logging::info("Screen Space GI composite trace #{}: frame={}, tiledComposite={}, ambientDraw={}, prepared={}, rejection={}, radianceCaptured={}, composed={}, tiledFolded={}; ambient pass: originalBinds={}, replacedBinds={}, replacedDraws={}, unreplacedDraws={}, blocked=0x{:X}, contract={}.",
             traceLines_,frame_,tiled,ambient,prepared,reason,captured,composed,folded,
             pass.binds,pass.replacedBinds,pass.replacedDraws,pass.unreplacedDraws,pass.blocked,pass.lastContract);
+        return true;
     }
     RuntimeSnapshot Runtime::snapshot() const noexcept
     {

@@ -381,6 +381,74 @@ namespace csah::render
         // Diagnostic for screen_space_gi::Runtime::traceComposite, counted
         // between two world composites; remove with that trace.
         thread_local screen_space_gi::AmbientTrace ambientTrace{};
+        // Same diagnostic: every pixel shader is tagged at creation with the
+        // DXBC checksum and size it was requested with, and for one frame
+        // after each trace line the shaders drawn up to the world composite
+        // are listed, so the pass that lights a frame can be identified.
+        constexpr GUID kTraceShaderIdentity{ 0x5c1b2f0a, 0x7d43, 0x4e7b, { 0x9a, 0x21, 0x33, 0x6e, 0x51, 0x0c, 0x8f, 0x42 } };
+        struct TraceShaderIdentity
+        {
+            std::array<std::uint8_t, 16> checksum{};
+            std::uint32_t size{};
+        };
+        struct TraceShaderDraws
+        {
+            TraceShaderIdentity identity{};
+            std::uint32_t draws{};
+        };
+        thread_local std::array<TraceShaderDraws, 192> traceShaders{};
+        thread_local std::uint32_t traceShaderCount{};
+        thread_local bool traceShaderCapture{};
+
+        void tagTraceShader(ID3D11PixelShader* shader, const void* bytecode, SIZE_T bytecodeLength) noexcept
+        {
+            if (!shader || !bytecode || bytecodeLength < 20) {
+                return;
+            }
+            TraceShaderIdentity identity{};
+            std::memcpy(identity.checksum.data(), static_cast<const std::uint8_t*>(bytecode) + 4, identity.checksum.size());
+            identity.size = static_cast<std::uint32_t>(bytecodeLength);
+            shader->SetPrivateData(kTraceShaderIdentity, sizeof(identity), &identity);
+        }
+
+        void recordTraceShaderDraw(ID3D11DeviceContext* context) noexcept
+        {
+            Microsoft::WRL::ComPtr<ID3D11PixelShader> bound;
+            context->PSGetShader(&bound, nullptr, nullptr);
+            TraceShaderIdentity identity{};
+            UINT size = sizeof(identity);
+            if (!bound || FAILED(bound->GetPrivateData(kTraceShaderIdentity, &size, &identity))) {
+                identity = {};
+            }
+            for (std::uint32_t index = 0; index < traceShaderCount; ++index) {
+                auto& entry = traceShaders[index];
+                if (entry.identity.size == identity.size && entry.identity.checksum == identity.checksum) {
+                    ++entry.draws;
+                    return;
+                }
+            }
+            if (traceShaderCount < traceShaders.size()) {
+                traceShaders[traceShaderCount++] = { identity, 1 };
+            }
+        }
+
+        void logTraceShaders(bool tiled) noexcept
+        {
+            try {
+                std::string line;
+                for (std::uint32_t index = 0; index < traceShaderCount; ++index) {
+                    const auto& entry = traceShaders[index];
+                    line += fmt::format(" {:02x}{:02x}{:02x}{:02x}:{}x{}",
+                        entry.identity.checksum[0], entry.identity.checksum[1], entry.identity.checksum[2], entry.identity.checksum[3],
+                        entry.identity.size, entry.draws);
+                    if ((index + 1) % 24 == 0 || index + 1 == traceShaderCount) {
+                        logging::info("Screen Space GI composite shaders (tiledComposite={}, {} unique):{}", tiled, traceShaderCount, line);
+                        line.clear();
+                    }
+                }
+            } catch (...) {
+            }
+        }
         thread_local ID3D11DeviceContext* activeWorldCameraContext{};
 
         class RecursionGuard final
@@ -2290,6 +2358,9 @@ namespace csah::render
 
         [[nodiscard]] screen_space_gi::ScopedBindings scopeGiAmbient(ID3D11DeviceContext* context) noexcept
         {
+            if (traceShaderCapture) {
+                recordTraceShaderDraw(context);
+            }
             if (activeReplacementBinding.family != linear_lighting::ReplacementShaderFamily::dFLightAmbient &&
                 screen_space_gi::Runtime::get().tracing()) {
                 // A draw with an original ambient shader still bound means
@@ -2334,7 +2405,14 @@ namespace csah::render
                     auto& ssgi=screen_space_gi::Runtime::get();
                     ssgi.captureRadiance(context,activeWorldCompositeTiled);
                     ssgi.composeOcclusion(context,activeWorldCompositeTiled);
-                    ssgi.traceComposite(activeWorldCompositeTiled,ambientTrace);
+                    if (traceShaderCapture) {
+                        logTraceShaders(activeWorldCompositeTiled);
+                        traceShaderCapture = false;
+                    }
+                    if (ssgi.traceComposite(activeWorldCompositeTiled,ambientTrace)) {
+                        traceShaderCount = 0;
+                        traceShaderCapture = true;
+                    }
                     ambientTrace={};
                 }
             }
@@ -2764,6 +2842,9 @@ namespace csah::render
                 if(shader && *shader) {(*shader)->Release();*shader=nullptr;}
                 result=original(device,bytecode,bytecodeLength,classLinkage,shader);
                 logging::error("Inverse-square pixel shader creation/tagging failed; native local light retained.");
+            }
+            if (SUCCEEDED(result) && shader && *shader) {
+                tagTraceShader(*shader, bytecode, bytecodeLength);
             }
             const auto volumetricResult = result;
             const auto volumetricAccepted =
