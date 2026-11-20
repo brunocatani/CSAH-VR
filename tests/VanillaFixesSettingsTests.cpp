@@ -105,8 +105,20 @@ int main()
     };
     require(loadSettings(ini.values()) == mixed, "every Vanilla Fixes key");
 
-    // The game's own ambient occlusion and Screen Space GI are one choice:
-    // it runs exactly while Screen Space GI does not.
+    // Stereo SAO follows VrAllowSAO, except that Screen Space GI, which
+    // replaces it, always turns it off.
+    ini.write(
+        "[VanillaFixes]\n"
+        "VrAllowSAO = false\n"
+        "[ScreenSpaceGI]\n"
+        "Enabled = false\n");
+    require(!loadSettings(ini.values()).sao, "Stereo SAO ran with VrAllowSAO off");
+    ini.write(
+        "[VanillaFixes]\n"
+        "VrAllowSAO = false\n"
+        "[ScreenSpaceGI]\n"
+        "Enabled = true\n");
+    require(!loadSettings(ini.values()).sao, "Stereo SAO ran with VrAllowSAO off beside Screen Space GI");
     ini.write(
         "[ScreenSpaceGI]\n"
         "Enabled = true\n");
