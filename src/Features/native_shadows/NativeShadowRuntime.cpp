@@ -908,8 +908,7 @@ namespace csah::native_shadows
 
         [[nodiscard]] bool forceTiledSetting() noexcept
         {
-            if (!g_state.settings.enabled ||
-                !g_state.settings.tiledDeferredLighting) {
+            if (!g_state.settings.enabled) {
                 return true;
             }
             auto* setting = RE::GetINISetting(
@@ -919,9 +918,19 @@ namespace csah::native_shadows
                     "Native Shadows could not resolve bComputeShaderDeferredTiledLighting:Display after GameDataReady.");
                 return false;
             }
-            setting->SetInt(1);
+            // The game INI can enable the tiled path by itself, and FO4VR
+            // then takes it in every frame with at least
+            // iTiledLightingMinLights lights in view, with or without the
+            // gate patches. In those frames it skips the DFLight ambient pass
+            // and evaluates ambient light in the tiled compute shader, so
+            // everything attached to the ambient pass (linear ambient
+            // response, Screen Space GI) drops out and the lighting changes
+            // with the view. The option therefore sets the engine value both
+            // ways instead of only raising it.
+            const int wanted = g_state.settings.tiledDeferredLighting ? 1 : 0;
+            setting->SetInt(wanted);
             g_state.tiledSettingForced = setting->GetInt() != 0;
-            return g_state.tiledSettingForced;
+            return setting->GetInt() == wanted;
         }
 
         [[nodiscard]] bool forceFixedShadowQuality(
@@ -1393,8 +1402,8 @@ namespace csah::native_shadows
         if (!g_state.started || !g_state.settings.enabled) {
             return;
         }
-        if (g_state.settings.tiledDeferredLighting &&
-            g_state.tiledLightingContractAccepted &&
+        if ((!g_state.settings.tiledDeferredLighting ||
+                g_state.tiledLightingContractAccepted) &&
             !forceTiledSetting()) {
             ++g_state.failures;
         }
