@@ -391,7 +391,7 @@ namespace csah::screen_space_gi
     ScopedBindings Runtime::scopeAmbient(ID3D11DeviceContext* context,bool ambient,ID3D11ShaderResourceView* authored, const pbr::FrameData& material, ID3D11ShaderResourceView* surface) noexcept
     {
         if(!ambient || context!=context_.Get()) return {nullptr,{}};
-        ambientScopes_.fetch_add(1,std::memory_order_relaxed);
+        ambientScopes_.fetch_add(1,std::memory_order_relaxed);traceAmbientFrame_=frame_;
         if(!requested() || !prepareAmbient(context,authored,material,surface)) return {context,{}};
         ComPtr<ID3D11ShaderResourceView> albedo;context->PSGetShaderResources(0,1,&albedo);
         return {context,consumerViews(albedo.Get(),authored,surface)};
@@ -527,7 +527,21 @@ namespace csah::screen_space_gi
     bool Runtime::reject(Rejection reason) noexcept
     {
         rejections_[static_cast<std::size_t>(reason)].fetch_add(1,std::memory_order_relaxed);
+        traceRejection_=reason;traceRejectedFrame_=frame_;
         return false;
+    }
+    void Runtime::traceComposite(bool tiled) noexcept
+    {
+        if(!requested() || traceLines_>=96) return;
+        const bool ambient=traceAmbientFrame_==frame_,prepared=preparedFrame_==frame_ && ready_,rejected=traceRejectedFrame_==frame_;
+        const bool captured=radianceFrame_==frame_,composed=composedFrame_==frame_,folded=static_cast<bool>(foldedTiled_);
+        const auto reason=rejected?static_cast<std::uint32_t>(traceRejection_)+1:0u;
+        const std::uint32_t signature=(tiled?1u:0u)|(ambient?2u:0u)|(prepared?4u:0u)|(captured?8u:0u)|(composed?16u:0u)|(folded?32u:0u)|(reason<<8);
+        if(signature==traceSignature_) return;
+        traceSignature_=signature;++traceLines_;
+        logging::info("Screen Space GI composite trace #{}: frame={}, tiledComposite={}, ambientDraw={}, prepared={}, rejection={} (formats {}/{}/{}), radianceCaptured={}, composed={}, tiledFolded={}.",
+            traceLines_,frame_,tiled,ambient,prepared,reason,lastRejectedFormats_[0].load(std::memory_order_relaxed),lastRejectedFormats_[1].load(std::memory_order_relaxed),
+            lastRejectedFormats_[2].load(std::memory_order_relaxed),captured,composed,folded);
     }
     RuntimeSnapshot Runtime::snapshot() const noexcept
     {

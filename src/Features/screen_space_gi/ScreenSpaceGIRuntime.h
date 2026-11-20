@@ -91,6 +91,11 @@ namespace csah::screen_space_gi
         // accumulator's light into it and adds the bounce.
         void captureRadiance(ID3D11DeviceContext* context,bool tiled) noexcept;
         void composeOcclusion(ID3D11DeviceContext* context,bool tiled) noexcept;
+        // Diagnostic for the view-dependent loss of AO and bounce: one log
+        // line each time the per-frame state seen at the world composite
+        // changes, at most 96 lines per session. Remove with its members once
+        // the cause is fixed.
+        void traceComposite(bool tiled) noexcept;
         // For every native composite draw after composeOcclusion in a frame:
         // active when the draw reads the tiled accumulator that was folded.
         [[nodiscard]] ScopedTiledFold scopeTiledFold(ID3D11DeviceContext* context) noexcept;
@@ -183,6 +188,9 @@ namespace csah::screen_space_gi
         Settings settings_{};
         UINT width_{},height_{},current_{};
         std::uint64_t frame_{},preparedFrame_{},radianceFrame_{},composedFrame_{},nextRetry_{};
+        std::uint64_t traceAmbientFrame_{},traceRejectedFrame_{};
+        std::uint32_t traceSignature_{0xFFFFFFFFu},traceLines_{};
+        Rejection traceRejection_{};
         bool ready_{},historyValid_{},loggedFailure_{},loggedActive_{},loggedComposeFailure_{};
         std::mutex settingsMutex_;
         Settings pending_{};

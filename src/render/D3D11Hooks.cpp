@@ -2319,6 +2319,7 @@ namespace csah::render
                     auto& ssgi=screen_space_gi::Runtime::get();
                     ssgi.captureRadiance(context,activeWorldCompositeTiled);
                     ssgi.composeOcclusion(context,activeWorldCompositeTiled);
+                    ssgi.traceComposite(activeWorldCompositeTiled);
                 }
             }
             auto tiledFold = worldComposite && activeWorldCompositeTiled ?
