@@ -1772,6 +1772,18 @@ namespace csah::linear_lighting
             binding.contractPlusOne - 1);
     }
 
+    std::uint32_t Runtime::dFLightAmbientContractPlusOne(
+        ID3D11PixelShader* shader) noexcept
+    {
+        if (!shader) {
+            return 0;
+        }
+        const auto binding = decodeShaderBinding(
+            shaderBindingLookup_.find(shader));
+        return binding.family == ReplacementShaderFamily::dFLightAmbient ?
+            binding.contractPlusOne : 0;
+    }
+
     PixelShaderSelection Runtime::selectPixelShaderForDFPrePassDescriptor(
         ID3D11DeviceContext* context,
         ID3D11PixelShader* requested,

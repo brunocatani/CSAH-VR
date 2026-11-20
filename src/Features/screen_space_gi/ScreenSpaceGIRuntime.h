@@ -11,6 +11,12 @@
 namespace csah::screen_space_gi
 {
     // Why prepareAmbient left native ambient lighting unchanged on a frame.
+    // Diagnostic counters of the native ambient pass between two world
+    // composites, for Runtime::traceComposite; remove with that trace.
+    struct AmbientTrace
+    {
+        std::uint32_t binds{},replacedBinds{},replacedDraws{},unreplacedDraws{},blocked{},lastContract{};
+    };
     enum class Rejection : std::uint8_t
     {
         retryWait,
@@ -95,7 +101,8 @@ namespace csah::screen_space_gi
         // line each time the per-frame state seen at the world composite
         // changes, at most 96 lines per session. Remove with its members once
         // the cause is fixed.
-        void traceComposite(bool tiled) noexcept;
+        void traceComposite(bool tiled,const AmbientTrace& ambient) noexcept;
+        [[nodiscard]] bool tracing() const noexcept {return requested() && traceLines_<96;}
         // For every native composite draw after composeOcclusion in a frame:
         // active when the draw reads the tiled accumulator that was folded.
         [[nodiscard]] ScopedTiledFold scopeTiledFold(ID3D11DeviceContext* context) noexcept;

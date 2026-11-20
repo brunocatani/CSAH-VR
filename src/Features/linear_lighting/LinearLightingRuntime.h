@@ -249,6 +249,11 @@ namespace csah::linear_lighting
         [[nodiscard]] PixelShaderSelection selectPixelShader(
             ID3D11DeviceContext* context,
             ID3D11PixelShader* requested) noexcept;
+        // Diagnostic for the Screen Space GI composite trace: the 1-based
+        // ambient contract of a registered original DFLight ambient shader,
+        // or 0. Remove with that trace.
+        [[nodiscard]] std::uint32_t dFLightAmbientContractPlusOne(
+            ID3D11PixelShader* shader) noexcept;
         [[nodiscard]] PixelShaderSelection selectDFLightAmbientPixelShader(
             ID3D11DeviceContext* context,
             ID3D11PixelShader* requested) noexcept;

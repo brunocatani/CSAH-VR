@@ -378,6 +378,9 @@ namespace csah::render
         thread_local bool activeWorldCameraComposite{};
         thread_local bool activeWorldCompositeTiled{};
         thread_local bool activeWorldCompositeDiffuse{};
+        // Diagnostic for screen_space_gi::Runtime::traceComposite, counted
+        // between two world composites; remove with that trace.
+        thread_local screen_space_gi::AmbientTrace ambientTrace{};
         thread_local ID3D11DeviceContext* activeWorldCameraContext{};
 
         class RecursionGuard final
@@ -2287,8 +2290,20 @@ namespace csah::render
 
         [[nodiscard]] screen_space_gi::ScopedBindings scopeGiAmbient(ID3D11DeviceContext* context) noexcept
         {
+            if (activeReplacementBinding.family != linear_lighting::ReplacementShaderFamily::dFLightAmbient &&
+                screen_space_gi::Runtime::get().tracing()) {
+                // A draw with an original ambient shader still bound means
+                // the ambient pass ran without its replacement.
+                Microsoft::WRL::ComPtr<ID3D11PixelShader> bound;
+                context->PSGetShader(&bound, nullptr, nullptr);
+                if (const auto contract = linear_lighting::Runtime::get().dFLightAmbientContractPlusOne(bound.Get())) {
+                    ++ambientTrace.unreplacedDraws;
+                    ambientTrace.lastContract = contract;
+                }
+            }
             if (activeReplacementBinding.family != linear_lighting::ReplacementShaderFamily::dFLightAmbient ||
                 !screen_space_gi::Runtime::get().requested()) return {nullptr,{}};
+            ++ambientTrace.replacedDraws;
             const auto active = pbr::Runtime::get().requested();
             return screen_space_gi::Runtime::get().scopeAmbient(context,true,
                 active ? surface_classification::Runtime::get().pbrMaterialShaderResourceView() : nullptr,
@@ -2319,7 +2334,8 @@ namespace csah::render
                     auto& ssgi=screen_space_gi::Runtime::get();
                     ssgi.captureRadiance(context,activeWorldCompositeTiled);
                     ssgi.composeOcclusion(context,activeWorldCompositeTiled);
-                    ssgi.traceComposite(activeWorldCompositeTiled);
+                    ssgi.traceComposite(activeWorldCompositeTiled,ambientTrace);
+                    ambientTrace={};
                 }
             }
             auto tiledFold = worldComposite && activeWorldCompositeTiled ?
@@ -3429,6 +3445,22 @@ namespace csah::render
                 }
                 return selected;
             }();
+            if (screen_space_gi::Runtime::get().tracing()) {
+                if (const auto contract = replacementRuntime.dFLightAmbientContractPlusOne(shader)) {
+                    ++ambientTrace.binds;
+                    ambientTrace.lastContract = contract;
+                    if (selection.binding.family == linear_lighting::ReplacementShaderFamily::dFLightAmbient) {
+                        ++ambientTrace.replacedBinds;
+                    } else {
+                        ambientTrace.blocked |= 1u |
+                            (contactShadowSelection.binding ? 2u : 0u) |
+                            (!ambientVisibilityFeatureActive ? 4u : 0u) |
+                            (classInstanceCount != 0 ? 8u : 0u) |
+                            (selection.binding.family != linear_lighting::ReplacementShaderFamily::none ? 16u : 0u) |
+                            (selection.shader == shader ? 32u : 0u);
+                    }
+                }
+            }
             if (descriptorPending &&
                 selection.binding.family ==
                     linear_lighting::ReplacementShaderFamily::material) {
