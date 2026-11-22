@@ -24,4 +24,14 @@ namespace csah::volumetric_lighting
     enum class FogDomain { unavailable, interior, exterior };
     [[nodiscard]] FogDomain heightFogDomain() noexcept;
     [[nodiscard]] WeatherFrame captureWeatherFrame() noexcept;
+
+    struct DayNightFrame final
+    {
+        bool valid{};
+        bool interior{};
+        // 0 at night and 1 by day, rising across the climate's sunrise and
+        // falling across its sunset. 0 in interiors.
+        float day{};
+    };
+    [[nodiscard]] DayNightFrame captureDayNightFrame() noexcept;
 }

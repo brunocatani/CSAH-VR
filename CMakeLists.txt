@@ -2401,6 +2401,9 @@ add_library(${PROJECT_NAME} SHARED
   "${FILMIC_TONEMAPPING_SHADER_GENERATOR}"
   "${FILMIC_TONEMAPPING_SHADER_SOURCE}"
   "${FILMIC_TONEMAPPING_SHADER_HEADER}"
+  "${SOURCE_DIR}/Features/color_grading/ColorGradingSettings.h"
+  "${SOURCE_DIR}/Features/color_grading/ColorGradingTable.cpp"
+  "${SOURCE_DIR}/Features/color_grading/ColorGradingTable.h"
   "${BLOOM_GLARE_RUNTIME_SOURCE}"
   "${BLOOM_GLARE_RUNTIME_HEADER}"
   "${BLOOM_GLARE_SETTINGS_HEADER}"
@@ -2659,6 +2662,8 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
   spdlog::spdlog
   dxguid
   shell32
+  windowscodecs
+  ole32
 )
 
 # Keep distribution notices inside the DLL so the install archive only

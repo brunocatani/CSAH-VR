@@ -606,6 +606,52 @@ namespace csah::volumetric_lighting
         return readMemory(tes+0xd8,&world,sizeof(world)) && world ? FogDomain::exterior : FogDomain::unavailable;
     }
 
+    DayNightFrame captureDayNightFrame() noexcept
+    {
+        DayNightFrame output;
+        const auto domain = heightFogDomain();
+        if (domain == FogDomain::unavailable) {
+            return output;
+        }
+        if (domain == FogDomain::interior) {
+            output.valid = true;
+            output.interior = true;
+            return output;
+        }
+        std::uintptr_t sky{};
+        SkyFields skyFields{};
+        std::array<float, 4> boundaries{};
+        if (!readMemory(
+                gModuleBase + kSkySingletonCellRva,
+                std::addressof(sky),
+                sizeof(sky)) ||
+            sky == 0 ||
+            !readMemory(sky + 0x40, std::addressof(skyFields),
+                sizeof(skyFields)) ||
+            (skyFields.flags & kBoundaryCacheDirtyMask) != 0 ||
+            !std::isfinite(skyFields.gameHour) ||
+            skyFields.gameHour < 0.0f || skyFields.gameHour > 24.0f ||
+            !readTimeBoundaries(boundaries)) {
+            return output;
+        }
+        // readTimeBoundaries guarantees begin sunrise < sunrise end <=
+        // sunset begin < end sunset.
+        const auto hour = skyFields.gameHour;
+        if (hour <= boundaries[0] || hour >= boundaries[3]) {
+            output.day = 0.0f;
+        } else if (hour < boundaries[1]) {
+            output.day = (hour - boundaries[0]) /
+                (boundaries[1] - boundaries[0]);
+        } else if (hour <= boundaries[2]) {
+            output.day = 1.0f;
+        } else {
+            output.day = (boundaries[3] - hour) /
+                (boundaries[3] - boundaries[2]);
+        }
+        output.valid = true;
+        return output;
+    }
+
     WeatherFrame captureWeatherFrame() noexcept
     {
         WeatherFrame output;

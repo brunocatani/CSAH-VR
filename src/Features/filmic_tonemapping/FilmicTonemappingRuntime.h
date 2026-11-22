@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Features/color_grading/ColorGradingTable.h"
 #include "Features/filmic_tonemapping/FilmicTonemappingSettings.h"
 
 #include <d3d11.h>
@@ -9,6 +10,7 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <mutex>
 
 namespace csah::filmic_tonemapping
 {
@@ -50,6 +52,15 @@ namespace csah::filmic_tonemapping
 
     class Runtime;
 
+    // The colour tables and sampler the output shader reads while it grades.
+    struct GradeBindings final
+    {
+        std::array<ID3D11ShaderResourceView*, 2> tables{};
+        ID3D11SamplerState* sampler{};
+    };
+
+    // Binds the output shader's private constants, colour tables and sampler
+    // for one draw and puts the previous bindings back afterwards.
     class ScopedConstants final
     {
     public:
@@ -67,11 +78,15 @@ namespace csah::filmic_tonemapping
         ScopedConstants(
             Runtime* owner,
             ID3D11DeviceContext* context,
-            ID3D11Buffer* constants) noexcept;
+            ID3D11Buffer* constants,
+            const GradeBindings& grade) noexcept;
 
         Runtime* owner_{};
         ID3D11DeviceContext* context_{};
         Microsoft::WRL::ComPtr<ID3D11Buffer> previous_{};
+        std::array<Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>, 2>
+            previousTables_{};
+        Microsoft::WRL::ComPtr<ID3D11SamplerState> previousSampler_{};
     };
 
     class Runtime final
@@ -105,16 +120,46 @@ namespace csah::filmic_tonemapping
         friend class ScopedConstants;
         Runtime() = default;
 
+        // Mirrors cbuffer FilmicSettings of FilmicTonemappingPS.hlsl.
         struct alignas(16) GpuConstants final
         {
             float exposureMultiplier{ 1.0f };
             float nativeAdaptationWeight{ 1.0f };
             float filmicStrength{ 1.0f };
             float whitePointScale{ 1.0f };
+            std::array<float, 4> gradeControl{ 0.0f, 0.0f, 0.0f, 1.0f };
+            std::array<float, 4> gradeTables{};
+            std::array<float, 4> gradeLevels{ 0.0f, 1.0f, 1.0f, 1.0f };
+            std::array<float, 4> gradeColor{ 1.0f, 0.0f, 0.0f, 0.0f };
+            std::array<float, 4> gradeShadowTint{};
+            std::array<float, 4> gradeHighlightTint{};
+        };
+
+        enum GradeTable : std::size_t
+        {
+            kDayTable,
+            kNightTable,
+            kInteriorTable,
+            kGradeTableCount,
+        };
+
+        // Which two tables this frame blends, and how far toward the second.
+        struct GradeSelection final
+        {
+            std::size_t first{ kNightTable };
+            std::size_t second{ kDayTable };
+            float secondWeight{};
+            bool tablesUsable{};
+
+            [[nodiscard]] bool operator==(const GradeSelection&) const noexcept = default;
         };
 
         static constexpr std::size_t kMaximumTrackedShaders = 4;
-        [[nodiscard]] GpuConstants gpuConstants() const noexcept;
+        [[nodiscard]] GpuConstants gpuConstants(
+            const color_grading::Settings& grading,
+            const GradeSelection& selection) const noexcept;
+        [[nodiscard]] bool gradingActive() const noexcept;
+        [[nodiscard]] GradeSelection selectGradeTables() const noexcept;
         void uploadConstants(ID3D11DeviceContext* context) noexcept;
 
         Microsoft::WRL::ComPtr<ID3D11Device> device_{};
@@ -132,6 +177,19 @@ namespace csah::filmic_tonemapping
         std::atomic<float> exposureCompensationEV_{};
         std::atomic<float> filmicStrength_{ 1.0f };
         std::atomic<float> whitePointScale_{ 1.0f };
+        // Colour grading. Settings arrive on the settings thread: grading_ is
+        // written under gradingMutex_ and the two flags are published for the
+        // lock-free shader selection. The render thread copies grading_ under
+        // the mutex only when settingsRevision_ changed. The tables, sampler
+        // and uploaded selection belong to the render thread.
+        mutable std::mutex gradingMutex_{};
+        color_grading::Settings grading_{};
+        std::atomic_bool gradingEnabled_{};
+        std::atomic_bool gradingControlsNeutral_{ true };
+        std::atomic_bool gradingTablesLoaded_{};
+        std::array<color_grading::Table, kGradeTableCount> gradeTables_{};
+        Microsoft::WRL::ComPtr<ID3D11SamplerState> gradeSampler_{};
+        GradeSelection uploadedSelection_{};
         std::atomic_uint64_t settingsRevision_{ 1 };
         std::uint64_t uploadedRevision_{};
         std::atomic_bool resourcesReady_{};

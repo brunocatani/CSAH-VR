@@ -13,6 +13,7 @@ SamplerState SceneSampler : register(s1);
 SamplerState AdaptedLuminanceSampler : register(s2);
 SamplerState BypassMaskSampler : register(s3);
 SamplerState BloomGlareSampler : register(s4);
+SamplerState GradeTableSampler : register(s5);
 
 Texture2D<float4> BloomTexture : register(t0);
 Texture2D<float4> SceneTexture : register(t1);
@@ -20,6 +21,8 @@ Texture2D<float4> AdaptedLuminanceTexture : register(t2);
 Texture2D<float4> BypassMaskTexture : register(t3);
 Texture2D<float4> EnhancedBloomTexture : register(t4);
 Texture2D<float4> PhysicalGlareTexture : register(t5);
+Texture3D<float4> GradeTableFirst : register(t6);
+Texture3D<float4> GradeTableSecond : register(t7);
 
 cbuffer NativeHdrBlend : register(b2)
 {
@@ -38,6 +41,19 @@ cbuffer FilmicSettings : register(b12)
     // x = exp2(exposure EV), y = native adaptation weight,
     // z = hue-preserving filmic strength, w = 5.6 white-point scale.
     float4 FilmicParameters;
+    // Colour grading.
+    // x > 0.5 = grade this frame, y = colour table strength,
+    // z = weight of the second table, w = gamma.
+    float4 GradeControl;
+    // Texture coordinate scale and offset: xy first table, zw second table.
+    float4 GradeTables;
+    // x = black point, y = 1 / (white point - black point),
+    // z = brightness, w = contrast.
+    float4 GradeLevels;
+    // x = saturation, y = shadow desaturation.
+    float4 GradeColor;
+    float4 GradeShadowTint;
+    float4 GradeHighlightTint;
 };
 
 cbuffer BloomGlareSettings : register(b13)
@@ -79,6 +95,50 @@ float3 TonemapFilmic(float3 hdrColor, float curveE)
         nativeMapped,
         huePreserving,
         saturate(FilmicParameters.z));
+}
+
+// The native output is linear and the game's own colour pass encodes it
+// afterwards. Colour tables and grading controls are authored on the encoded
+// picture, so the grade encodes, grades and decodes again; the game's colour
+// pass then runs on it as before.
+float3 GradeColorOutput(float3 linearColor)
+{
+    if (GradeControl.x < 0.5) {
+        return linearColor;
+    }
+    float3 color = pow(saturate(linearColor), 1.0 / 2.2);
+    if (GradeControl.y > 0.0) {
+        const float3 first = GradeTableFirst.SampleLevel(
+            GradeTableSampler,
+            color * GradeTables.x + GradeTables.y,
+            0.0).xyz;
+        const float3 second = GradeTableSecond.SampleLevel(
+            GradeTableSampler,
+            color * GradeTables.z + GradeTables.w,
+            0.0).xyz;
+        color = lerp(color, lerp(first, second, GradeControl.z), GradeControl.y);
+    }
+
+    color = saturate((color - GradeLevels.x) * GradeLevels.y);
+    color = pow(color, GradeControl.w);
+    color *= GradeLevels.z;
+    color = (color - 0.5) * GradeLevels.w + 0.5;
+
+    float luminance = dot(color, LuminanceWeights);
+    color = lerp(luminance.xxx, color, GradeColor.x);
+    luminance = dot(color, LuminanceWeights);
+    float shadow = saturate(1.0 - luminance);
+    shadow *= shadow;
+    color = lerp(color, luminance.xxx, GradeColor.y * shadow * shadow);
+
+    // Shadows lift toward their tint, so white stays white; highlights scale
+    // by theirs, so black stays black.
+    color = saturate(color);
+    luminance = dot(color, LuminanceWeights);
+    const float dark = (1.0 - luminance) * (1.0 - luminance);
+    color += GradeShadowTint.xyz * dark * (1.0 - color);
+    color += GradeHighlightTint.xyz * luminance * luminance * color;
+    return pow(saturate(color), 2.2);
 }
 
 float4 PSMain(PixelInput input) : SV_Target0
@@ -128,8 +188,8 @@ float4 PSMain(PixelInput input) : SV_Target0
         graded,
         NativeCinematic.z);
 #if FO4VR_FILMIC_FADE
-    return lerp(graded, NativeFade, NativeFade.w);
-#else
-    return graded;
+    graded = lerp(graded, NativeFade, NativeFade.w);
 #endif
+    graded.xyz = GradeColorOutput(graded.xyz);
+    return graded;
 }

@@ -146,13 +146,16 @@ def main() -> int:
             disassembly = assembly.read_text(encoding="utf-8")
         for required in (
             native_cb_declaration,
-            "dcl_constantbuffer CB12[1], immediateIndexed",
+            "dcl_constantbuffer CB12[7], immediateIndexed",
             "dcl_constantbuffer CB13[1], immediateIndexed",
             "dcl_sampler s0, mode_default",
             "dcl_sampler s1, mode_default",
             "dcl_sampler s2, mode_default",
             "dcl_sampler s3, mode_default",
             "dcl_sampler s4, mode_default",
+            "dcl_sampler s5, mode_default",
+            "dcl_resource_texture3d (float,float,float,float) t6",
+            "dcl_resource_texture3d (float,float,float,float) t7",
             "dcl_resource_texture2d (float,float,float,float) t0",
             "dcl_resource_texture2d (float,float,float,float) t1",
             "dcl_resource_texture2d (float,float,float,float) t2",
