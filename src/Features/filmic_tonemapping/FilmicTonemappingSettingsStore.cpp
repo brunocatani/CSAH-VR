@@ -40,6 +40,7 @@ namespace csah::filmic_tonemapping
             return {
                 .enabled = values.boolean(section, "Enabled", defaults.enabled) &&
                     master_settings::enabled(values),
+                .look = values.integer(section, "Look", defaults.look),
                 .tableStrength = number("TableStrength", defaults.tableStrength),
                 .brightness = number("Brightness", defaults.brightness),
                 .contrast = number("Contrast", defaults.contrast),
@@ -84,13 +85,14 @@ namespace csah::filmic_tonemapping
     {
         const auto result = loadSettings(settings_file::File::get().current());
         logging::info(
-            "Filmic Tonemapping settings loaded; enabled={}, nativeAutoExposure={}, exposureEV={}, filmicStrength={}, whitePointScale={}; colour grading enabled={}, tableStrength={}, controlsNeutral={}.",
+            "Filmic Tonemapping settings loaded; enabled={}, nativeAutoExposure={}, exposureEV={}, filmicStrength={}, whitePointScale={}; colour grading enabled={}, look={}, tableStrength={}, controlsNeutral={}.",
             result.enabled,
             result.useNativeAutoExposure,
             result.exposureCompensationEV,
             result.filmicStrength,
             result.whitePointScale,
             result.grading.enabled,
+            result.grading.look,
             result.grading.tableStrength,
             color_grading::controlsNeutral(result.grading));
         return result;

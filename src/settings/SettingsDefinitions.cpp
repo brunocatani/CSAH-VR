@@ -388,10 +388,13 @@ namespace csah::settings_file
             option("FilmicTonemapping", "WhitePointScale", "22. Filmic tonemapping", ValueType::Float, "1",
                 "Lower values roll highlights off earlier; 1.0 retains FO4VR's verified 5.6 white point. Range: 0.5 to 2."),
             option("ColorGrading", "Enabled", "22. Filmic tonemapping", ValueType::Boolean, "true",
-                "Colour grading of the finished image, inside the output pass the game already draws. Colour tables are\n"
-                "read at game start from Data\\F4SE\\Plugins\\CSAH\\ColorGrading: lut_day.png, lut_night.png and\n"
-                "lut_interior.png, each an unwrapped table N * N wide and N high (for example 4096 x 64). Day and night\n"
-                "blend across sunrise and sunset; interiors use their own table. A missing table changes nothing."),
+                "Colour grading of the finished image, inside the output pass the game already draws. Each subfolder of\n"
+                "Data\\F4SE\\Plugins\\CSAH\\ColorGrading is one look: drop an ENB preset, its enbseries folder or only its\n"
+                "colour table images (LUTs) there, as they are. Looks are read at game start. Day and night tables blend\n"
+                "across sunrise and sunset; interiors use the interior table."),
+            option("ColorGrading", "Look", "22. Filmic tonemapping", ValueType::Integer, "1",
+                "Which installed look is shown. Looks are counted from 1 in alphabetical order of their folders; switching\n"
+                "is immediate. Range: 1 to 8."),
             option("ColorGrading", "TableStrength", "22. Filmic tonemapping", ValueType::Float, "1",
                 "How much of the colour tables is applied. 0 leaves the image as it is. Range: 0 to 1."),
             option("ColorGrading", "Brightness", "22. Filmic tonemapping", ValueType::Float, "1",

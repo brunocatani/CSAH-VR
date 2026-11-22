@@ -8,9 +8,13 @@ namespace csah::color_grading
 {
     // Colour grading of the finished image. It runs inside the output-stage
     // shader Filmic Tonemapping already draws, so it adds no pass.
+    // The Look setting counts installed looks from 1.
+    inline constexpr int kMaximumLook = 8;
+
     struct Settings final
     {
         bool enabled{ true };
+        int look{ 1 };
         float tableStrength{ 1.0f };
         float brightness{ 1.0f };
         float contrast{ 1.0f };
@@ -31,6 +35,7 @@ namespace csah::color_grading
             return std::isfinite(value) ? std::clamp(value, low, high) : fallback;
         };
         auto result = settings;
+        result.look = std::clamp(result.look, 1, kMaximumLook);
         result.tableStrength = bounded(result.tableStrength, 0.0f, 1.0f, 1.0f);
         result.brightness = bounded(result.brightness, 0.0f, 2.0f, 1.0f);
         result.contrast = bounded(result.contrast, 0.0f, 2.0f, 1.0f);
@@ -55,6 +60,7 @@ namespace csah::color_grading
     {
         auto neutral = Settings{};
         neutral.enabled = settings.enabled;
+        neutral.look = settings.look;
         neutral.tableStrength = settings.tableStrength;
         return settings == neutral;
     }

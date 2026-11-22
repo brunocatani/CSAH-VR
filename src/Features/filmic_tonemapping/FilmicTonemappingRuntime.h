@@ -143,9 +143,11 @@ namespace csah::filmic_tonemapping
             kGradeTableCount,
         };
 
-        // Which two tables this frame blends, and how far toward the second.
+        // Which look and which two of its tables this frame blends, and how
+        // far toward the second.
         struct GradeSelection final
         {
+            std::size_t look{};
             std::size_t first{ kNightTable };
             std::size_t second{ kDayTable };
             float secondWeight{};
@@ -180,14 +182,16 @@ namespace csah::filmic_tonemapping
         // Colour grading. Settings arrive on the settings thread: grading_ is
         // written under gradingMutex_ and the two flags are published for the
         // lock-free shader selection. The render thread copies grading_ under
-        // the mutex only when settingsRevision_ changed. The tables, sampler
-        // and uploaded selection belong to the render thread.
+        // the mutex only when settingsRevision_ changed. The looks, sampler
+        // and uploaded selection belong to the render thread; every look is
+        // loaded at device creation, so switching looks reads no file.
         mutable std::mutex gradingMutex_{};
         color_grading::Settings grading_{};
         std::atomic_bool gradingEnabled_{};
         std::atomic_bool gradingControlsNeutral_{ true };
         std::atomic_bool gradingTablesLoaded_{};
-        std::array<color_grading::Table, kGradeTableCount> gradeTables_{};
+        std::atomic_uint32_t gradingLook_{ 1 };
+        color_grading::LookLibrary gradeLooks_{};
         Microsoft::WRL::ComPtr<ID3D11SamplerState> gradeSampler_{};
         GradeSelection uploadedSelection_{};
         std::atomic_uint64_t settingsRevision_{ 1 };

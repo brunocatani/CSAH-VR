@@ -27,13 +27,10 @@ namespace csah::filmic_tonemapping
         constexpr UINT kGradeTableSlot = 6;
         constexpr UINT kGradeTableSlots = 2;
         constexpr UINT kGradeSamplerSlot = 5;
-        // One table per file, named as ENB presets name theirs, so a preset's
-        // set drops in unchanged. Indexed by Runtime::GradeTable.
-        constexpr std::array<const char*, 3> kGradeTableFiles{
-            "Data/F4SE/Plugins/CSAH/ColorGrading/lut_day.png",
-            "Data/F4SE/Plugins/CSAH/ColorGrading/lut_night.png",
-            "Data/F4SE/Plugins/CSAH/ColorGrading/lut_interior.png",
-        };
+        constexpr const char* kGradeLookFolder =
+            "Data/F4SE/Plugins/CSAH/ColorGrading";
+        static_assert(color_grading::kMaximumLook ==
+            static_cast<int>(color_grading::kMaximumLooks));
         // The day weight moves slowly; a smaller step than this is not worth
         // a constant upload.
         constexpr float kGradeWeightStep = 1.0f / 512.0f;
@@ -146,9 +143,7 @@ namespace csah::filmic_tonemapping
         fadeReplacement_.Reset();
         constants_.Reset();
         gradeSampler_.Reset();
-        for (auto& table : gradeTables_) {
-            table = {};
-        }
+        gradeLooks_ = {};
         gradingTablesLoaded_.store(false, std::memory_order_release);
         uploadedSelection_ = {};
         device_ = device;
@@ -162,22 +157,22 @@ namespace csah::filmic_tonemapping
             return;
         }
 
-        // Colour tables. A file that is absent or rejected becomes the
-        // identity table, so the shader always has two valid tables to blend.
-        bool tablesLoaded = false;
-        bool tablesReady = true;
-        for (std::size_t index = 0; index < gradeTables_.size(); ++index) {
-            gradeTables_[index] = color_grading::loadTable(
-                device, std::filesystem::path(kGradeTableFiles[index]));
-            if (gradeTables_[index]) {
-                tablesLoaded = true;
-            } else {
-                gradeTables_[index] =
-                    color_grading::createIdentityTable(device);
-            }
-            tablesReady = tablesReady &&
-                static_cast<bool>(gradeTables_[index]);
+        // Every installed look is loaded now. With none installed the first
+        // entry holds the unchanged-colour table, so the shader always has
+        // two valid tables bound.
+        gradeLooks_ = color_grading::loadLooks(
+            device, std::filesystem::path(kGradeLookFolder));
+        const auto tablesLoaded = gradeLooks_.count > 0;
+        if (!tablesLoaded) {
+            gradeLooks_.looks[0].fill(
+                color_grading::createIdentityTable(device));
         }
+        const auto tablesReady = std::all_of(
+            gradeLooks_.looks[0].begin(),
+            gradeLooks_.looks[0].end(),
+            [](const color_grading::Table& table) {
+                return static_cast<bool>(table);
+            });
         D3D11_SAMPLER_DESC samplerDescription{};
         samplerDescription.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
         samplerDescription.AddressU = D3D11_TEXTURE_ADDRESS_CLAMP;
@@ -195,10 +190,8 @@ namespace csah::filmic_tonemapping
         }
         gradingTablesLoaded_.store(tablesLoaded, std::memory_order_release);
         logging::info(
-            "Colour Grading colour tables from Data\\F4SE\\Plugins\\CSAH\\ColorGrading: day={}, night={}, interior={}. A missing table leaves its colours unchanged.",
-            gradeTables_[kDayTable].fromFile,
-            gradeTables_[kNightTable].fromFile,
-            gradeTables_[kInteriorTable].fromFile);
+            "Colour Grading loaded {} look(s) from Data\\F4SE\\Plugins\\CSAH\\ColorGrading; with none, only its controls apply.",
+            gradeLooks_.count);
 
         // The first draw uploads the real constants: uploadedRevision_ is 0.
         const auto initial = gpuConstants({ .enabled = false }, {});
@@ -328,8 +321,10 @@ namespace csah::filmic_tonemapping
             constants_.Get(),
             {
                 .tables = {
-                    gradeTables_[uploadedSelection_.first].view.Get(),
-                    gradeTables_[uploadedSelection_.second].view.Get(),
+                    gradeLooks_.looks[uploadedSelection_.look]
+                        [uploadedSelection_.first].view.Get(),
+                    gradeLooks_.looks[uploadedSelection_.look]
+                        [uploadedSelection_.second].view.Get(),
                 },
                 .sampler = gradeSampler_.Get(),
             });
@@ -374,6 +369,10 @@ namespace csah::filmic_tonemapping
         if (!frame.valid) {
             return selection;
         }
+        // A Look beyond the installed ones shows the last installed look.
+        selection.look = std::min<std::size_t>(
+            gradingLook_.load(std::memory_order_relaxed),
+            gradeLooks_.count) - 1;
         selection.tablesUsable = true;
         if (frame.interior) {
             selection.first = kInteriorTable;
@@ -414,6 +413,9 @@ namespace csah::filmic_tonemapping
         gradingControlsNeutral_.store(
             color_grading::controlsNeutral(safe.grading),
             std::memory_order_release);
+        gradingLook_.store(
+            static_cast<std::uint32_t>(safe.grading.look),
+            std::memory_order_relaxed);
         gradingEnabled_.store(
             safe.grading.enabled, std::memory_order_release);
         settingsRevision_.fetch_add(1, std::memory_order_release);
@@ -448,12 +450,13 @@ namespace csah::filmic_tonemapping
         }
         // A table of N steps is sampled at its texel centres: 0.5 / N at
         // colour 0 and 1 - 0.5 / N at colour 1.
-        const auto tableScale = [this](std::size_t index) {
-            const auto size = static_cast<float>(gradeTables_[index].size);
+        const auto& look = gradeLooks_.looks[selection.look];
+        const auto tableScale = [&look](std::size_t index) {
+            const auto size = static_cast<float>(look[index].size);
             return size >= 2.0f ? (size - 1.0f) / size : 0.0f;
         };
-        const auto tableOffset = [this](std::size_t index) {
-            const auto size = static_cast<float>(gradeTables_[index].size);
+        const auto tableOffset = [&look](std::size_t index) {
+            const auto size = static_cast<float>(look[index].size);
             return size >= 2.0f ? 0.5f / size : 0.0f;
         };
         constants.gradeControl = {
@@ -491,6 +494,7 @@ namespace csah::filmic_tonemapping
         const auto revision = settingsRevision_.load(std::memory_order_acquire);
         auto selection = gradingActive() ? selectGradeTables() : GradeSelection{};
         if (uploadedRevision_ == revision &&
+            selection.look == uploadedSelection_.look &&
             selection.first == uploadedSelection_.first &&
             selection.second == uploadedSelection_.second &&
             selection.tablesUsable == uploadedSelection_.tablesUsable &&
