@@ -2404,6 +2404,8 @@ add_library(${PROJECT_NAME} SHARED
   "${SOURCE_DIR}/Features/color_grading/ColorGradingSettings.h"
   "${SOURCE_DIR}/Features/color_grading/ColorGradingTable.cpp"
   "${SOURCE_DIR}/Features/color_grading/ColorGradingTable.h"
+  "${SOURCE_DIR}/compat/Inventory3DFixCompat.cpp"
+  "${SOURCE_DIR}/compat/Inventory3DFixCompat.h"
   "${BLOOM_GLARE_RUNTIME_SOURCE}"
   "${BLOOM_GLARE_RUNTIME_HEADER}"
   "${BLOOM_GLARE_SETTINGS_HEADER}"

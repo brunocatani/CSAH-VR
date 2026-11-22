@@ -1,4 +1,5 @@
 #include "render/NativeShadowProperty.h"
+#include "compat/Inventory3DFixCompat.h"
 #include "Features/inverse_square/InverseSquareRuntime.h"
 #include "Features/terrain_shadows/TerrainShadowRuntime.h"
 #include "Features/water_effects/WaterEffectsRuntime.h"
@@ -113,6 +114,7 @@ namespace
         case F4SE::MessagingInterface::kPostPostLoad:
         {
             csah::diagnostics::registerDeveloperCapture();
+            csah::compat::inventory_3d_fix::apply();
             const auto d3d = csah::render::d3d11HookSnapshot();
             const auto dlaa = csah::dlaa::Runtime::get().snapshot();
             csah::logging::info(
