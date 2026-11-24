@@ -252,6 +252,18 @@ namespace csah::shared_settings
                 return true;
             }
 
+            void wake() noexcept
+            {
+                if (!started_.load(std::memory_order_acquire)) {
+                    return;
+                }
+                {
+                    std::scoped_lock lock(wakeMutex_);
+                    wakeRequested_ = true;
+                }
+                wake_.notify_one();
+            }
+
         private:
             Controller() = default;
 
@@ -263,15 +275,107 @@ namespace csah::shared_settings
                         lock,
                         stopToken,
                         kPollInterval,
-                        []() noexcept { return false; });
+                        [this]() noexcept { return wakeRequested_; });
                     if (stopToken.stop_requested()) {
                         break;
                     }
+                    wakeRequested_ = false;
                     lock.unlock();
-                    reloadIfStable();
+                    // A Save is read at once: Mods Config wrote the whole
+                    // file before it reported the Save.
+                    if (settings_file::File::get().readPending()) {
+                        reloadNow();
+                    } else {
+                        reloadIfStable();
+                    }
+                    applyPreviewsIfChanged();
                     diagnostics::serviceDeveloperCapture(configPath_.c_str());
                     lock.lock();
                 }
+            }
+
+            void reloadNow() noexcept
+            {
+                try {
+                    std::vector<std::string> report;
+                    std::uint64_t previewRevision{};
+                    auto next = loadSnapshot(settings_file::File::get().reload(report, previewRevision));
+                    for (const auto& problem : report) {
+                        logging::warn("CSAH.toml: {}", problem);
+                    }
+                    accepted_ = readSignature(configPath_);
+                    pending_.reset();
+                    pendingObservations_ = 0;
+                    appliedPreviewRevision_ = previewRevision;
+                    publish(next, true);
+                } catch (const std::exception& error) {
+                    logging::warn(
+                        "Shared settings monitor rejected a saved CSAH.toml: {}.",
+                        error.what());
+                } catch (...) {
+                    logging::warn(
+                        "Shared settings monitor rejected a saved CSAH.toml.");
+                }
+            }
+
+            // Applies the previews when they changed since the values last
+            // applied; a file reload carries them too.
+            void applyPreviewsIfChanged() noexcept
+            {
+                try {
+                    auto& file = settings_file::File::get();
+                    if (file.previewRevision() == appliedPreviewRevision_) {
+                        return;
+                    }
+                    std::uint64_t previewRevision{};
+                    const auto values = file.applyPreviews(previewRevision);
+                    if (!values) {
+                        return;
+                    }
+                    appliedPreviewRevision_ = previewRevision;
+                    publish(loadSnapshot(*values), false);
+                } catch (const std::exception& error) {
+                    logging::warn(
+                        "Shared settings monitor rejected CSAH preview values: {}.",
+                        error.what());
+                } catch (...) {
+                    logging::warn(
+                        "Shared settings monitor rejected CSAH preview values.");
+                }
+            }
+
+            // Applies what changed from the active snapshot. A file reload is
+            // logged; a preview is not, as a slider drag sends many.
+            void publish(const Snapshot& next, const bool fromFile)
+            {
+                const auto changes = diff(active_, next);
+                if (!changes.any()) {
+                    return;
+                }
+
+                const bool activeVanillaFixesGate =
+                    active_.vanillaFixes.enabled;
+                applyLiveChanges(changes, next);
+                active_ = next;
+                if (changes.vanillaFixesGate) {
+                    // Keep the process-effective startup gate as the
+                    // comparison authority until the next launch.
+                    active_.vanillaFixes.enabled =
+                        activeVanillaFixesGate;
+                }
+                if (!fromFile) {
+                    return;
+                }
+                const auto reloadNumber =
+                    acceptedReloads_.fetch_add(
+                        1,
+                        std::memory_order_relaxed) +
+                    1;
+                logging::info(
+                    "CSAH.toml reload #{} accepted: live feature groups={}, startup-native restart pending={}.",
+                    reloadNumber,
+                    changes.liveFeatureCount(),
+                    changes.nativeShadows || changes.vanillaFixesGate);
             }
 
             void reloadIfStable() noexcept
@@ -299,7 +403,8 @@ namespace csah::shared_settings
                     }
 
                     std::vector<std::string> report;
-                    auto next = loadSnapshot(settings_file::File::get().reload(report));
+                    std::uint64_t previewRevision{};
+                    auto next = loadSnapshot(settings_file::File::get().reload(report, previewRevision));
                     for (const auto& problem : report) {
                         logging::warn("CSAH.toml: {}", problem);
                     }
@@ -313,31 +418,8 @@ namespace csah::shared_settings
                     accepted_ = stable;
                     pending_.reset();
                     pendingObservations_ = 0;
-                    const auto changes = diff(active_, next);
-                    if (!changes.any()) {
-                        return;
-                    }
-
-                    const bool activeVanillaFixesGate =
-                        active_.vanillaFixes.enabled;
-                    applyLiveChanges(changes, next);
-                    active_ = next;
-                    if (changes.vanillaFixesGate) {
-                        // Keep the process-effective startup gate as the
-                        // comparison authority until the next launch.
-                        active_.vanillaFixes.enabled =
-                            activeVanillaFixesGate;
-                    }
-                    const auto reloadNumber =
-                        acceptedReloads_.fetch_add(
-                            1,
-                            std::memory_order_relaxed) +
-                        1;
-                    logging::info(
-                        "CSAH.toml reload #{} accepted: live feature groups={}, startup-native restart pending={}.",
-                        reloadNumber,
-                        changes.liveFeatureCount(),
-                        changes.nativeShadows || changes.vanillaFixesGate);
+                    appliedPreviewRevision_ = previewRevision;
+                    publish(next, true);
                 } catch (const std::exception& error) {
                     logging::warn(
                         "Shared settings monitor rejected a CSAH.toml reload: {}.",
@@ -354,8 +436,12 @@ namespace csah::shared_settings
             std::optional<FileSignature> accepted_{};
             std::optional<FileSignature> pending_{};
             std::uint32_t pendingObservations_{};
+            // The preview revision of the values last applied; monitor thread only.
+            std::uint64_t appliedPreviewRevision_{};
             std::atomic_uint64_t acceptedReloads_{};
             std::mutex wakeMutex_{};
+            // Guarded by wakeMutex_.
+            bool wakeRequested_{};
             std::condition_variable_any wake_{};
             std::jthread monitor_{};
         };
@@ -364,5 +450,10 @@ namespace csah::shared_settings
     bool startMonitor() noexcept
     {
         return Controller::get().start();
+    }
+
+    void wakeMonitor() noexcept
+    {
+        Controller::get().wake();
     }
 }

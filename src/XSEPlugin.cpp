@@ -53,6 +53,7 @@
 #include "render/BSLightingGeometryHook.h"
 #include "render/D3D11Hooks.h"
 #include "support/Logger.h"
+#include "mods_config/ModsConfigClient.h"
 #include "settings/SettingsFile.h"
 #include "settings/SharedSettingsRuntime.h"
 
@@ -111,6 +112,9 @@ namespace
         }
 
         switch (message->type) {
+        case F4SE::MessagingInterface::kPostLoad:
+            csah::mods_config_client::connect();
+            break;
         case F4SE::MessagingInterface::kPostPostLoad:
         {
             csah::diagnostics::registerDeveloperCapture();
@@ -529,7 +533,7 @@ extern "C" __declspec(dllexport) bool F4SEAPI F4SEPlugin_Load(
             startLinearLightingQualificationReporter();
         if (!csah::shared_settings::startMonitor()) {
             csah::logging::warn(
-                "Shared CSAH INI monitor did not start; startup settings remain active, but RobCo PALM changes require the next launch.");
+                "Shared CSAH.toml monitor did not start; startup settings remain active, but Mods Config changes require the next launch.");
         }
 
         csah::logging::info(

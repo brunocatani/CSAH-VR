@@ -27,7 +27,6 @@ foreach(variable IN ITEMS
     IBL_ENVIRONMENT_FILTER_SHADER_ASSET
     D3D11_HOOK_SOURCE
     GEOMETRY_HOOK_SOURCE
-    PALM_SETTINGS_SOURCE
     PLUGIN_SOURCE
     RESOURCE_SOURCE)
   if(NOT DEFINED ${variable} OR NOT EXISTS "${${variable}}")
@@ -63,7 +62,6 @@ string(APPEND updateShaderSource "\n${captureProjection}")
 file(READ "${IBL_ENVIRONMENT_FILTER_SHADER_SOURCE}" filterShaderSource)
 file(READ "${D3D11_HOOK_SOURCE}" hookSource)
 file(READ "${GEOMETRY_HOOK_SOURCE}" geometryHookSource)
-file(READ "${PALM_SETTINGS_SOURCE}" palmSettings)
 file(READ "${PLUGIN_SOURCE}" pluginSource)
 file(READ "${RESOURCE_SOURCE}" resourceSource)
 
@@ -235,20 +233,6 @@ foreach(required IN ITEMS
   endif()
 endforeach()
 
-foreach(required IN ITEMS
-    "\"id\": \"ibl\""
-    "\"id\": \"dynamic-cubemaps\""
-    "\"id\": \"diffuse-ibl\""
-    "\"id\": \"diffuse-ibl-level\""
-    "\"table\": \"ImageBasedLighting\""
-    "\"key\": \"DiffuseEnabled\""
-    "\"key\": \"DiffuseLevel\"")
-  string(FIND "${palmSettings}" "${required}" found)
-  if(found EQUAL -1)
-    message(FATAL_ERROR
-      "IBL PALM settings regression: missing '${required}'")
-  endif()
-endforeach()
 
 foreach(required IN ITEMS
     "kAlbedoSlot = 29"

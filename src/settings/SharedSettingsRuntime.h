@@ -161,6 +161,13 @@ namespace csah::shared_settings
 
     // Starts one bounded monitor for CSAH.toml. The
     // controller is process-lifetime owned, performs no work on render hooks,
-    // and coalesces multi-key writers before publishing settings.
+    // and coalesces multi-key writers before publishing settings. It is the
+    // only thread that applies settings to the feature runtimes: file edits,
+    // and the preview values settings_file::File keeps for Mods Config.
     [[nodiscard]] bool startMonitor() noexcept;
+
+    // Any thread (Mods Config's client calls it on the game's main thread):
+    // the previews changed or a Save ended them, so the monitor runs its next
+    // pass now instead of at its next poll. Does nothing before startMonitor.
+    void wakeMonitor() noexcept;
 }

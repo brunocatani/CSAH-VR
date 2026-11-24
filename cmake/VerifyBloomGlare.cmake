@@ -10,8 +10,7 @@ foreach(variable IN ITEMS
     D3D11_HOOK_SOURCE
     SHARED_SETTINGS_SOURCE
     SHARED_SETTINGS_HEADER
-    PLUGIN_SOURCE
-    PALM_SETTINGS_SOURCE)
+    PLUGIN_SOURCE)
   if(NOT DEFINED ${variable} OR NOT EXISTS "${${variable}}")
     message(FATAL_ERROR "Bloom/Glare verification input '${variable}' is missing")
   endif()
@@ -28,7 +27,6 @@ file(READ "${D3D11_HOOK_SOURCE}" hooks)
 file(READ "${SHARED_SETTINGS_SOURCE}" sharedSettings)
 file(READ "${SHARED_SETTINGS_HEADER}" sharedSettingsHeader)
 file(READ "${PLUGIN_SOURCE}" plugin)
-file(READ "${PALM_SETTINGS_SOURCE}" palmSettings)
 
 foreach(required IN ITEMS
     "ScopedComputeState computeState"
@@ -211,19 +209,6 @@ foreach(required IN ITEMS
   string(FIND "${plugin}" "${required}" found)
   if(found EQUAL -1)
     message(FATAL_ERROR "Bloom/Glare bootstrap regression: missing '${required}'")
-  endif()
-endforeach()
-
-foreach(required IN ITEMS
-    "\"id\": \"bloom\""
-    "\"table\": \"Bloom\""
-    "\"id\": \"physical-glare\""
-    "\"table\": \"PhysicalGlare\""
-    "\"key\": \"FftResolution\""
-    "\"key\": \"ChromaticSpread\"")
-  string(FIND "${palmSettings}" "${required}" found)
-  if(found EQUAL -1)
-    message(FATAL_ERROR "Bloom/Glare PALM settings regression: missing '${required}'")
   endif()
 endforeach()
 

@@ -88,12 +88,6 @@ if(CMAKE_SCRIPT_MODE_FILE)
   cs_require_text("${RUNTIME_SOURCE}"
     "queueComplexParallaxSettings"
     "render-boundary parallax settings")
-  cs_require_text("${PALM_SETTINGS_SOURCE}"
-    "\"id\": \"complex-parallax\""
-    "PALM settings parallax control")
-  cs_require_text("${PALM_SETTINGS_SOURCE}"
-    "\"key\": \"EnableParallax\""
-    "PALM settings parallax binding")
   cs_verify_compiled_parallax(
     "${BASE_BINARY}" "base landscape complex parallax" FALSE)
   cs_verify_compiled_parallax(

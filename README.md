@@ -109,13 +109,16 @@ Install the mod ZIP through MO2 and launch the game. CSAH VR creates its setting
    Data/
      F4SE/Plugins/CSAH.dll
      F4SE/Plugins/Streamline/
+     ModsConfigFO4/Config/CSAH/spec.json
      Shaders/
    ```
 
    Keep the bundled Streamline DLLs together and preserve the archive's folder structure.
-4. Launch Fallout 4 VR through F4SEVR. The mod creates `CSAH.toml` automatically; edit that file or use RobCo PALM to configure its features as described below.
+4. Launch Fallout 4 VR through F4SEVR. The mod creates `CSAH.toml` automatically; configure its features in Mods Config FO4 VR or in that file, as described below.
 
 ## Configuration
+
+With **Mods Config FO4 VR** installed, CSAH has its own page there with every setting, grouped as Features, Linear, Optics, Tuning and Engine. A change shows in the game as you make it, so you can tune by eye before you save: **Save** writes it to `CSAH.toml`, and **Discard** or closing the menu brings back the saved value. Settings marked for a restart take effect at the next game launch. Without Mods Config, edit the file directly.
 
 The active settings file is in your Windows Documents folder:
 
@@ -123,7 +126,7 @@ The active settings file is in your Windows Documents folder:
 Documents/My Games/Fallout4VR/Mods_Config/CSAH/CSAH.toml
 ```
 
-Every start writes each missing option at its default, grouped by feature with its help above it. Booleans are `true` or `false`; your own notes are kept when they start with a single `#` on the lines above an option. A value of the wrong type is reported in `CSAH.log` and that option keeps its last value. RobCo PALM's CSAH page edits the same file. Most feature changes reload during play; **Native Shadows settings, Skylighting probe quality, and the Vanilla Fixes master switch require a game restart**.
+Every start writes each missing option at its default, grouped by feature with its help above it. Booleans are `true` or `false`; your own notes are kept when they start with a single `#` on the lines above an option. A value of the wrong type is reported in `CSAH.log` and that option keeps its last value. Mods Config's CSAH page edits the same file. Most feature changes reload during play; **Native Shadows settings, Skylighting probe quality, and the Vanilla Fixes master switch require a game restart**.
 
 The **CSAH Visual Suite** switch controls the lighting, material, and output effects. **DLAA/DLSS, Vanilla Fixes, and Native Shadows have independent switches** and keep their own state when the visual suite is disabled.
 
@@ -193,7 +196,7 @@ cmake --preset fast -DCOMMON_LIB_F4VR_PATH="$PWD/extern/CommonLibF4VR" -DSTREAML
 cmake --build build-fast --config Release -- /m:1 /p:CL_MPCount=2
 ```
 
-The build stages its runtime files under `package/`. The `fast` preset does not deploy to an installed game. Local deployment can be configured in the ignored `CMakeUserPresets.json` using `POST_BUILD_COPY_PLUGIN` and `COPY_PLUGIN_BASE_PATH`.
+The build stages its runtime files under `package/`, which also holds CSAH's Mods Config page (`package/ModsConfigFO4/Config/CSAH/spec.json`). The `fast` preset does not deploy to an installed game. Local deployment can be configured in the ignored `CMakeUserPresets.json` using `POST_BUILD_COPY_PLUGIN` and `COPY_PLUGIN_BASE_PATH`; it copies the plugin, Streamline and the Mods Config page. A new or changed option in `src/settings/SettingsDefinitions.cpp` goes on the page too, or into the test's list of options left out: the `CSAH.SettingsFile` test checks that the page binds every option with CSAH's type and default.
 
 To build and run the existing tests:
 

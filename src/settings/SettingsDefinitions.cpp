@@ -1,8 +1,8 @@
 // Every option of CSAH.toml: its table, key, heading, type, default and help.
-// PALM's catalog (settings/PALMSettings.json) shows these same options;
-// CSAH.SettingsFile checks that every catalog binding names one of them with its type.
-// A default is the value a new player receives; where it differs from the
-// catalog's default, the shipped first-run setup chose it.
+// CSAH's Mods Config page (package/ModsConfigFO4/Config/CSAH/spec.json) shows
+// these same options; CSAH.SettingsFile checks that the page binds every one
+// of them, or leaves it out by name, with its type and default. A changed
+// option, range or choice changes the page with it.
 #include "settings/SettingsFile.h"
 
 namespace csah::settings_file

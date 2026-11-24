@@ -61,10 +61,12 @@ namespace csah::settings_file
             _values.insert_or_assign(pathOf(option.table, option.key), option.defaultValue);
     }
 
-    Values::Values(const RPS::Settings::Store& settings)
+    Values::Values(const RPS::Settings::Store& settings, const PreviewValues& previews)
     {
         for (const auto& setting : settings.settings())
             _values.insert_or_assign(pathOf(setting.table, setting.key), setting.value);
+        for (const auto& [path, value] : previews)
+            _values.insert_or_assign(path, value);
     }
 
     const std::string* Values::find(std::string_view table, std::string_view key) const noexcept
@@ -141,7 +143,7 @@ namespace csah::settings_file
         return std::make_unique<store::Store>(
             store::Files{ directory, "CSAH", std::string(kFileName), {},
                 "## CSAH.toml - Community Shaders at Home (CSAH) VR settings\n"
-                "## RobCo PALM and this file control the same settings. Most apply live; a heading or help line\n"
+                "## Mods Config FO4 VR and this file control the same settings. Most apply live; a heading or help line\n"
                 "## says where a restart is required. Each option has its help above it.\n"
                 "## Your own notes are kept when they start with a single # on the lines above an option.\n",
                 {} },
@@ -170,7 +172,7 @@ namespace csah::settings_file
             _store->load(true);
             report.insert(report.end(), _store->notices().begin(), _store->notices().end());
             report.insert(report.end(), _store->messages().begin(), _store->messages().end());
-            _values = std::make_shared<const Values>(*_store);
+            _values = std::make_shared<const Values>(*_store, _previews);
             return true;
         } catch (const std::exception& error) {
             report.emplace_back(error.what());
@@ -178,19 +180,104 @@ namespace csah::settings_file
         }
     }
 
-    Values File::reload(std::vector<std::string>& report) noexcept
+    Values File::reload(std::vector<std::string>& report, std::uint64_t& previewRevision) noexcept
     {
         std::scoped_lock lock(_mutex);
         try {
             if (_store) {
                 _store->load(false);
                 report.insert(report.end(), _store->messages().begin(), _store->messages().end());
-                _values = std::make_shared<const Values>(*_store);
+                _values = std::make_shared<const Values>(*_store, _previews);
             }
         } catch (const std::exception& error) {
             report.emplace_back(error.what());
         }
+        // An unreadable file keeps its last values, so a Save that cannot be
+        // read leaves those without previews rather than waiting forever.
+        _readPending = false;
+        previewRevision = _previewRevision;
         return *_values;
+    }
+
+    std::optional<Values> File::applyPreviews(std::uint64_t& previewRevision) noexcept
+    {
+        try {
+            std::scoped_lock lock(_mutex);
+            if (!_store || _readPending)
+                return std::nullopt;
+            _values = std::make_shared<const Values>(*_store, _previews);
+            previewRevision = _previewRevision;
+            return *_values;
+        } catch (...) {
+            return std::nullopt;
+        }
+    }
+
+    bool File::setPreview(std::string_view table, std::string_view key, std::string_view value, std::string& error) noexcept
+    {
+        try {
+            std::scoped_lock lock(_mutex);
+            const auto* setting = _store ? _store->find(table, key) : nullptr;
+            if (!setting) {
+                error = "CSAH.toml has no such option";
+                return false;
+            }
+            auto canonical = store::normalizeValue(setting->type, value);
+            if (!canonical) {
+                error = "not a value of the option";
+                return false;
+            }
+            auto& previewed = _previews[pathOf(table, key)];
+            if (previewed != *canonical) {
+                previewed = std::move(*canonical);
+                ++_previewRevision;
+            }
+            return true;
+        } catch (const std::exception& exception) {
+            error = exception.what();
+            return false;
+        }
+    }
+
+    void File::discardPreview(std::string_view table, std::string_view key) noexcept
+    {
+        try {
+            std::scoped_lock lock(_mutex);
+            if (const auto found = _previews.find(pathOf(table, key)); found != _previews.end()) {
+                _previews.erase(found);
+                ++_previewRevision;
+            }
+        } catch (...) {
+        }
+    }
+
+    void File::clearPreviews() noexcept
+    {
+        std::scoped_lock lock(_mutex);
+        if (_previews.empty())
+            return;
+        _previews.clear();
+        ++_previewRevision;
+    }
+
+    void File::endPreviewsForSave() noexcept
+    {
+        std::scoped_lock lock(_mutex);
+        _previews.clear();
+        ++_previewRevision;
+        _readPending = true;
+    }
+
+    std::uint64_t File::previewRevision() const noexcept
+    {
+        std::scoped_lock lock(_mutex);
+        return _previewRevision;
+    }
+
+    bool File::readPending() const noexcept
+    {
+        std::scoped_lock lock(_mutex);
+        return _readPending;
     }
 
     Values File::current() const

@@ -11,7 +11,6 @@ foreach(variable IN ITEMS
     CONTACT_SHADOW_RESOLVE_SHADER_SOURCE
     CONTACT_SHADOW_SHADER_GENERATOR
     D3D11_HOOK_SOURCE
-    PALM_SETTINGS_SOURCE
     PLUGIN_SOURCE)
   if(NOT DEFINED ${variable} OR NOT EXISTS "${${variable}}")
     message(FATAL_ERROR "${variable} is missing")
@@ -31,7 +30,6 @@ file(READ "${CONTACT_SHADOW_DISPATCH_SHADER_SOURCE}" dispatchShaderSource)
 file(READ "${CONTACT_SHADOW_RESOLVE_SHADER_SOURCE}" resolveShaderSource)
 file(READ "${CONTACT_SHADOW_SHADER_GENERATOR}" generatorSource)
 file(READ "${D3D11_HOOK_SOURCE}" hookSource)
-file(READ "${PALM_SETTINGS_SOURCE}" palmSettings)
 file(READ "${PLUGIN_SOURCE}" pluginSource)
 
 foreach(required IN ITEMS
@@ -382,24 +380,6 @@ foreach(required IN ITEMS
   if(found EQUAL -1)
     message(FATAL_ERROR
       "Contact Shadows settings regression: missing '${required}'")
-  endif()
-endforeach()
-
-foreach(required IN ITEMS
-    "\"id\": \"contact-shadows\""
-    "\"id\": \"contact-foveated\""
-    "\"table\": \"ContactShadows\""
-    "\"key\": \"Enabled\""
-    "\"key\": \"Foveated\""
-    "\"key\": \"Strength\""
-    "\"key\": \"MaxDistance\""
-    "\"key\": \"FadeDistance\""
-    "\"key\": \"Thickness\""
-    "\"key\": \"SampleCount\"")
-  string(FIND "${palmSettings}" "${required}" found)
-  if(found EQUAL -1)
-    message(FATAL_ERROR
-      "Contact Shadows PALM settings regression: missing '${required}'")
   endif()
 endforeach()
 

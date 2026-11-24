@@ -1,0 +1,2430 @@
+{
+  "minSchemaVersion": 1,
+  "modName": "CSAH",
+  "displayName": "Community Shaders at Home (CSAH) VR",
+  "help": "Lighting, material, shadow and image-quality features for Fallout 4 VR.",
+  "category": "Visuals",
+  "specVersion": 1,
+  "f4sePluginRequirements": ["Community Shaders at Home (CSAH) VR"],
+  "files": { "config": { "format": "toml", "root": "myGames", "path": "Mods_Config/CSAH/CSAH.toml" } },
+  "defaultFile": "config",
+  "applies": "live",
+  "content": [
+    {
+      "type": "text",
+      "text": "<font color='#AAAAAA' size=13>Version: {clientState:modVersion}</font>",
+      "html": true
+    },
+    {
+      "type": "section",
+      "text": "About",
+      "content": [
+        {
+          "type": "text",
+          "text": "Community Shaders at Home (CSAH) VR adds lighting, material, shadow and image-quality features to Fallout 4 VR. A change shows in the game as you make it; Save keeps it in CSAH.toml, and Discard or closing the menu restores the saved value. Settings marked for a restart take effect at the next game launch."
+        },
+        {
+          "type": "text",
+          "text": "The visual suite, DLAA / DLSS, Vanilla Fixes and Native Shadows have independent switches on the Features page."
+        }
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "id": "features",
+      "pageDisplayName": "Features",
+      "help": "The switch of every CSAH feature. Each feature's own settings are on the Linear, Optics, Tuning and Engine pages.",
+      "content": [
+        {
+          "type": "text",
+          "text": "The switch of every CSAH feature. Each feature's own settings are on the Linear, Optics, Tuning and Engine pages."
+        }
+      ],
+      "pages": [
+        {
+          "id": "lighting",
+          "pageDisplayName": "Lighting",
+          "content": [
+            {
+              "type": "section",
+              "text": "Visual suite",
+              "help": "The visual suite, DLAA/DLSS, Vanilla Fixes, and Native Shadows have independent master gates.",
+              "content": [
+                {
+                  "type": "switcher",
+                  "valueType": "bool",
+                  "id": "community-shaders",
+                  "text": "CSAH Visual Suite",
+                  "help": "Controls only the lighting, material, shadow, and output effects in this suite. DLAA/DLSS, Vanilla Fixes, and Native Shadows retain their own settings and continue independently.",
+                  "default": true,
+                  "storage": { "path": ["CommunityShaders", "Enabled"] }
+                },
+                {
+                  "type": "switcher",
+                  "valueType": "bool",
+                  "id": "linear-lighting",
+                  "text": "Linear Lighting",
+                  "help": "Evaluates supported lighting and material colour operations in linear space.",
+                  "default": true,
+                  "storage": { "path": ["LinearLighting", "Enabled"] }
+                },
+                {
+                  "type": "switcher",
+                  "valueType": "bool",
+                  "id": "ibl",
+                  "text": "Image Based Lighting",
+                  "help": "Master gate for the shared validated environment used by Dynamic Cubemaps and Diffuse IBL.",
+                  "default": true,
+                  "storage": { "path": ["ImageBasedLighting", "Enabled"] }
+                },
+                {
+                  "type": "switcher",
+                  "valueType": "bool",
+                  "id": "dynamic-cubemaps",
+                  "text": "Dynamic Cubemaps",
+                  "help": "Uses the shared stereo scene environment for position-aware specular reflections while retaining each material's vanilla cubemap as the confidence fallback.",
+                  "default": true,
+                  "storage": { "path": ["DynamicCubemaps", "Enabled"] }
+                },
+                {
+                  "type": "switcher",
+                  "valueType": "bool",
+                  "id": "diffuse-ibl",
+                  "text": "Diffuse IBL",
+                  "help": "Adds environment-derived diffuse bounce lighting.",
+                  "default": true,
+                  "storage": { "path": ["ImageBasedLighting", "DiffuseEnabled"] }
+                },
+                {
+                  "type": "switcher",
+                  "valueType": "bool",
+                  "id": "skylighting",
+                  "text": "Skylighting",
+                  "help": "Uses a shared stereo world-space probe field to occlude sky diffuse and specular light beneath roofs, trees, and overhangs.",
+                  "default": true,
+                  "storage": { "path": ["Skylighting", "Enabled"] }
+                },
+                {
+                  "type": "switcher",
+                  "valueType": "bool",
+                  "id": "sky-sync",
+                  "text": "Sky Sync / Moon Lighting",
+                  "help": "Keeps native directional lighting and shadows aligned with the actual Sun by day and Fallout's single climate-enabled Moon by night.",
+                  "default": true,
+                  "storage": { "path": ["SkySync", "Enabled"] }
+                },
+                {
+                  "type": "switcher",
+                  "valueType": "bool",
+                  "id": "filmic-tonemapping",
+                  "text": "Filmic Tonemapping",
+                  "help": "Replaces the exact native HDR blend with hue-preserving highlight compression while retaining bloom, cinematic state, fade, and engine adaptation.",
+                  "default": true,
+                  "storage": { "path": ["FilmicTonemapping", "Enabled"] }
+                },
+                {
+                  "type": "switcher",
+                  "valueType": "bool",
+                  "id": "color-grading",
+                  "text": "Colour Grading",
+                  "help": "Applies day, night and interior colour tables and the colour controls to the finished image, inside the output pass the game already draws.",
+                  "default": true,
+                  "storage": { "path": ["ColorGrading", "Enabled"] }
+                },
+                {
+                  "type": "switcher",
+                  "valueType": "bool",
+                  "id": "bloom",
+                  "text": "Enhanced Bloom",
+                  "help": "Adds a stereo-isolated HDR mip-chain bloom while preserving Fallout's native bloom.",
+                  "default": true,
+                  "storage": { "path": ["Bloom", "Enabled"] }
+                },
+                {
+                  "type": "switcher",
+                  "valueType": "bool",
+                  "id": "physical-glare",
+                  "text": "Physical Glare",
+                  "help": "Convolves bright HDR light with a wavelength-dependent optical point-spread function independently for each eye.",
+                  "default": true,
+                  "storage": { "path": ["PhysicalGlare", "Enabled"] }
+                },
+                {
+                  "type": "switcher",
+                  "valueType": "bool",
+                  "id": "volumetric-lighting",
+                  "text": "Volumetric Lighting / Godrays",
+                  "help": "Not working. Disabled by default. This setting controls Volumetric Lighting / Godrays.",
+                  "default": false,
+                  "storage": { "path": ["VolumetricLighting", "Enabled"] }
+                },
+                {
+                  "type": "switcher",
+                  "valueType": "bool",
+                  "id": "inverse-square-bEnabled",
+                  "text": "Inverse-square Local Lighting",
+                  "help": "Uses finite-source inverse-square falloff for deferred and tiled local lights. Keeps native radii, spot cones, shadows and gameplay detection unchanged.",
+                  "default": false,
+                  "storage": { "path": ["InverseSquareLighting", "Enabled"] }
+                },
+                {
+                  "type": "switcher",
+                  "valueType": "bool",
+                  "id": "height-fog-bHeightFogEnabled",
+                  "text": "Height Fog",
+                  "help": "Adds an exterior height-dependent fog layer using current weather colours. Works without enabling Volumetric Lighting.",
+                  "default": false,
+                  "storage": { "path": ["VolumetricLighting", "HeightFogEnabled"] }
+                },
+                {
+                  "type": "switcher",
+                  "valueType": "bool",
+                  "id": "ssgi-bEnabled",
+                  "text": "Screen Space AO and GI",
+                  "help": "Screen Space AO and GI. While on, it replaces Stereo SAO, which then stays off whatever VrAllowSAO says.",
+                  "default": false,
+                  "storage": { "path": ["ScreenSpaceGI", "Enabled"] }
+                },
+                {
+                  "type": "switcher",
+                  "valueType": "bool",
+                  "id": "ssgi-bIndirectLight",
+                  "text": "Indirect Diffuse Light",
+                  "default": true,
+                  "storage": { "path": ["ScreenSpaceGI", "IndirectLight"] }
+                },
+                {
+                  "type": "switcher",
+                  "valueType": "bool",
+                  "id": "ssgi-bExperimentalSpecular",
+                  "text": "Experimental Specular GI",
+                  "default": false,
+                  "storage": { "path": ["ScreenSpaceGI", "ExperimentalSpecular"] }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "materials",
+          "pageDisplayName": "Materials",
+          "content": [
+            {
+              "type": "section",
+              "text": "Material features",
+              "content": [
+                {
+                  "type": "switcher",
+                  "valueType": "bool",
+                  "id": "pbr",
+                  "text": "Physical Materials (PBR)",
+                  "help": "Requires Linear Lighting. Uses one energy-conserving GGX/Fresnel material response for direct light, IBL, dynamic cubemaps, wetness, and the native reflection fallback.",
+                  "default": true,
+                  "storage": { "path": ["PBR", "Enabled"] }
+                },
+                {
+                  "type": "switcher",
+                  "valueType": "bool",
+                  "id": "complex-environment",
+                  "text": "Complex Metal Response",
+                  "help": "Enables complex-material environment response when validated IBL data is available.",
+                  "default": true,
+                  "storage": { "path": ["ComplexMaterials", "EnableEnvironmentResponse"] }
+                },
+                {
+                  "type": "switcher",
+                  "valueType": "bool",
+                  "id": "complex-parallax",
+                  "text": "Complex Parallax",
+                  "help": "Enables parallax on assets authored for the CSAH complex-material contract.",
+                  "default": true,
+                  "storage": { "path": ["ComplexMaterials", "EnableParallax"] }
+                },
+                {
+                  "type": "switcher",
+                  "valueType": "bool",
+                  "id": "basic-wetness",
+                  "text": "Basic Wetness",
+                  "help": "Applies the manual wet-state material response to classified wettable surfaces.",
+                  "default": true,
+                  "storage": { "path": ["BasicWetness", "Enabled"] }
+                },
+                {
+                  "type": "switcher",
+                  "valueType": "bool",
+                  "id": "water-effects-enabled",
+                  "text": "Water Effects",
+                  "help": "Enables the selected water surface and underwater lighting effects.",
+                  "default": false,
+                  "storage": { "path": ["WaterEffects", "Enabled"] }
+                },
+                {
+                  "type": "switcher",
+                  "valueType": "bool",
+                  "id": "water-parallax-enabled",
+                  "text": "Water Parallax",
+                  "help": "Uses alpha heights in compatible water normal maps to displace their texture sampling.",
+                  "default": true,
+                  "storage": { "path": ["WaterEffects", "EnableParallax"] }
+                },
+                {
+                  "type": "switcher",
+                  "valueType": "bool",
+                  "id": "water-caustics-enabled",
+                  "text": "Underwater Caustics",
+                  "help": "Modulates sunlight below the native exterior-cell water planes.",
+                  "default": true,
+                  "storage": { "path": ["WaterEffects", "EnableCaustics"] }
+                },
+                {
+                  "type": "switcher",
+                  "valueType": "bool",
+                  "id": "water-reflections-enabled",
+                  "text": "Water Dynamic Cubemaps",
+                  "help": "Adds the shared dynamic cubemap to water only. Off keeps dynamic cubemaps available to other materials. Independent of FX 10.5 Water Reflections; enable both to combine them. Requires global Dynamic Cubemaps and Water Effects.",
+                  "default": false,
+                  "storage": { "path": ["WaterEffects", "EnableReflections"] }
+                },
+                {
+                  "type": "switcher",
+                  "valueType": "bool",
+                  "id": "water-fx-screen-reflections",
+                  "text": "FX 10.5 Water Reflections",
+                  "help": "Screen-space water reflections, independently toggleable from Water Dynamic Cubemaps. Works alone with that switch off, or combines with it when both are on. Requires Water Effects; global Dynamic Cubemaps is optional.",
+                  "default": false,
+                  "storage": { "path": ["WaterEffects", "EnableScreenSpaceReflections"] }
+                },
+                {
+                  "type": "switcher",
+                  "valueType": "bool",
+                  "id": "terrain-variation",
+                  "text": "Terrain Variation",
+                  "help": "Blends shifted terrain texture samples to reduce visible repetition.",
+                  "default": false,
+                  "storage": { "path": ["TerrainVariation", "Enabled"] }
+                },
+                {
+                  "type": "switcher",
+                  "valueType": "bool",
+                  "id": "lod-matching",
+                  "text": "LOD Colour Matching",
+                  "help": "Enables independent terrain and distant-object colour adjustment. Neutral values preserve the original colours.",
+                  "default": true,
+                  "storage": { "path": ["LODBlending", "Enabled"] }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "shadows",
+          "pageDisplayName": "Shadows",
+          "content": [
+            {
+              "type": "section",
+              "text": "Shadow features",
+              "content": [
+                {
+                  "type": "switcher",
+                  "valueType": "bool",
+                  "id": "contact-shadows",
+                  "text": "Contact Shadows",
+                  "help": "Adds short-range screen-space directional occlusion.",
+                  "default": false,
+                  "storage": { "path": ["ContactShadows", "Enabled"] }
+                },
+                {
+                  "type": "switcher",
+                  "valueType": "bool",
+                  "id": "cloud-shadows",
+                  "text": "Cloud Shadows",
+                  "help": "Projects captured cloud cover along the directional light.",
+                  "default": false,
+                  "storage": { "path": ["CloudShadows", "Enabled"] }
+                },
+                {
+                  "type": "switcher",
+                  "valueType": "bool",
+                  "id": "terrain-shadows-bEnabled",
+                  "text": "Terrain Shadows",
+                  "help": "Distant terrain shadows from generated worldspace heightmaps. Missing maps preserve native sunlight.",
+                  "default": false,
+                  "storage": { "path": ["TerrainShadows", "Enabled"] }
+                },
+                {
+                  "type": "switcher",
+                  "valueType": "bool",
+                  "id": "native-shadows-enabled",
+                  "text": "Native Shadow Fixes",
+                  "help": "Independent from the CSAH visual suite; restart required.",
+                  "applies": "restart",
+                  "default": false,
+                  "storage": { "path": ["NativeShadows", "Enabled"] }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "image-quality",
+          "pageDisplayName": "Image Quality",
+          "content": [
+            {
+              "type": "section",
+              "text": "Neural image quality",
+              "content": [
+                {
+                  "type": "switcher",
+                  "valueType": "bool",
+                  "id": "dlaa",
+                  "text": "DLAA / DLSS",
+                  "help": "Independent Streamline image-quality master. It can remain enabled while the CSAH visual suite and Vanilla Fixes are disabled.",
+                  "default": false,
+                  "storage": { "path": ["DLAA", "Enabled"] }
+                }
+              ]
+            },
+            {
+              "type": "section",
+              "text": "Vanilla renderer fixes",
+              "content": [
+                {
+                  "type": "switcher",
+                  "valueType": "bool",
+                  "id": "vanilla-fixes",
+                  "text": "Vanilla Fixes",
+                  "help": "Independent master for the verified FO4VR renderer corrections. It does not require the CSAH visual suite or DLAA/DLSS. Restart after changing this master.",
+                  "applies": "restart",
+                  "default": true,
+                  "storage": { "path": ["VanillaFixes", "Enabled"] }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "linear",
+      "pageDisplayName": "Linear",
+      "help": "Tonemapping, colour grading, response curves and light energy.",
+      "content": [{ "type": "text", "text": "Tonemapping, colour grading, response curves and light energy." }],
+      "pages": [
+        {
+          "id": "tonemapping",
+          "pageDisplayName": "Tonemapping",
+          "content": [
+            {
+              "type": "section",
+              "text": "Filmic output",
+              "help": "One output-stage pass shared by both eyes. Zero EV retains engine exposure; lower white point values compress highlights sooner.",
+              "content": [
+                {
+                  "type": "switcher",
+                  "valueType": "bool",
+                  "id": "native-auto-exposure",
+                  "text": "Use Native Auto Exposure",
+                  "help": "Consumes FO4VR's shared adapted-luminance texture and weather/image-space exposure limits. Disable only for a locked-exposure comparison.",
+                  "default": true,
+                  "storage": { "path": ["FilmicTonemapping", "UseNativeAutoExposure"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "exposure-ev",
+                  "text": "Exposure Compensation (EV)",
+                  "help": "Applies a photographic stop offset after the selected exposure baseline.",
+                  "default": 0.0,
+                  "valueOptions": { "min": -3.0, "max": 3.0, "step": 0.05 },
+                  "storage": { "path": ["FilmicTonemapping", "ExposureCompensationEV"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "filmic-strength",
+                  "text": "Hue-Preserving Filmic Strength",
+                  "help": "Blends from FO4VR's native per-channel curve to luminance-based highlight rolloff without changing the native curve family.",
+                  "default": 1.0,
+                  "valueOptions": { "min": 0.0, "max": 1.0, "step": 0.01 },
+                  "storage": { "path": ["FilmicTonemapping", "FilmicStrength"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "white-point-scale",
+                  "text": "White Point Scale",
+                  "help": "Lower values roll highlights off earlier; 1.0 retains FO4VR's verified 5.6 white point.",
+                  "default": 1.0,
+                  "valueOptions": { "min": 0.5, "max": 2.0, "step": 0.01 },
+                  "storage": { "path": ["FilmicTonemapping", "WhitePointScale"] }
+                }
+              ]
+            },
+            {
+              "type": "section",
+              "text": "Colour grading",
+              "help": "Runs inside the output pass, so it adds no pass. Each subfolder of Data\\F4SE\\Plugins\\CSAH\\ColorGrading is one look, counted in alphabetical order and read at game start.",
+              "content": [
+                {
+                  "type": "dropdown",
+                  "valueType": "int",
+                  "id": "color-grading-look",
+                  "text": "Look",
+                  "help": "Switches between the installed looks at once.",
+                  "default": 1,
+                  "valueOptions": {
+                    "options": [
+                      { "value": 1, "text": "Look 1" },
+                      { "value": 2, "text": "Look 2" },
+                      { "value": 3, "text": "Look 3" },
+                      { "value": 4, "text": "Look 4" },
+                      { "value": 5, "text": "Look 5" },
+                      { "value": 6, "text": "Look 6" },
+                      { "value": 7, "text": "Look 7" },
+                      { "value": 8, "text": "Look 8" }
+                    ]
+                  },
+                  "storage": { "path": ["ColorGrading", "Look"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "color-grading-table-strength",
+                  "text": "Colour Table Strength",
+                  "help": "How much of the day, night and interior colour tables is applied.",
+                  "default": 1.0,
+                  "valueOptions": { "min": 0.0, "max": 1.0, "step": 0.01 },
+                  "storage": { "path": ["ColorGrading", "TableStrength"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "color-grading-brightness",
+                  "text": "Brightness",
+                  "help": "1 changes nothing.",
+                  "default": 1.0,
+                  "valueOptions": { "min": 0.0, "max": 2.0, "step": 0.01 },
+                  "storage": { "path": ["ColorGrading", "Brightness"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "color-grading-contrast",
+                  "text": "Contrast",
+                  "help": "Contrast around middle grey. 1 changes nothing.",
+                  "default": 1.0,
+                  "valueOptions": { "min": 0.0, "max": 2.0, "step": 0.01 },
+                  "storage": { "path": ["ColorGrading", "Contrast"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "color-grading-saturation",
+                  "text": "Saturation",
+                  "help": "1 changes nothing, 0 is black and white.",
+                  "default": 1.0,
+                  "valueOptions": { "min": 0.0, "max": 2.0, "step": 0.01 },
+                  "storage": { "path": ["ColorGrading", "Saturation"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "color-grading-gamma",
+                  "text": "Gamma",
+                  "help": "Above 1 darkens midtones, below 1 brightens them.",
+                  "default": 1.0,
+                  "valueOptions": { "min": 0.5, "max": 2.0, "step": 0.01 },
+                  "storage": { "path": ["ColorGrading", "Gamma"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "color-grading-black-point",
+                  "text": "Black Point",
+                  "help": "Input level that becomes black. Raising it deepens shadows.",
+                  "default": 0.0,
+                  "valueOptions": { "min": 0.0, "max": 0.25, "step": 0.005 },
+                  "storage": { "path": ["ColorGrading", "BlackPoint"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "color-grading-white-point",
+                  "text": "White Point",
+                  "help": "Input level that becomes white. Lowering it brightens highlights.",
+                  "default": 1.0,
+                  "valueOptions": { "min": 0.5, "max": 1.0, "step": 0.005 },
+                  "storage": { "path": ["ColorGrading", "WhitePoint"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "color-grading-desaturate-shadows",
+                  "text": "Desaturate Shadows",
+                  "help": "Removes colour from the darkest tones.",
+                  "default": 0.0,
+                  "valueOptions": { "min": 0.0, "max": 1.0, "step": 0.01 },
+                  "storage": { "path": ["ColorGrading", "DesaturateShadows"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "color-grading-shadows-red",
+                  "text": "Shadows Red",
+                  "help": "Red added to or taken from shadows.",
+                  "default": 0.0,
+                  "valueOptions": { "min": -0.25, "max": 0.25, "step": 0.005 },
+                  "storage": { "path": ["ColorGrading", "ShadowsRed"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "color-grading-shadows-green",
+                  "text": "Shadows Green",
+                  "help": "Green added to or taken from shadows.",
+                  "default": 0.0,
+                  "valueOptions": { "min": -0.25, "max": 0.25, "step": 0.005 },
+                  "storage": { "path": ["ColorGrading", "ShadowsGreen"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "color-grading-shadows-blue",
+                  "text": "Shadows Blue",
+                  "help": "Blue added to or taken from shadows.",
+                  "default": 0.0,
+                  "valueOptions": { "min": -0.25, "max": 0.25, "step": 0.005 },
+                  "storage": { "path": ["ColorGrading", "ShadowsBlue"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "color-grading-highlights-red",
+                  "text": "Highlights Red",
+                  "help": "Red added to or taken from highlights.",
+                  "default": 0.0,
+                  "valueOptions": { "min": -0.25, "max": 0.25, "step": 0.005 },
+                  "storage": { "path": ["ColorGrading", "HighlightsRed"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "color-grading-highlights-green",
+                  "text": "Highlights Green",
+                  "help": "Green added to or taken from highlights.",
+                  "default": 0.0,
+                  "valueOptions": { "min": -0.25, "max": 0.25, "step": 0.005 },
+                  "storage": { "path": ["ColorGrading", "HighlightsGreen"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "color-grading-highlights-blue",
+                  "text": "Highlights Blue",
+                  "help": "Blue added to or taken from highlights.",
+                  "default": 0.0,
+                  "valueOptions": { "min": -0.25, "max": 0.25, "step": 0.005 },
+                  "storage": { "path": ["ColorGrading", "HighlightsBlue"] }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "response",
+          "pageDisplayName": "Response",
+          "content": [
+            {
+              "type": "section",
+              "text": "Response gamma",
+              "help": "Advanced response controls. Defaults match the verified FO4VR shader contracts.",
+              "content": [
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "light-gamma",
+                  "text": "Light Response",
+                  "help": "Light Response. 2.2 matches the game; lower brightens dark values, higher darkens them.",
+                  "default": 2.2,
+                  "valueOptions": { "min": 0.1, "max": 4.4, "step": 0.01 },
+                  "storage": { "path": ["LinearLighting", "LightResponse"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "color-gamma",
+                  "text": "Colour Response",
+                  "help": "Colour Response. 2.2 matches the game; lower brightens dark values, higher darkens them.",
+                  "default": 2.2,
+                  "valueOptions": { "min": 0.1, "max": 4.4, "step": 0.01 },
+                  "storage": { "path": ["LinearLighting", "ColorResponse"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "emission-gamma",
+                  "text": "Emission Response",
+                  "help": "Emission Response. 2.2 matches the game; lower brightens dark values, higher darkens them.",
+                  "default": 2.2,
+                  "valueOptions": { "min": 0.1, "max": 4.4, "step": 0.01 },
+                  "storage": { "path": ["LinearLighting", "EmitColorResponse"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "glowmap-gamma",
+                  "text": "Glowmap Response",
+                  "help": "Glowmap Response. 2.2 matches the game; lower brightens dark values, higher darkens them.",
+                  "default": 2.2,
+                  "valueOptions": { "min": 0.1, "max": 4.4, "step": 0.01 },
+                  "storage": { "path": ["LinearLighting", "GlowmapResponse"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "ambient-gamma",
+                  "text": "Ambient Response",
+                  "help": "Ambient Response. 2.2 matches the game; lower brightens dark values, higher darkens them.",
+                  "default": 2.2,
+                  "valueOptions": { "min": 0.1, "max": 4.4, "step": 0.01 },
+                  "storage": { "path": ["LinearLighting", "AmbientResponse"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "fog-gamma",
+                  "text": "Fog Response",
+                  "help": "Fog Response. 2.2 matches the game; lower brightens dark values, higher darkens them.",
+                  "default": 2.2,
+                  "valueOptions": { "min": 0.1, "max": 4.4, "step": 0.01 },
+                  "storage": { "path": ["LinearLighting", "FogResponse"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "fog-alpha-gamma",
+                  "text": "Fog Density Response",
+                  "help": "Fog Density Response. 2.2 matches the game; lower brightens dark values, higher darkens them.",
+                  "default": 2.2,
+                  "valueOptions": { "min": 0.1, "max": 4.4, "step": 0.01 },
+                  "storage": { "path": ["LinearLighting", "FogAlphaResponse"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "effect-gamma",
+                  "text": "Effect Response",
+                  "help": "Effect Response. 2.2 matches the game; lower brightens dark values, higher darkens them.",
+                  "default": 2.2,
+                  "valueOptions": { "min": 0.1, "max": 4.4, "step": 0.01 },
+                  "storage": { "path": ["LinearLighting", "EffectResponse"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "effect-alpha-gamma",
+                  "text": "Effect Opacity Response",
+                  "help": "Effect Opacity Response. 2.2 matches the game; lower brightens dark values, higher darkens them.",
+                  "default": 2.2,
+                  "valueOptions": { "min": 0.1, "max": 4.4, "step": 0.01 },
+                  "storage": { "path": ["LinearLighting", "EffectAlphaResponse"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "sky-gamma",
+                  "text": "Sky Response",
+                  "help": "Sky Response. 2.2 matches the game; lower brightens dark values, higher darkens them.",
+                  "default": 2.2,
+                  "valueOptions": { "min": 0.1, "max": 4.4, "step": 0.01 },
+                  "storage": { "path": ["LinearLighting", "SkyResponse"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "water-gamma",
+                  "text": "Water Response",
+                  "help": "Water Response. 2.2 matches the game; lower brightens dark values, higher darkens them.",
+                  "default": 2.2,
+                  "valueOptions": { "min": 0.1, "max": 4.4, "step": 0.01 },
+                  "storage": { "path": ["LinearLighting", "WaterResponse"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "volumetric-gamma",
+                  "text": "Volumetric Lighting Response",
+                  "help": "Volumetric Lighting Response. 2.2 matches the game; lower brightens dark values, higher darkens them.",
+                  "default": 2.2,
+                  "valueOptions": { "min": 0.1, "max": 4.4, "step": 0.01 },
+                  "storage": { "path": ["LinearLighting", "VolumetricLightingResponse"] }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "energy",
+          "pageDisplayName": "Energy",
+          "content": [
+            {
+              "type": "section",
+              "text": "Energy multipliers",
+              "content": [
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "diffuse-level",
+                  "text": "Vanilla Diffuse",
+                  "default": 1.0,
+                  "valueOptions": { "min": 0.0, "max": 10.0, "step": 0.01 },
+                  "storage": { "path": ["LinearLighting", "VanillaDiffuseColorMultiplier"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "directional-level",
+                  "text": "Directional Light",
+                  "default": 1.0,
+                  "valueOptions": { "min": 0.0, "max": 10.0, "step": 0.01 },
+                  "storage": { "path": ["LinearLighting", "DirectionalLightMultiplier"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "point-level",
+                  "text": "Point Light",
+                  "default": 1.0,
+                  "valueOptions": { "min": 0.0, "max": 10.0, "step": 0.01 },
+                  "storage": { "path": ["LinearLighting", "PointLightMultiplier"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "ambient-level",
+                  "text": "Ambient Light",
+                  "default": 1.0,
+                  "valueOptions": { "min": 0.0, "max": 10.0, "step": 0.01 },
+                  "storage": { "path": ["LinearLighting", "AmbientMultiplier"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "emission-level",
+                  "text": "Emission",
+                  "default": 1.0,
+                  "valueOptions": { "min": 0.0, "max": 10.0, "step": 0.01 },
+                  "storage": { "path": ["LinearLighting", "EmitColorMultiplier"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "glow-level",
+                  "text": "Glowmap",
+                  "default": 1.0,
+                  "valueOptions": { "min": 0.0, "max": 10.0, "step": 0.01 },
+                  "storage": { "path": ["LinearLighting", "GlowmapScale"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "effect-lighting-level",
+                  "text": "Effect Lighting",
+                  "default": 1.0,
+                  "valueOptions": { "min": 0.0, "max": 10.0, "step": 0.01 },
+                  "storage": { "path": ["LinearLighting", "EffectLightingScale"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "membrane-level",
+                  "text": "Membrane Effects",
+                  "default": 1.0,
+                  "valueOptions": { "min": 0.0, "max": 10.0, "step": 0.01 },
+                  "storage": { "path": ["LinearLighting", "MembraneEffectMultiplier"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "other-effect-level",
+                  "text": "Other Effects",
+                  "default": 1.0,
+                  "valueOptions": { "min": 0.0, "max": 10.0, "step": 0.01 },
+                  "storage": { "path": ["LinearLighting", "OtherEffectMultiplier"] }
+                }
+              ]
+            },
+            {
+              "type": "section",
+              "text": "Environment energy",
+              "content": [
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "diffuse-ibl-level",
+                  "text": "Diffuse IBL Level",
+                  "default": 1.0,
+                  "valueOptions": { "min": 0.0, "max": 2.0, "step": 0.01 },
+                  "storage": { "path": ["ImageBasedLighting", "DiffuseLevel"] }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "optics",
+      "pageDisplayName": "Optics",
+      "help": "Volumetric lighting, bloom and physical glare.",
+      "content": [{ "type": "text", "text": "Volumetric lighting, bloom and physical glare." }],
+      "pages": [
+        {
+          "id": "volumetric-lighting-tuning",
+          "pageDisplayName": "Volumetrics",
+          "content": [
+            {
+              "type": "section",
+              "text": "World-space shafts and volume",
+              "help": "World-space DFLight integration extracts shafts from local shadow contrast. Native fog remains authoritative, and unsafe output stays pass-through.",
+              "content": [
+                {
+                  "type": "dropdown",
+                  "valueType": "int",
+                  "id": "volumetric-quality",
+                  "text": "Quality",
+                  "default": 2,
+                  "valueOptions": {
+                    "options": [
+                      { "value": 0, "text": "Low" },
+                      { "value": 1, "text": "Medium" },
+                      { "value": 2, "text": "High" }
+                    ]
+                  },
+                  "storage": { "path": ["VolumetricLighting", "Quality"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "volumetric-intensity",
+                  "text": "Global Intensity",
+                  "default": 1.0,
+                  "valueOptions": { "min": 0.0, "max": 4.0, "step": 0.05 },
+                  "storage": { "path": ["VolumetricLighting", "Intensity"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "volumetric-base",
+                  "text": "Base Volume",
+                  "help": "Adds broad volumetric haze. Zero preserves Fallout's native fog and is the safe default.",
+                  "default": 0.0,
+                  "valueOptions": { "min": 0.0, "max": 0.35, "step": 0.01 },
+                  "storage": { "path": ["VolumetricLighting", "BaseScattering"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "volumetric-shafts",
+                  "text": "Godray Shaft Intensity",
+                  "default": 1.35,
+                  "valueOptions": { "min": 0.0, "max": 4.0, "step": 0.05 },
+                  "storage": { "path": ["VolumetricLighting", "ShaftIntensity"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "volumetric-density-mix",
+                  "text": "Density Variation",
+                  "default": 0.5,
+                  "valueOptions": { "min": 0.0, "max": 1.0, "step": 0.01 },
+                  "storage": { "path": ["VolumetricLighting", "DensityContribution"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "volumetric-density-scale",
+                  "text": "Density Scale",
+                  "default": 1.0,
+                  "valueOptions": { "min": 0.125, "max": 8.0, "step": 0.125 },
+                  "storage": { "path": ["VolumetricLighting", "DensityScale"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "volumetric-distance",
+                  "text": "Maximum Distance",
+                  "default": 3000.0,
+                  "valueOptions": { "min": 256.0, "max": 20000.0, "step": 128.0 },
+                  "storage": { "path": ["VolumetricLighting", "MaxDistance"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "volumetric-temporal",
+                  "text": "Temporal Stability",
+                  "default": 0.9,
+                  "valueOptions": { "min": 0.0, "max": 0.98, "step": 0.01 },
+                  "storage": { "path": ["VolumetricLighting", "TemporalWeight"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "volumetric-wind",
+                  "text": "Density Wind Speed",
+                  "default": 0.0,
+                  "valueOptions": { "min": 0.0, "max": 100.0, "step": 1.0 },
+                  "storage": { "path": ["VolumetricLighting", "WindSpeed"] }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "bloom-tuning",
+          "pageDisplayName": "Bloom",
+          "content": [
+            {
+              "type": "section",
+              "text": "HDR bloom response",
+              "help": "The enhanced bloom is extracted from the verified linear HDR scene before exposure and tonemapping. It is added to, not substituted for, Fallout's native bloom.",
+              "content": [
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "bloom-threshold",
+                  "text": "Threshold (EV)",
+                  "default": 3.0,
+                  "valueOptions": { "min": -7.0, "max": 16.0, "step": 0.1 },
+                  "storage": { "path": ["Bloom", "ThresholdEV"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "bloom-intensity",
+                  "text": "Intensity",
+                  "default": 0.035,
+                  "valueOptions": { "min": 0.0, "max": 1.0, "step": 0.005 },
+                  "storage": { "path": ["Bloom", "Intensity"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "bloom-radius",
+                  "text": "Radius",
+                  "default": 2.0,
+                  "valueOptions": { "min": 1.0, "max": 5.0, "step": 0.1 },
+                  "storage": { "path": ["Bloom", "Radius"] }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "glare-tuning",
+          "pageDisplayName": "Physical Glare",
+          "content": [
+            {
+              "type": "section",
+              "text": "Glare response",
+              "help": "Each eye receives an independent FFT convolution. Higher FFT resolution sharpens the diffraction pattern and increases fixed GPU cost.",
+              "content": [
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "glare-threshold",
+                  "text": "Threshold (EV)",
+                  "default": 6.0,
+                  "valueOptions": { "min": -7.0, "max": 16.0, "step": 0.1 },
+                  "storage": { "path": ["PhysicalGlare", "ThresholdEV"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "glare-intensity",
+                  "text": "Intensity",
+                  "default": 0.2,
+                  "valueOptions": { "min": 0.0, "max": 2.0, "step": 0.01 },
+                  "storage": { "path": ["PhysicalGlare", "Intensity"] }
+                },
+                {
+                  "type": "dropdown",
+                  "valueType": "int",
+                  "id": "glare-fft",
+                  "text": "FFT Resolution",
+                  "default": 256,
+                  "valueOptions": {
+                    "options": [
+                      { "value": 128, "text": "Low (128)" },
+                      { "value": 256, "text": "Medium (256)" },
+                      { "value": 512, "text": "High (512)" }
+                    ]
+                  },
+                  "storage": { "path": ["PhysicalGlare", "FftResolution"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "glare-padding",
+                  "text": "FFT Padding",
+                  "default": 0.1,
+                  "valueOptions": { "min": 0.0, "max": 0.25, "step": 0.01 },
+                  "storage": { "path": ["PhysicalGlare", "PaddingRatio"] }
+                }
+              ]
+            },
+            {
+              "type": "section",
+              "text": "Optical aperture",
+              "content": [
+                {
+                  "type": "dropdown",
+                  "valueType": "int",
+                  "id": "glare-aperture-mode",
+                  "text": "Aperture",
+                  "default": 0,
+                  "valueOptions": {
+                    "options": [{ "value": 0, "text": "Lens polygon" }, { "value": 1, "text": "Circular pupil" }]
+                  },
+                  "storage": { "path": ["PhysicalGlare", "ApertureMode"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "int",
+                  "id": "glare-blades",
+                  "text": "Aperture Blades",
+                  "default": 6,
+                  "valueOptions": { "min": 3, "max": 10, "step": 1 },
+                  "storage": { "path": ["PhysicalGlare", "ApertureBlades"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "glare-rotation",
+                  "text": "Aperture Rotation",
+                  "default": 0.0,
+                  "valueOptions": { "min": -180.0, "max": 180.0, "step": 1.0 },
+                  "storage": { "path": ["PhysicalGlare", "ApertureRotationDegrees"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "glare-fstop",
+                  "text": "F-Stop",
+                  "default": 2.8,
+                  "valueOptions": { "min": 1.0, "max": 22.0, "step": 0.1 },
+                  "storage": { "path": ["PhysicalGlare", "FStop"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "glare-fresnel",
+                  "text": "Fresnel Exponent",
+                  "default": 30.0,
+                  "valueOptions": { "min": 0.0, "max": 80.0, "step": 1.0 },
+                  "storage": { "path": ["PhysicalGlare", "FresnelExponent"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "glare-aberration",
+                  "text": "Spherical Aberration",
+                  "default": 0.0,
+                  "valueOptions": { "min": 0.0, "max": 100.0, "step": 1.0 },
+                  "storage": { "path": ["PhysicalGlare", "SphericalAberration"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "glare-chromatic",
+                  "text": "Chromatic Spread",
+                  "default": 1.0,
+                  "valueOptions": { "min": 0.0, "max": 3.0, "step": 0.05 },
+                  "storage": { "path": ["PhysicalGlare", "ChromaticSpread"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "glare-kernel",
+                  "text": "Kernel Scale",
+                  "default": 1.0,
+                  "valueOptions": { "min": 0.01, "max": 1.0, "step": 0.01 },
+                  "storage": { "path": ["PhysicalGlare", "KernelScale"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "glare-psf-sharpness",
+                  "text": "PSF Sharpness",
+                  "default": 0.45,
+                  "valueOptions": { "min": 0.2, "max": 1.0, "step": 0.01 },
+                  "storage": { "path": ["PhysicalGlare", "PsfSharpness"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "glare-noise-floor",
+                  "text": "PSF Noise Floor",
+                  "default": 0.001,
+                  "valueOptions": { "min": 0.0, "max": 0.01, "step": 0.0001 },
+                  "storage": { "path": ["PhysicalGlare", "PsfNoiseFloor"] }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "tuning",
+      "pageDisplayName": "Tuning",
+      "help": "The settings of each lighting, material, shadow and surface feature.",
+      "content": [{ "type": "text", "text": "The settings of each lighting, material, shadow and surface feature." }],
+      "pages": [
+        {
+          "id": "inverse-square",
+          "pageDisplayName": "Local Lighting",
+          "content": [
+            {
+              "type": "section",
+              "text": "Inverse-square Lighting",
+              "content": [
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "inverse-square-fSourceSize",
+                  "text": "Light Source Size",
+                  "default": 1.41421,
+                  "valueOptions": { "min": 0.25, "max": 16.0, "step": 0.25 },
+                  "storage": { "path": ["InverseSquareLighting", "SourceSize"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "inverse-square-fIntensity",
+                  "text": "Local Light Intensity",
+                  "default": 1.0,
+                  "valueOptions": { "min": 0.0, "max": 8.0, "step": 0.1 },
+                  "storage": { "path": ["InverseSquareLighting", "Intensity"] }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "height-fog",
+          "pageDisplayName": "Height Fog",
+          "content": [
+            {
+              "type": "section",
+              "text": "Weather and Height Fog",
+              "content": [
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "height-fog-fHeightFogDensity",
+                  "text": "Density",
+                  "help": "Extinction per 10,000 game units at the base altitude.",
+                  "default": 0.5,
+                  "valueOptions": { "min": 0.0, "max": 10.0, "step": 0.1 },
+                  "storage": { "path": ["VolumetricLighting", "HeightFogDensity"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "height-fog-fHeightFogHeight",
+                  "text": "Base Altitude",
+                  "default": 0.0,
+                  "valueOptions": { "min": -22000.0, "max": 22000.0, "step": 128.0 },
+                  "storage": { "path": ["VolumetricLighting", "HeightFogHeight"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "height-fog-fHeightFogFalloff",
+                  "text": "Scale Height",
+                  "help": "Altitude increase that reduces density by a factor of e.",
+                  "default": 1024.0,
+                  "valueOptions": { "min": 64.0, "max": 16384.0, "step": 64.0 },
+                  "storage": { "path": ["VolumetricLighting", "HeightFogFalloff"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "height-fog-fHeightFogStart",
+                  "text": "Clear Distance",
+                  "default": 128.0,
+                  "valueOptions": { "min": 0.0, "max": 20000.0, "step": 64.0 },
+                  "storage": { "path": ["VolumetricLighting", "HeightFogStart"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "height-fog-fHeightFogOpacity",
+                  "text": "Maximum Opacity",
+                  "default": 0.9,
+                  "valueOptions": { "min": 0.0, "max": 1.0, "step": 0.05 },
+                  "storage": { "path": ["VolumetricLighting", "HeightFogOpacity"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "height-fog-fHeightFogWeather",
+                  "text": "Weather Density Influence",
+                  "help": "Blends current native weather fog range into density. Fog colour always follows the weather.",
+                  "default": 1.0,
+                  "valueOptions": { "min": 0.0, "max": 1.0, "step": 0.05 },
+                  "storage": { "path": ["VolumetricLighting", "HeightFogWeather"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "height-fog-fHeightFogInteriorScale",
+                  "text": "Interior Fog Density",
+                  "help": "Scales indoor fog density. Uses the cell fog colour without exterior altitude or sunlight. Zero disables indoor fog; the main Height Fog switch controls both environments.",
+                  "default": 0.25,
+                  "valueOptions": { "min": 0.0, "max": 4.0, "step": 0.05 },
+                  "storage": { "path": ["VolumetricLighting", "HeightFogInteriorScale"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "height-fog-fHeightFogVolume",
+                  "text": "Volumetric Shadow Influence",
+                  "help": "Uses the volumetric lighting field to shade fog scattering. Requires Volumetric Lighting / Godrays.",
+                  "default": 0.0,
+                  "valueOptions": { "min": 0.0, "max": 1.0, "step": 0.05 },
+                  "storage": { "path": ["VolumetricLighting", "HeightFogVolume"] }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "terrain-shadows",
+          "pageDisplayName": "Terrain Shadows",
+          "content": [
+            {
+              "type": "section",
+              "text": "Terrain Shadows",
+              "content": [
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "terrain-shadows-fStrength",
+                  "text": "Shadow Strength",
+                  "default": 1.0,
+                  "valueOptions": { "min": 0.0, "max": 1.0, "step": 0.05 },
+                  "storage": { "path": ["TerrainShadows", "Strength"] }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "water-effects",
+          "pageDisplayName": "Water",
+          "content": [
+            {
+              "type": "section",
+              "text": "Water Surface",
+              "content": [
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "water-caustics-strength",
+                  "text": "Caustics Strength",
+                  "default": 1.0,
+                  "valueOptions": { "min": 0.0, "max": 1.0, "step": 0.05 },
+                  "storage": { "path": ["WaterEffects", "CausticStrength"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "water-reflection-flatness",
+                  "text": "Reflection Flatness",
+                  "help": "Smooths reflection ripples toward a flat mirror when FX-style reflections are enabled.",
+                  "default": 0.0,
+                  "valueOptions": { "min": 0.0, "max": 1.0, "step": 0.05 },
+                  "storage": { "path": ["WaterEffects", "ReflectionFlatness"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "water-reflection-blur",
+                  "text": "World Reflection Blur",
+                  "help": "Blurs the cubemap fallback while keeping traced scene reflections detailed.",
+                  "default": 0.0,
+                  "valueOptions": { "min": 0.0, "max": 1.0, "step": 0.05 },
+                  "storage": { "path": ["WaterEffects", "ReflectionRoughness"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "water-reflection-strength",
+                  "text": "Reflection Strength",
+                  "default": 1.0,
+                  "valueOptions": { "min": 0.0, "max": 1.0, "step": 0.05 },
+                  "storage": { "path": ["WaterEffects", "ReflectionStrength"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "water-reflection-distance",
+                  "text": "Cubemap Fade Distance (0 = Unlimited)",
+                  "help": "Optional dynamic-water cubemap fade in game units. Zero keeps distant sea reflections. This limit applies equally with FX reflections on or off.",
+                  "default": 0.0,
+                  "valueOptions": { "min": 0.0, "max": 16384.0, "step": 64.0 },
+                  "storage": { "path": ["WaterEffects", "ReflectionDistance"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "water-parallax-scale",
+                  "text": "Parallax Scale",
+                  "default": 1.0,
+                  "valueOptions": { "min": 0.0, "max": 2.0, "step": 0.05 },
+                  "storage": { "path": ["WaterEffects", "ParallaxScale"] }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "screen-space-gi",
+          "pageDisplayName": "Screen Space GI",
+          "content": [
+            {
+              "type": "section",
+              "text": "Ambient Occlusion and Indirect Light",
+              "help": "Uses visible surfaces and prior-frame lighting. Off-screen geometry cannot contribute. Starts disabled for independent visual testing.",
+              "content": [
+                {
+                  "type": "switcher",
+                  "valueType": "bool",
+                  "id": "ssgi-bTemporal",
+                  "text": "Temporal Accumulation",
+                  "default": true,
+                  "storage": { "path": ["ScreenSpaceGI", "Temporal"] }
+                },
+                {
+                  "type": "switcher",
+                  "valueType": "bool",
+                  "id": "ssgi-bBlur",
+                  "text": "Indirect Light Blur",
+                  "default": true,
+                  "storage": { "path": ["ScreenSpaceGI", "Blur"] }
+                },
+                {
+                  "type": "dropdown",
+                  "valueType": "int",
+                  "id": "ssgi-iResolutionMode",
+                  "text": "Internal Resolution",
+                  "help": "Internal Resolution per eye: 0 full, 1 half, 2 quarter.",
+                  "default": 1,
+                  "valueOptions": {
+                    "options": [
+                      { "value": 0, "text": "Full" },
+                      { "value": 1, "text": "Half" },
+                      { "value": 2, "text": "Quarter" }
+                    ]
+                  },
+                  "storage": { "path": ["ScreenSpaceGI", "ResolutionMode"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "int",
+                  "id": "ssgi-iNumSlices",
+                  "text": "Directions",
+                  "help": "Directions sampled per pixel.",
+                  "default": 3,
+                  "valueOptions": { "min": 1, "max": 10, "step": 1 },
+                  "storage": { "path": ["ScreenSpaceGI", "NumSlices"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "int",
+                  "id": "ssgi-iNumSteps",
+                  "text": "Samples per Direction",
+                  "default": 6,
+                  "valueOptions": { "min": 1, "max": 20, "step": 1 },
+                  "storage": { "path": ["ScreenSpaceGI", "NumSteps"] }
+                },
+                {
+                  "type": "switcher",
+                  "valueType": "bool",
+                  "id": "ssgi-bAdaptiveSampling",
+                  "text": "Adaptive Sampling",
+                  "help": "Adaptive Sampling. Uses fewer samples per direction on flat surfaces and on distant pixels; edges and corners keep the full count.",
+                  "default": true,
+                  "storage": { "path": ["ScreenSpaceGI", "AdaptiveSampling"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "ssgi-fCullDistance",
+                  "text": "Cull Distance",
+                  "help": "Cull Distance in game units. AO and indirect light fade out before this distance from the camera and are not computed beyond it. 0 disables it.",
+                  "default": 1500.0,
+                  "valueOptions": { "min": 0.0, "max": 20480.0, "step": 20.0 },
+                  "storage": { "path": ["ScreenSpaceGI", "CullDistance"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "ssgi-fAORadius",
+                  "text": "Ambient Occlusion Radius",
+                  "help": "Ambient Occlusion Radius in game units.",
+                  "default": 256.0,
+                  "valueOptions": { "min": 10.0, "max": 1024.0, "step": 16.0 },
+                  "storage": { "path": ["ScreenSpaceGI", "AORadius"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "ssgi-fGIRadius",
+                  "text": "Indirect Light Radius",
+                  "help": "Indirect Light Radius in game units.",
+                  "default": 256.0,
+                  "valueOptions": { "min": 10.0, "max": 1024.0, "step": 16.0 },
+                  "storage": { "path": ["ScreenSpaceGI", "GIRadius"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "ssgi-fThickness",
+                  "text": "Surface Thickness",
+                  "help": "Occluder Thickness in game units; affects AO only.",
+                  "default": 32.0,
+                  "valueOptions": { "min": 0.0, "max": 256.0, "step": 1.0 },
+                  "storage": { "path": ["ScreenSpaceGI", "Thickness"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "ssgi-fMinScreenRadius",
+                  "text": "Minimum Screen Radius",
+                  "help": "Minimum Screen Radius as a share of the eye width.",
+                  "default": 0.01,
+                  "valueOptions": { "min": 0.0, "max": 0.05, "step": 0.005 },
+                  "storage": { "path": ["ScreenSpaceGI", "MinScreenRadius"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "ssgi-fAOPower",
+                  "text": "Ambient Occlusion Strength",
+                  "default": 4.0,
+                  "valueOptions": { "min": 0.0, "max": 12.0, "step": 0.1 },
+                  "storage": { "path": ["ScreenSpaceGI", "AOPower"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "ssgi-fGIStrength",
+                  "text": "Indirect Light Strength",
+                  "default": 1.0,
+                  "valueOptions": { "min": 0.0, "max": 6.0, "step": 0.1 },
+                  "storage": { "path": ["ScreenSpaceGI", "GIStrength"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "ssgi-fGISaturation",
+                  "text": "Indirect Light Saturation",
+                  "default": 0.8,
+                  "valueOptions": { "min": 0.0, "max": 1.0, "step": 0.05 },
+                  "storage": { "path": ["ScreenSpaceGI", "GISaturation"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "ssgi-fGIDistanceCompensation",
+                  "text": "Distant Bounce Compensation",
+                  "help": "Brightens or dims farther bounce samples.",
+                  "default": 0.0,
+                  "valueOptions": { "min": -5.0, "max": 5.0, "step": 0.1 },
+                  "storage": { "path": ["ScreenSpaceGI", "GIDistanceCompensation"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "ssgi-fDepthFadeStart",
+                  "text": "Fade Start Distance",
+                  "help": "Fade Start Distance in game units.",
+                  "default": 40000.0,
+                  "valueOptions": { "min": 0.0, "max": 200000.0, "step": 1000.0 },
+                  "storage": { "path": ["ScreenSpaceGI", "DepthFadeStart"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "ssgi-fDepthFadeEnd",
+                  "text": "Fade End Distance",
+                  "help": "Fade End Distance in game units.",
+                  "default": 50000.0,
+                  "valueOptions": { "min": 0.0, "max": 200000.0, "step": 1000.0 },
+                  "storage": { "path": ["ScreenSpaceGI", "DepthFadeEnd"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "ssgi-fDepthDisocclusion",
+                  "text": "History Rejection Distance",
+                  "help": "History rejection distance as a share of depth.",
+                  "default": 0.1,
+                  "valueOptions": { "min": 0.0, "max": 0.2, "step": 0.01 },
+                  "storage": { "path": ["ScreenSpaceGI", "DepthDisocclusion"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "int",
+                  "id": "ssgi-iMaxAccumFrames",
+                  "text": "Maximum Accumulated Frames",
+                  "default": 16,
+                  "valueOptions": { "min": 1, "max": 64, "step": 1 },
+                  "storage": { "path": ["ScreenSpaceGI", "MaxAccumFrames"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "ssgi-fBlurRadius",
+                  "text": "Blur Radius",
+                  "help": "Blur Radius in pixels.",
+                  "default": 2.0,
+                  "valueOptions": { "min": 0.0, "max": 30.0, "step": 0.5 },
+                  "storage": { "path": ["ScreenSpaceGI", "BlurRadius"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "ssgi-fDistanceNormalisation",
+                  "text": "Blur Geometry Weight",
+                  "default": 2.0,
+                  "valueOptions": { "min": 0.0, "max": 5.0, "step": 0.1 },
+                  "storage": { "path": ["ScreenSpaceGI", "DistanceNormalisation"] }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "terrain-variation-tuning",
+          "pageDisplayName": "Terrain Variation",
+          "content": [
+            {
+              "type": "section",
+              "text": "Texture Repetition",
+              "content": [
+                {
+                  "type": "switcher",
+                  "valueType": "bool",
+                  "id": "terrain-variation-lod",
+                  "text": "Include Distant Terrain",
+                  "help": "Also varies the distant terrain colour texture and its transition blend.",
+                  "default": true,
+                  "storage": { "path": ["TerrainVariation", "EnableLOD"] }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "lod-matching-tuning",
+          "pageDisplayName": "LOD Matching",
+          "content": [
+            {
+              "type": "section",
+              "text": "Distant Colour",
+              "content": [
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "lod-terrain-brightness",
+                  "text": "Terrain LOD Brightness",
+                  "help": "Adjust distant surfaces to match your installed terrain and object textures.",
+                  "default": 1.0,
+                  "valueOptions": { "min": 0.01, "max": 5.0, "step": 0.01 },
+                  "storage": { "path": ["LODBlending", "TerrainBrightness"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "lod-terrain-gamma",
+                  "text": "Terrain LOD Gamma",
+                  "help": "Adjust distant surfaces to match your installed terrain and object textures.",
+                  "default": 1.0,
+                  "valueOptions": { "min": 0.1, "max": 3.0, "step": 0.01 },
+                  "storage": { "path": ["LODBlending", "TerrainGamma"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "lod-object-brightness",
+                  "text": "Object LOD Brightness",
+                  "help": "Adjust distant surfaces to match your installed terrain and object textures.",
+                  "default": 1.0,
+                  "valueOptions": { "min": 0.01, "max": 5.0, "step": 0.01 },
+                  "storage": { "path": ["LODBlending", "ObjectBrightness"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "lod-object-gamma",
+                  "text": "Object LOD Gamma",
+                  "help": "Adjust distant surfaces to match your installed terrain and object textures.",
+                  "default": 1.0,
+                  "valueOptions": { "min": 0.1, "max": 3.0, "step": 0.01 },
+                  "storage": { "path": ["LODBlending", "ObjectGamma"] }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "skylighting-tuning",
+          "pageDisplayName": "Skylighting",
+          "content": [
+            {
+              "type": "section",
+              "text": "World-space sky visibility",
+              "help": "Both eyes share one rolling probe volume. Quality changes its fixed resolution and requires a restart; visibility and zenith controls apply live.",
+              "content": [
+                {
+                  "type": "dropdown",
+                  "valueType": "int",
+                  "id": "skylighting-quality",
+                  "text": "Probe Quality",
+                  "help": "Selects the fixed 3D probe resolution. Restart Fallout 4 VR after changing this value.",
+                  "applies": "restart",
+                  "default": 0,
+                  "valueOptions": {
+                    "options": [
+                      { "value": 0, "text": "Low" },
+                      { "value": 1, "text": "Medium" },
+                      { "value": 2, "text": "High" }
+                    ]
+                  },
+                  "storage": { "path": ["Skylighting", "Quality"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "skylighting-diffuse-min",
+                  "text": "Minimum Diffuse Visibility",
+                  "help": "Sets the darkest allowed sky-diffuse response in fully occluded areas.",
+                  "default": 0.1,
+                  "valueOptions": { "min": 0.01, "max": 1.0, "step": 0.01 },
+                  "storage": { "path": ["Skylighting", "MinDiffuseVisibility"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "skylighting-specular-min",
+                  "text": "Minimum Specular Visibility",
+                  "help": "Sets the darkest allowed sky-specular response in fully occluded areas.",
+                  "default": 0.1,
+                  "valueOptions": { "min": 0.01, "max": 1.0, "step": 0.01 },
+                  "storage": { "path": ["Skylighting", "MinSpecularVisibility"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "skylighting-zenith",
+                  "text": "Maximum Zenith Angle",
+                  "help": "Narrows or widens the sky directions sampled by the occlusion field.",
+                  "default": 90.0,
+                  "valueOptions": { "min": 0.0, "max": 90.0, "step": 1.0 },
+                  "storage": { "path": ["Skylighting", "MaxZenithDegrees"] }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "surfaces",
+          "pageDisplayName": "Surfaces",
+          "content": [
+            {
+              "type": "section",
+              "text": "Wetness",
+              "content": [
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "wetness-amount",
+                  "text": "Wetness Amount",
+                  "default": 0.65,
+                  "valueOptions": { "min": 0.0, "max": 1.0, "step": 0.01 },
+                  "storage": { "path": ["BasicWetness", "Wetness"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "wetness-darkening",
+                  "text": "Diffuse Darkening",
+                  "default": 0.18,
+                  "valueOptions": { "min": 0.0, "max": 0.75, "step": 0.01 },
+                  "storage": { "path": ["BasicWetness", "DiffuseDarkening"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "wetness-specular",
+                  "text": "Specular Multiplier",
+                  "default": 1.6,
+                  "valueOptions": { "min": 0.0, "max": 4.0, "step": 0.01 },
+                  "storage": { "path": ["BasicWetness", "SpecularMultiplier"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "wetness-roughness",
+                  "text": "Roughness Scale",
+                  "default": 0.35,
+                  "valueOptions": { "min": 0.05, "max": 1.0, "step": 0.01 },
+                  "storage": { "path": ["BasicWetness", "RoughnessScale"] }
+                }
+              ]
+            },
+            {
+              "type": "section",
+              "text": "Cloud response",
+              "content": [
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "cloud-opacity",
+                  "text": "Cloud Shadow Opacity",
+                  "default": 0.55,
+                  "valueOptions": { "min": 0.0, "max": 1.0, "step": 0.01 },
+                  "storage": { "path": ["CloudShadows", "Opacity"] }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "contact-shadows",
+          "pageDisplayName": "Contact Shadows",
+          "content": [
+            {
+              "type": "section",
+              "text": "Contact response",
+              "content": [
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "strength",
+                  "text": "Shadow Strength",
+                  "default": 0.85,
+                  "valueOptions": { "min": 0.0, "max": 1.0, "step": 0.01 },
+                  "storage": { "path": ["ContactShadows", "Strength"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "ray-distance",
+                  "text": "Ray Distance",
+                  "default": 96.0,
+                  "valueOptions": { "min": 8.0, "max": 256.0, "step": 1.0 },
+                  "storage": { "path": ["ContactShadows", "MaxDistance"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "fade-distance",
+                  "text": "View Fade Distance",
+                  "default": 2048.0,
+                  "valueOptions": { "min": 256.0, "max": 8192.0, "step": 64.0 },
+                  "storage": { "path": ["ContactShadows", "FadeDistance"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "thickness",
+                  "text": "Surface Thickness",
+                  "default": 0.012,
+                  "valueOptions": { "min": 0.002, "max": 0.05, "step": 0.001 },
+                  "storage": { "path": ["ContactShadows", "Thickness"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "int",
+                  "id": "samples",
+                  "text": "Ray Budget",
+                  "help": "Caps the continuous wavefront reach in 32-pixel blocks. Eight permits the full 256-pixel close-shadow reach.",
+                  "default": 8,
+                  "valueOptions": { "min": 2, "max": 8, "step": 1 },
+                  "storage": { "path": ["ContactShadows", "SampleCount"] }
+                },
+                {
+                  "type": "switcher",
+                  "valueType": "bool",
+                  "id": "contact-foveated",
+                  "text": "Foveated Sampling",
+                  "help": "Reduces contact-shadow work outside the center view without changing center fidelity.",
+                  "default": true,
+                  "storage": { "path": ["ContactShadows", "Foveated"] }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "pbr-model",
+          "pageDisplayName": "PBR Model",
+          "content": [
+            {
+              "type": "section",
+              "text": "Physical material response",
+              "help": "These live switches retain Fallout's existing material transport while replacing its legacy response with a shared energy-conserving model.",
+              "content": [
+                {
+                  "type": "switcher",
+                  "valueType": "bool",
+                  "id": "pbr-legacy",
+                  "text": "Convert Legacy Materials",
+                  "help": "Converts Fallout's existing shininess and specular values into physical roughness and F0.",
+                  "default": true,
+                  "storage": { "path": ["PBR", "LegacyMaterials"] }
+                },
+                {
+                  "type": "switcher",
+                  "valueType": "bool",
+                  "id": "pbr-direct-ggx",
+                  "text": "Direct-Light GGX",
+                  "help": "Uses a GGX microfacet lobe for sunlight and local lamps, including tiled lights.",
+                  "default": true,
+                  "storage": { "path": ["PBR", "DirectGGX"] }
+                },
+                {
+                  "type": "switcher",
+                  "valueType": "bool",
+                  "id": "pbr-grass-ggx",
+                  "text": "GGX on Grass",
+                  "help": "Allows the physical specular lobe on classified grass. Disabled by default so wrapped foliage lighting keeps ownership.",
+                  "default": false,
+                  "storage": { "path": ["PBR", "GrassGGX"] }
+                },
+                {
+                  "type": "switcher",
+                  "valueType": "bool",
+                  "id": "pbr-environment-fresnel",
+                  "text": "Environment Fresnel",
+                  "help": "Applies view-dependent Fresnel and roughness to static and dynamic cubemap reflections.",
+                  "default": true,
+                  "storage": { "path": ["PBR", "EnvironmentFresnel"] }
+                },
+                {
+                  "type": "switcher",
+                  "valueType": "bool",
+                  "id": "pbr-energy-conservation",
+                  "text": "Energy Conservation",
+                  "help": "Reduces diffuse response as reflected energy and metalness increase.",
+                  "default": true,
+                  "storage": { "path": ["PBR", "EnergyConservation"] }
+                },
+                {
+                  "type": "switcher",
+                  "valueType": "bool",
+                  "id": "pbr-multiscatter",
+                  "text": "Multiscatter Compensation",
+                  "help": "Compensates energy lost by a single-scatter GGX lobe at high roughness.",
+                  "default": true,
+                  "storage": { "path": ["PBR", "MultiscatterCompensation"] }
+                },
+                {
+                  "type": "switcher",
+                  "valueType": "bool",
+                  "id": "pbr-specular-occlusion",
+                  "text": "Specular Occlusion",
+                  "help": "Keeps environment reflection from leaking through strongly occluded material response.",
+                  "default": true,
+                  "storage": { "path": ["PBR", "SpecularOcclusion"] }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "pbr-calibration",
+          "pageDisplayName": "PBR Calibration",
+          "content": [
+            {
+              "type": "section",
+              "text": "Legacy-to-physical conversion",
+              "help": "Defaults follow the established CSAH conversion. These controls apply live and do not rewrite material assets.",
+              "content": [
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "pbr-roughness",
+                  "text": "Roughness Multiplier",
+                  "default": 1.0,
+                  "valueOptions": { "min": 0.05, "max": 4.0, "step": 0.01 },
+                  "storage": { "path": ["PBR", "RoughnessMultiplier"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "pbr-roughness-blend",
+                  "text": "Specular-to-Roughness Blend",
+                  "default": 1.0,
+                  "valueOptions": { "min": 0.0, "max": 1.0, "step": 0.01 },
+                  "storage": { "path": ["PBR", "SpecularRoughnessBlend"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "pbr-base-f0",
+                  "text": "Legacy Base F0 Multiplier",
+                  "default": 0.32,
+                  "valueOptions": { "min": 0.0, "max": 4.0, "step": 0.01 },
+                  "storage": { "path": ["PBR", "BaseF0Multiplier"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "pbr-min-f0",
+                  "text": "Minimum Dielectric F0",
+                  "default": 0.02,
+                  "valueOptions": { "min": 0.0, "max": 0.16, "step": 0.001 },
+                  "storage": { "path": ["PBR", "MinimumF0"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "pbr-cubemap-f0",
+                  "text": "Cubemap-to-F0 Multiplier",
+                  "default": 1.0,
+                  "valueOptions": { "min": 0.0, "max": 4.0, "step": 0.01 },
+                  "storage": { "path": ["PBR", "CubemapToF0Multiplier"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "pbr-complex-f0",
+                  "text": "Complex Material F0",
+                  "default": 1.0,
+                  "valueOptions": { "min": 0.0, "max": 4.0, "step": 0.01 },
+                  "storage": { "path": ["PBR", "ComplexMaterialF0Multiplier"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "pbr-direct-scale",
+                  "text": "Direct Specular Scale",
+                  "default": 1.0,
+                  "valueOptions": { "min": 0.0, "max": 4.0, "step": 0.01 },
+                  "storage": { "path": ["PBR", "DirectLightingScale"] }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "complex-materials",
+          "pageDisplayName": "Complex Materials",
+          "content": [
+            {
+              "type": "section",
+              "text": "Parallax",
+              "content": [
+                {
+                  "type": "dropdown",
+                  "valueType": "int",
+                  "id": "quality",
+                  "text": "Parallax Quality",
+                  "default": 0,
+                  "valueOptions": {
+                    "options": [
+                      { "value": 0, "text": "Low" },
+                      { "value": 1, "text": "Medium" },
+                      { "value": 2, "text": "High" }
+                    ]
+                  },
+                  "storage": { "path": ["ComplexMaterials", "ParallaxQuality"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "depth",
+                  "text": "Parallax Depth",
+                  "default": 0.035,
+                  "valueOptions": { "min": 0.0, "max": 0.2, "step": 0.001 },
+                  "storage": { "path": ["ComplexMaterials", "ParallaxDepth"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "grazing-clamp",
+                  "text": "Grazing Clamp",
+                  "default": 0.18,
+                  "valueOptions": { "min": 0.05, "max": 1.0, "step": 0.01 },
+                  "storage": { "path": ["ComplexMaterials", "ParallaxGrazingClamp"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "fade-start",
+                  "text": "Fade Start",
+                  "default": 2048.0,
+                  "valueOptions": { "min": 0.0, "max": 65536.0, "step": 64.0 },
+                  "storage": { "path": ["ComplexMaterials", "ParallaxFadeStart"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "fade-end",
+                  "text": "Fade End",
+                  "default": 8192.0,
+                  "valueOptions": { "min": 1.0, "max": 131072.0, "step": 64.0 },
+                  "storage": { "path": ["ComplexMaterials", "ParallaxFadeEnd"] }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "engine",
+      "pageDisplayName": "Engine",
+      "help": "Vanilla renderer fixes, native shadows, DLAA / DLSS and diagnostics.",
+      "content": [{ "type": "text", "text": "Vanilla renderer fixes, native shadows, DLAA / DLSS and diagnostics." }],
+      "pages": [
+        {
+          "id": "vanilla-fixes",
+          "pageDisplayName": "Vanilla Fixes",
+          "content": [
+            {
+              "type": "section",
+              "text": "Verified renderer gates",
+              "content": [
+                {
+                  "type": "switcher",
+                  "valueType": "bool",
+                  "id": "precipitation",
+                  "text": "Precipitation Occlusion",
+                  "default": true,
+                  "storage": { "path": ["VanillaFixes", "PrecipitationOcclusion"] }
+                },
+                {
+                  "type": "switcher",
+                  "valueType": "bool",
+                  "id": "image-space",
+                  "text": "Image Space Modifiers",
+                  "default": true,
+                  "storage": { "path": ["VanillaFixes", "AllowImageSpaceModifiers"] }
+                },
+                {
+                  "type": "switcher",
+                  "valueType": "bool",
+                  "id": "sao",
+                  "text": "Stereo SAO",
+                  "help": "Runs only while Screen Space GI is off.",
+                  "default": true,
+                  "storage": { "path": ["VanillaFixes", "VrAllowSAO"] }
+                },
+                {
+                  "type": "switcher",
+                  "valueType": "bool",
+                  "id": "ssr",
+                  "text": "Stable Screen-Space Reflections",
+                  "help": "Enables FO4VR screen-space reflections with per-eye traversal, geometric reflection rays, shared world-radiance retention, and corrected cubemap fallback. Water uses separate shaders and is not changed.",
+                  "default": false,
+                  "storage": { "path": ["VanillaFixes", "VrAllowScreenSpaceReflections"] }
+                },
+                {
+                  "type": "switcher",
+                  "valueType": "bool",
+                  "id": "native-screen-space-material-pipeline",
+                  "text": "Native Screen-Space Material Pipeline",
+                  "help": "Controls Bethesda's shared native SSS and reflection image-space pipeline. It can change SSR and Dynamic Cubemap capture.",
+                  "default": true,
+                  "storage": { "path": ["VanillaFixes", "NativeScreenSpaceMaterialPipeline"] }
+                },
+                {
+                  "type": "switcher",
+                  "valueType": "bool",
+                  "id": "lens-flare",
+                  "text": "VR Lens Flare",
+                  "default": false,
+                  "storage": { "path": ["VanillaFixes", "LensFlareVr"] }
+                },
+                {
+                  "type": "switcher",
+                  "valueType": "bool",
+                  "id": "focus-shadows",
+                  "text": "Focus Shadows",
+                  "default": false,
+                  "storage": { "path": ["VanillaFixes", "VrAllowFocusShadows"] }
+                },
+                {
+                  "type": "switcher",
+                  "valueType": "bool",
+                  "id": "stereo-sun-occlusion",
+                  "text": "Stable Stereo Sun Occlusion",
+                  "help": "Prevents a peripheral Sun query from forcing the shared glare visibility to fully occluded while another completed query still has valid coverage.",
+                  "default": true,
+                  "storage": { "path": ["VanillaFixes", "VrSunOcclusion"] }
+                },
+                {
+                  "type": "switcher",
+                  "valueType": "bool",
+                  "id": "stereo-sharing-measurement",
+                  "text": "Measure Stereo Sharing (No Culling)",
+                  "help": "Read-only measurements; both eyes still render normally. Requires tracked ambient lighting (Linear Lighting or Skylighting). Logs per-surface buffer agreement, sampled native material draw costs, and GPU spans to CSAH.log. Ordinary class includes untagged pixels; timings cover whole native draw calls, not isolated right-eye shading. Adds diagnostic GPU work while enabled; turn off after the comparison. Leave GPU Performance Profiling Off to isolate these timings.",
+                  "default": false,
+                  "storage": { "path": ["Diagnostics", "MeasureStereoSharing"] }
+                },
+                {
+                  "type": "dropdown",
+                  "valueType": "int",
+                  "id": "gpu-profiling-mode",
+                  "text": "GPU Performance Profiling",
+                  "help": "Writes continuous image-neutral GPU and CPU submission timings for the selected expensive feature group. Off disables timing collection, including startup captures.",
+                  "default": 0,
+                  "valueOptions": {
+                    "options": [
+                      { "value": 0, "text": "Off" },
+                      { "value": 1, "text": "Contact Shadows" },
+                      { "value": 2, "text": "Skylighting" },
+                      { "value": 3, "text": "Contact + Skylighting" },
+                      { "value": 4, "text": "IBL + Upscaling" },
+                      { "value": 16, "text": "Screen Space GI" },
+                      { "value": 23, "text": "All Profiled Features" }
+                    ]
+                  },
+                  "storage": { "path": ["Diagnostics", "GpuProfilingMode"] }
+                },
+                {
+                  "type": "dropdown",
+                  "valueType": "int",
+                  "id": "directional-diagnostic",
+                  "text": "Exclusive Lighting Diagnostic",
+                  "help": "Exclusive test view. Modes 1-11 retain the directional-light ownership tests. Modes 12 and 13 expose the packed DFComposite direct-diffuse or direct-specular buffer. Modes 14 and 15 use the exact four live reflection-composite permutations to publish their already-computed native SSR or uncorrected stock-cubemap value, without fallback or material modulation. Fallout's required shared material producer graph remains active, unrelated DFComposite contracts render black, and CSAH presentation features are suppressed. Saved feature settings are preserved. This choice is also available before launch under [Diagnostics] in CSAH.toml.",
+                  "default": 0,
+                  "valueOptions": {
+                    "options": [
+                      { "value": 0, "text": "Off" },
+                      { "value": 1, "text": "Native N dot L (Red)" },
+                      { "value": 2, "text": "N dot V (Green)" },
+                      { "value": 3, "text": "Shadow Visibility (Blue)" },
+                      { "value": 4, "text": "Supplied Light Vector (RGB)" },
+                      { "value": 5, "text": "View Light Vector (RGB)" },
+                      { "value": 6, "text": "Corrected N dot L (Red)" },
+                      { "value": 7, "text": "Coverage Without Depth (RGB)" },
+                      { "value": 8, "text": "Coverage Full Raster (RGB)" },
+                      { "value": 9, "text": "Synthetic DFLight Coverage (RGB)" },
+                      { "value": 10, "text": "Synthetic Composite Coverage (RGB)" },
+                      { "value": 11, "text": "Final HDR Output (RGB)" },
+                      { "value": 12, "text": "Direct Diffuse Only" },
+                      { "value": 13, "text": "Direct Specular Only" },
+                      { "value": 14, "text": "Native SSR Only" },
+                      { "value": 15, "text": "Vanilla Cubemap Only" }
+                    ]
+                  },
+                  "storage": { "path": ["Diagnostics", "DirectionalLightingMode"] }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "native-shadows",
+          "pageDisplayName": "Native Shadows",
+          "content": [
+            {
+              "type": "section",
+              "text": "Native shadow contract",
+              "help": "These settings patch verified engine state during plugin startup. Changes take effect at the next game launch.",
+              "applies": "restart",
+              "content": [
+                {
+                  "type": "switcher",
+                  "valueType": "bool",
+                  "id": "extended-cascades",
+                  "text": "Extended Directional Cascades",
+                  "help": "Restart required.",
+                  "default": true,
+                  "storage": { "path": ["NativeShadows", "ExtendedDirectionalCascades"] }
+                },
+                {
+                  "type": "switcher",
+                  "valueType": "bool",
+                  "id": "tiled-lighting",
+                  "text": "Tiled Deferred Lighting",
+                  "help": "Restart required.",
+                  "default": true,
+                  "storage": { "path": ["NativeShadows", "TiledDeferredLighting"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "shadow-distance",
+                  "text": "Directional Shadow Distance",
+                  "help": "Restart required.",
+                  "default": 12000.0,
+                  "valueOptions": { "min": 3000.0, "max": 50000.0, "step": 250.0 },
+                  "storage": { "path": ["NativeShadows", "DirectionalShadowDistance"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "cascade-blend",
+                  "text": "Cascade Blend Distance",
+                  "help": "Restart required.",
+                  "default": 3000.0,
+                  "valueOptions": { "min": 0.0, "max": 5000.0, "step": 25.0 },
+                  "storage": { "path": ["NativeShadows", "CascadeBlendDistance"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "int",
+                  "id": "shadow-filter",
+                  "text": "Orthographic Shadow Filter",
+                  "help": "Restart required; accepted engine range is 0 through 5.",
+                  "default": 3,
+                  "valueOptions": { "min": 0, "max": 5, "step": 1 },
+                  "storage": { "path": ["NativeShadows", "OrthographicShadowFilter"] }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "upscaling",
+          "pageDisplayName": "Upscaling",
+          "content": [
+            {
+              "type": "section",
+              "text": "Streamline mode",
+              "content": [
+                {
+                  "type": "dropdown",
+                  "valueType": "int",
+                  "id": "mode",
+                  "text": "Execution Mode",
+                  "default": 5,
+                  "valueOptions": {
+                    "options": [
+                      { "value": 0, "text": "DLAA Native" },
+                      { "value": 1, "text": "DLSS Quality" },
+                      { "value": 2, "text": "DLSS Balanced" },
+                      { "value": 3, "text": "DLSS Performance" },
+                      { "value": 4, "text": "DLSS Ultra Performance" },
+                      { "value": 5, "text": "Center DLAA + TAA" }
+                    ]
+                  },
+                  "storage": { "path": ["DLAA", "Mode"] }
+                },
+                {
+                  "type": "dropdown",
+                  "valueType": "int",
+                  "id": "model",
+                  "text": "Transformer Model",
+                  "default": 2,
+                  "valueOptions": {
+                    "options": [
+                      { "value": 0, "text": "Automatic" },
+                      { "value": 1, "text": "Reduced Ghosting J" },
+                      { "value": 2, "text": "Quality K" },
+                      { "value": 3, "text": "Stable L" },
+                      { "value": 4, "text": "Performance M" }
+                    ]
+                  },
+                  "storage": { "path": ["DLAA", "ModelPreset"] }
+                },
+                {
+                  "type": "switcher",
+                  "valueType": "bool",
+                  "id": "motion-repair",
+                  "text": "Motion Vector Repair",
+                  "default": true,
+                  "storage": { "path": ["DLAA", "MotionVectorRepair"] }
+                },
+                {
+                  "type": "switcher",
+                  "valueType": "bool",
+                  "id": "post-sharpening",
+                  "text": "Post Sharpening",
+                  "default": true,
+                  "storage": { "path": ["DLAA", "PostSharpening"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "sharpness",
+                  "text": "Sharpness",
+                  "default": 0.25,
+                  "valueOptions": { "min": 0.0, "max": 1.0, "step": 0.01 },
+                  "storage": { "path": ["DLAA", "Sharpness"] }
+                }
+              ]
+            },
+            {
+              "type": "section",
+              "text": "Center DLAA region",
+              "content": [
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "center-width",
+                  "text": "Center Width",
+                  "default": 0.4,
+                  "valueOptions": { "min": 0.25, "max": 1.0, "step": 0.01 },
+                  "storage": { "path": ["DLAA", "CenterWidth"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "center-height",
+                  "text": "Center Height",
+                  "default": 0.4,
+                  "valueOptions": { "min": 0.25, "max": 1.0, "step": 0.01 },
+                  "storage": { "path": ["DLAA", "CenterHeight"] }
+                },
+                {
+                  "type": "slider",
+                  "valueType": "float",
+                  "id": "center-feather",
+                  "text": "Center Feather Pixels",
+                  "default": 48.0,
+                  "valueOptions": { "min": 0.0, "max": 128.0, "step": 1.0 },
+                  "storage": { "path": ["DLAA", "CenterFeatherPixels"] }
+                },
+                {
+                  "type": "switcher",
+                  "valueType": "bool",
+                  "id": "visualize-center",
+                  "text": "Visualize Center Region",
+                  "default": false,
+                  "storage": { "path": ["DLAA", "VisualizeCenter"] }
+                },
+                {
+                  "type": "switcher",
+                  "valueType": "bool",
+                  "id": "hard-reset",
+                  "text": "Hard Reset On Load",
+                  "default": true,
+                  "storage": { "path": ["DLAA", "HardResetOnLoad"] }
+                },
+                {
+                  "type": "switcher",
+                  "valueType": "bool",
+                  "id": "verbose-diagnostics",
+                  "text": "Verbose Diagnostics",
+                  "default": false,
+                  "storage": { "path": ["DLAA", "VerboseDiagnostics"] }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

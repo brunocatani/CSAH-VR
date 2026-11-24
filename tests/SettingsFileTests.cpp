@@ -1,16 +1,22 @@
-// CSAH.toml contracts: every PALM catalog binding names a declared option with
-// its type, a first start writes every option, and the INI of earlier versions
-// carries the player's changed values over once and is deleted.
+// CSAH.toml contracts: CSAH's Mods Config page binds every declared option
+// (but those left out by name) once, with its type and the default CSAH
+// writes, so Reset matches the mod; a first start writes every option; and the
+// INI of earlier versions carries the player's changed values over once and
+// is deleted.
 #include "settings/SettingsFile.h"
 
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
+#include <array>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <map>
+#include <set>
 #include <string>
+#include <string_view>
 
 namespace
 {
@@ -30,38 +36,112 @@ namespace
         std::ofstream stream(path, std::ios::binary | std::ios::trunc);
         stream << text;
     }
+
+    // Options deliberately not on the page.
+    // RenderDocCapture loads RenderDoc for RobCo PALM's Developer wheel and
+    // disables DLAA/DLSS; it stays a CSAH.toml edit for developers.
+    constexpr std::array<std::string_view, 1> kLeftOut{ "Diagnostics.RenderDocCapture" };
+
+    constexpr std::array<std::string_view, 5> kSettingTypes{ "switcher", "slider", "stepper", "dropdown", "textinput" };
+
+    struct Declared
+    {
+        ValueType type;
+        std::string defaultValue;
+    };
+
+    // The page's default as the canonical text CSAH's store writes.
+    std::string canonicalDefault(const nlohmann::json& value, ValueType type)
+    {
+        if (type == ValueType::Boolean)
+            return value.get<bool>() ? "true" : "false";
+        const auto text = type == ValueType::Integer ? std::to_string(value.get<std::int64_t>()) : value.dump();
+        return RPS::Settings::normalizeValue(type, text).value_or("<not a value>");
+    }
+
+    void checkSetting(const nlohmann::json& item, const std::map<std::string, Declared>& declared,
+        std::set<std::string>& bound)
+    {
+        const auto& path = item.at("storage").at("path");
+        require(path.size() == 2, "a setting's storage is [table, key]");
+        const auto name = path[0].get<std::string>() + "." + path[1].get<std::string>();
+        const auto found = declared.find(name);
+        require(found != declared.end(), "the page binds undeclared option " + name);
+        require(bound.insert(name).second, "the page binds " + name + " twice");
+
+        const auto valueType = item.at("valueType").get<std::string>();
+        const auto expected = found->second.type == ValueType::Boolean ? "bool"
+                            : found->second.type == ValueType::Integer ? "int"
+                                                                       : "float";
+        require(valueType == expected, "the page's type differs for " + name);
+        require(canonicalDefault(item.at("default"), found->second.type) == found->second.defaultValue,
+            "the page's default differs from CSAH's for " + name);
+
+        if (!item.contains("valueOptions"))
+            return;
+        const auto& options = item.at("valueOptions");
+        if (options.contains("options")) {
+            const auto& choices = options.at("options");
+            const bool listed = std::ranges::any_of(choices, [&](const nlohmann::json& choice) {
+                return choice.at("value") == item.at("default");
+            });
+            require(listed, "the default of " + name + " is not one of its choices");
+        } else {
+            const auto value = item.at("default").get<double>();
+            require(options.at("min").get<double>() <= value && value <= options.at("max").get<double>(),
+                "the default of " + name + " is outside its range");
+        }
+    }
+
+    void walk(const nlohmann::json& items, const std::map<std::string, Declared>& declared, std::set<std::string>& bound)
+    {
+        for (const auto& item : items) {
+            const auto type = item.at("type").get<std::string>();
+            if (item.contains("content"))
+                walk(item.at("content"), declared, bound);
+            if (std::ranges::find(kSettingTypes, type) != kSettingTypes.end())
+                checkSetting(item, declared, bound);
+        }
+    }
+
+    void walkPages(const nlohmann::json& pages, const std::map<std::string, Declared>& declared, std::set<std::string>& bound)
+    {
+        for (const auto& page : pages) {
+            walk(page.at("content"), declared, bound);
+            if (page.contains("pages"))
+                walkPages(page.at("pages"), declared, bound);
+        }
+    }
 }
 
 int main(int argc, char** argv)
 {
-    require(argc == 2, "usage: CSAHSettingsFileTests <PALMSettings.json>");
+    require(argc == 2, "usage: CSAHSettingsFileTests <spec.json>");
 
     // Building the store checks every default is canonical for its type.
     const auto& options = csah::settings_file::definitions();
-    std::map<std::string, ValueType> declared;
+    std::map<std::string, Declared> declared;
     for (const auto& option : options)
-        require(declared.emplace(option.table + "." + option.key, option.type).second, "duplicate option " + option.key);
+        require(declared.emplace(option.table + "." + option.key, Declared{ option.type, option.defaultValue }).second,
+            "duplicate option " + option.key);
 
-    std::ifstream catalogStream(argv[1]);
-    const auto catalog = nlohmann::json::parse(catalogStream);
-    require(catalog.at("schemaVersion") == 2, "catalog schema");
-    std::size_t bindings = 0;
-    for (const auto& tab : catalog.at("tabs"))
-        for (const auto& page : tab.at("pages"))
-            for (const auto& group : page.at("groups"))
-                for (const auto& control : group.at("controls")) {
-                    const auto& binding = control.at("binding");
-                    const auto name = binding.at("table").get<std::string>() + "." + binding.at("key").get<std::string>();
-                    const auto found = declared.find(name);
-                    require(found != declared.end(), "catalog binds undeclared option " + name);
-                    const auto value = binding.at("value").get<std::string>();
-                    const auto expected = value == "boolean" ? ValueType::Boolean
-                                        : value == "integer" ? ValueType::Integer
-                                                             : ValueType::Float;
-                    require(found->second == expected, "catalog type differs for " + name);
-                    ++bindings;
-                }
-    require(bindings + 1 == options.size(), "every option except RenderDocCapture has a PALM control");
+    std::ifstream specStream(argv[1]);
+    require(specStream.good(), "the page is missing");
+    const auto spec = nlohmann::json::parse(specStream);
+    require(spec.at("modName") == "CSAH", "the page's modName is the client's name");
+    const auto& file = spec.at("files").at(spec.at("defaultFile").get<std::string>());
+    require(file.at("root") == "myGames" &&
+                file.at("path") == "Mods_Config/CSAH/" + std::string(csah::settings_file::kFileName),
+        "the page edits the CSAH.toml CSAH reads");
+
+    std::set<std::string> bound;
+    walk(spec.at("content"), declared, bound);
+    walkPages(spec.at("pages"), declared, bound);
+    for (const auto& [name, option] : declared) {
+        const bool leftOut = std::ranges::find(kLeftOut, name) != kLeftOut.end();
+        require(bound.contains(name) != leftOut,
+            leftOut ? name + " is on the page but listed as left out" : name + " is neither on the page nor left out");
+    }
 
     const fs::path root = fs::path(CSAH_TEST_SETTINGS_DIR) / "SettingsFileTests";
     std::error_code ignored;

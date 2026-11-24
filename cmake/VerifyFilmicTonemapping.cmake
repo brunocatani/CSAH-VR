@@ -10,8 +10,7 @@ foreach(required IN ITEMS
     D3D11_HOOK_SOURCE
     SHARED_SETTINGS_SOURCE
     SHARED_SETTINGS_HEADER
-    PLUGIN_SOURCE
-    PALM_SETTINGS_SOURCE)
+    PLUGIN_SOURCE)
   if(NOT DEFINED ${required} OR NOT EXISTS "${${required}}")
     message(FATAL_ERROR
       "Filmic Tonemapping verification input is missing: ${required}")
@@ -85,14 +84,6 @@ require_token("${SHARED_SETTINGS_SOURCE}"
   "live settings publication")
 require_token("${PLUGIN_SOURCE}"
   "filmic_tonemapping::loadSettings" "startup settings load")
-require_token("${PALM_SETTINGS_SOURCE}"
-  "Filmic Tonemapping" "PALM settings control")
-require_token("${PALM_SETTINGS_SOURCE}"
-  "ExposureCompensationEV" "PALM settings exposure control")
-require_token("${PALM_SETTINGS_SOURCE}"
-  "FilmicStrength" "PALM settings filmic-strength control")
-require_token("${PALM_SETTINGS_SOURCE}"
-  "WhitePointScale" "PALM settings white-point control")
 
 message(STATUS
-  "Filmic Tonemapping contract verified: executing FO4VR base/fade HDR output family, native adaptation, scoped CB12, and PALM settings controls")
+  "Filmic Tonemapping contract verified: executing FO4VR base/fade HDR output family, native adaptation and scoped CB12")
