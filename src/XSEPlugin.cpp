@@ -322,7 +322,7 @@ extern "C" __declspec(dllexport) bool F4SEAPI F4SEPlugin_Query(
 
         csah::logging::init();
         csah::logging::info(
-            "=== Community Shaders at Home (CSAH) VR v0.0.6 query ===");
+            "=== Community Shaders at Home (CSAH) VR v0.0.7 query ===");
 
         a_info->infoVersion = F4SE::PluginInfo::kVersion;
         a_info->name = "Community Shaders at Home (CSAH) VR";

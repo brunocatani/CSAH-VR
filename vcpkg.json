@@ -1,6 +1,6 @@
 {
   "name": "csah",
-  "version-string": "0.0.6",
+  "version-string": "0.0.7",
   "description": "Community Shaders at Home (CSAH) VR runtime for Fallout 4 VR",
   "dependencies": [
     "minhook",

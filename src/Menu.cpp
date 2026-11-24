@@ -102,7 +102,7 @@ void Menu::Draw() {
     ImGui::SetNextWindowPos(ImVec2(50.0f, 50.0f), ImGuiCond_FirstUseEver);
 
     if (ImGui::Begin("Community Shaders at Home (CSAH) VR", &isVisible, ImGuiWindowFlags_NoCollapse)) {
-        ImGui::Text("Community Shaders at Home (CSAH) VR v0.0.6");
+        ImGui::Text("Community Shaders at Home (CSAH) VR v0.0.7");
         ImGui::Separator();
 
         if (ImGui::CollapsingHeader("Features", ImGuiTreeNodeFlags_DefaultOpen)) {

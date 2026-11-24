@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 4.2)
 
 set(NAME "CSAH")
 set(FRIENDLY_NAME "Community Shaders at Home (CSAH) VR")
-set(VERSION 0.0.6)
+set(VERSION 0.0.7)
 
 set(ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
 set(SOURCE_DIR "${ROOT_DIR}/src")
